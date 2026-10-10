@@ -30,6 +30,7 @@ working notes for keeping the fork mergeable.
 | 2026-10-10 | US units, part 3: ANSI C-E and ARCH A-E1 sheets in print (print_instelling.rs, print-pagina-instelling.js) and CAD import (open-pdf-cad paper.rs, cad-import-logica.js, cad-import-instellingen.js; the sync test in cad-import.test.mjs accepts ids with a hyphen). Rust tests in the Windows CI; src-tauri/build.rs embeds the Common Controls v6 manifest in test binaries only, without which `cargo test` cannot start on Windows. |
 | 2026-10-10 | Symbol groundwork (Phase B): SVG symbol stamps save as vector appearances (`markset/svg-to-pdf.js`, `stamp-vector.js`; hook in saver.js) with the SVG in `OPS_StampSvg` (read back in color-extraction.js / annotation-converter.js); bundled US Starter Library (`markset/library/`, MIT) listed first in the palette (symbolStore.js); sheet-relative size (stamps.js), review mark color (`reviewMarkColor`, SymbolPalette.jsx, AnnotationsTab.jsx) and K / X shortcuts (keyboard-handlers.js; `selectSymbol` exported). NOTICE.md notes the artwork license. |
 | 2026-10-10 | Fixed the brand overlay (`markset/vite-brand.mjs`): it skipped every file because the repository checkout is itself named "markset"; it now skips only `open-pdf-studio/markset/`. |
+| 2026-10-10 | Review marks (Phase C, Starter Library batch 1): circled check, circled X, question mark, VIF, NIC, OK, EQ, see-comment dot and strike line join the checkmark and X. Symbol palette defaults to the United States (symbolLocales.js; was the Netherlands). |
 
 ## Known follow-ups
 

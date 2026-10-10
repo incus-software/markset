@@ -32,6 +32,15 @@ test('the US Starter Library loads as a built-in group', () => {
   assert.deepEqual(starter.symbols.slice(0, 2).map(s => s.name), ['Checkmark', 'X']);
 });
 
+test('the review marks batch is complete, in palette order', () => {
+  const review = starter.symbols.filter(s => s.markset?.role === 'review').map(s => s.markset.id);
+  assert.deepEqual(review, [
+    'checkmark', 'x-mark', 'circled-check', 'circled-x', 'question-mark',
+    'vif', 'nic', 'ok', 'eq', 'see-comment-dot', 'strike-line',
+  ]);
+  for (const s of starter.symbols) assert.match(s.svg, /#d00/, `${s.name}: drawn in the recolorable review red`);
+});
+
 test('every symbol follows the library format and draws as vectors', () => {
   const svgs = Object.entries(files).filter(([p]) => p.endsWith('.svg'));
   assert.ok(svgs.length >= 2);

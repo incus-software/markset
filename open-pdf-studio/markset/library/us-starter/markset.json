@@ -2,6 +2,15 @@
   "comment": "Markset-only symbol data, next to the upstream-format collection files. paperHeightIn is the printed height on a 24x36 sheet; role 'review' marks print in the review mark color; shortcut is a single key.",
   "symbols": {
     "checkmark": { "name": "Checkmark", "paperHeightIn": 0.375, "role": "review", "shortcut": "k" },
-    "x-mark": { "name": "X", "paperHeightIn": 0.375, "role": "review", "shortcut": "x" }
+    "x-mark": { "name": "X", "paperHeightIn": 0.375, "role": "review", "shortcut": "x" },
+    "circled-check": { "name": "Circled check", "paperHeightIn": 0.375, "role": "review" },
+    "circled-x": { "name": "Circled X", "paperHeightIn": 0.375, "role": "review" },
+    "question-mark": { "name": "Question mark", "paperHeightIn": 0.375, "role": "review" },
+    "vif": { "name": "VIF (verify in field)", "paperHeightIn": 0.5, "role": "review" },
+    "nic": { "name": "NIC (not in contract)", "paperHeightIn": 0.5, "role": "review" },
+    "ok": { "name": "OK", "paperHeightIn": 0.5, "role": "review" },
+    "eq": { "name": "EQ (equal)", "paperHeightIn": 0.5, "role": "review" },
+    "see-comment-dot": { "name": "See comment dot", "paperHeightIn": 0.25, "role": "review" },
+    "strike-line": { "name": "Strike line", "paperHeightIn": 0.75, "role": "review" }
   }
 }
