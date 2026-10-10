@@ -1,12 +1,13 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
 import { pdfjsAssets } from './scripts/pdfjs-assets.mjs';
+import { marksetBrand } from './markset/vite-brand.mjs';
 import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 export default defineConfig({
-  plugins: [solidPlugin(), pdfjsAssets()],
+  plugins: [marksetBrand(), solidPlugin(), pdfjsAssets()],
   resolve: {
     alias: [
       // PDF.js 6's modern build calls Map.prototype.getOrInsertComputed and

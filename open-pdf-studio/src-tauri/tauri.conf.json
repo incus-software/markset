@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Open PDF Studio",
+  "productName": "Markset",
   "version": "2026.41.0",
-  "identifier": "org.openaec.openpdfstudio",
+  "identifier": "com.usemarkset.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3041",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Open PDF Studio",
+        "title": "Markset",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
@@ -91,7 +91,7 @@
           "pdf"
         ],
         "mimeType": "application/pdf",
-        "name": "OpenPDFStudio.pdf",
+        "name": "Markset.pdf",
         "description": "Portable Document Format",
         "role": "Editor"
       }
@@ -121,7 +121,7 @@
       ],
       "desktop": {
         "schemes": [
-          "openpdfstudio"
+          "markset"
         ]
       }
     }

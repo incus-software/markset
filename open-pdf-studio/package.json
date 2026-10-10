@@ -1,7 +1,7 @@
 {
-  "name": "open-pdf-studio",
+  "name": "markset",
   "version": "2026.41.0",
-  "description": "A free, open-source PDF annotation editor built with Tauri",
+  "description": "Markset: PDF markup and measuring for architects and expert witnesses (fork of Open PDF Studio)",
   "scripts": {
     "prepare:native-runtime": "node scripts/native-runtime.mjs",
     "prepare:ocr-runtime": "node scripts/ocr-runtime.mjs",
