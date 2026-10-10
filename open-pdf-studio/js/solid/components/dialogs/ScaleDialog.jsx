@@ -3,6 +3,7 @@ import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { setScaleFromLine } from '../../../annotations/measurement.js';
+import { parseLength } from '../../../../markset/us-units.js'; // Markset
 
 const UNIT_ALIASES = {
   mm: 'mm', millimeter: 'mm', millimeters: 'mm', millimetre: 'mm', millimetres: 'mm',
@@ -21,7 +22,7 @@ function parseValueAndUnit(input, fallbackUnit) {
   if (!trimmed) return null;
 
   const match = trimmed.match(/^([0-9]+(?:\.[0-9]*)?)[\s]*([a-zA-Z"']+)?$/);
-  if (!match) return null;
+  if (!match) return parseLength(trimmed, fallbackUnit); // Markset: 12'-6 3/8", 6 3/8", 1,5 m
 
   const value = parseFloat(match[1]);
   if (!value || value <= 0 || !isFinite(value)) return null;

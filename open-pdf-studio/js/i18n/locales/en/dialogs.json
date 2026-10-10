@@ -320,6 +320,8 @@
     "scaleRatio": "Scale:",
     "unit": "Unit:",
     "customRatio": "Custom...",
+    "architecturalScales": "Architectural",
+    "engineeringScales": "Engineering",
     "pageSize": "Page size:",
     "calculatedScale": "Calculated:",
     "pixelsPerUnit": "px/unit",

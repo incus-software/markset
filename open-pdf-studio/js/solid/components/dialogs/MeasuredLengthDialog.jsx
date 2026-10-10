@@ -11,6 +11,7 @@ import { showProperties } from '../../../ui/panels/properties-panel.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { cloneAnnotation } from '../../../annotations/factory.js';
 import { recordBulkModify } from '../../../core/undo-manager.js';
+import { parseLengthAs } from '../../../../markset/us-units.js'; // Markset
 
 function redraw() {
   const doc = getActiveDocument();
@@ -44,7 +45,7 @@ export default function MeasuredLengthDialog(props) {
   const paperMm = pointsToPaperMm(pixelDistance);
 
   const computedScale = createMemo(() => {
-    const v = parseFloat(String(value()).replace(',', '.'));
+    const v = parseLengthAs(value(), unit()); // Markset: also 12'-6 3/8"
     return scaleStringFromMeasurement(pixelDistance, v, unit());
   });
 
@@ -126,7 +127,7 @@ export default function MeasuredLengthDialog(props) {
         <div class="ai-login-field">
           <label>{t('scaleRegion.measureQuestion') || 'What is the real length of this distance?'}</label>
           <div style="display:flex;gap:6px">
-            <input type="number" class="ribbon-input" min="0" step="any"
+            <input type="text" inputmode="decimal" class="ribbon-input"
               value={value()} onInput={e => setValue(e.target.value)}
               placeholder="1000"
               style="flex:1;box-sizing:border-box" autofocus />

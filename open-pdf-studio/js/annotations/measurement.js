@@ -14,6 +14,7 @@ import {
   beginUndoTransaction,
   endUndoTransaction,
 } from '../core/undo-manager.js';
+import { formatImperialLength } from '../../markset/us-units.js'; // Markset
 
 // Scale calibration: pixels per unit
 // Priority: scaleRegion (innermost containing point) → viewport annotation →
@@ -174,6 +175,12 @@ export function formatDimensionText(measurement) {
 export function formatMeasurement(measurement) {
   let val = applyRounding(measurement.value, measurement.unit);
   let unit = measurement.unit || 'mm';
+
+  // Markset: ft/in lengths as feet-inch fractions (12'-6 3/8"). The fraction
+  // is the rounding, so the mm-based measureRounding step does not apply.
+  const imperial = formatImperialLength(measurement.value, unit,
+    state.preferences.measureImperialFormat, state.preferences.measureFractionDenominator);
+  if (imperial) return imperial;
 
   // Keep mm as mm — common architectural/CAD convention. Whole numbers only
   // (no decimals) — millimeters are already the smallest practical unit.

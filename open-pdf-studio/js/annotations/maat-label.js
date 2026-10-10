@@ -5,6 +5,8 @@
 // (plattegrond/maatvoering.js, voor de afstand tussen maatketting en
 // totaalmaat) rekenen met dezelfde regels.
 
+import { isFeetInchText } from '../../markset/us-units.js'; // Markset
+
 // Een eenheid achter het laatste getal: letters (mm, m, ft, …), eventueel met
 // ² of ³, of een graden-/voet-/inchteken.
 const EENHEID_ACHTERAAN = /(\d)\s*(?:[A-Za-zµ]+[²³]?|[°'"])$/;
@@ -18,6 +20,8 @@ const EENHEID_ACHTERAAN = /(\d)\s*(?:[A-Za-zµ]+[²³]?|[°'"])$/;
 export function maatlijnTekst(measureText, toonEenheid = true) {
   const tekst = typeof measureText === 'string' ? measureText : '';
   if (toonEenheid !== false) return tekst;
+  // Markset: in 12'-6 3/8" the foot and inch marks are part of the number.
+  if (isFeetInchText(tekst)) return tekst;
   return tekst.replace(EENHEID_ACHTERAAN, '$1');
 }
 

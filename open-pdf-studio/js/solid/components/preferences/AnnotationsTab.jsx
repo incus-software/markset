@@ -3,6 +3,7 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 import PrefColorPicker from './PrefColorPicker.jsx';
 import PrefComboBox from './PrefComboBox.jsx';
 import PrefSelect from './PrefSelect.jsx';
+import { FRACTION_DENOMINATORS } from '../../../../markset/us-units.js'; // Markset
 
 const SUB_TABS = [
   { id: 'general', key: 'annotations.subtabGeneral' },
@@ -89,6 +90,13 @@ export default function AnnotationsTab(props) {
   ];
 
   const measureHeadOpts = lineEndingOpts('measurement');
+
+  // Markset: US units display (markset/us-units.js)
+  const imperialFormatOpts = [
+    { value: 'feet-inch', label: t('measurement.imperialFeetInch') },
+    { value: 'decimal', label: t('measurement.imperialDecimal') },
+  ];
+  const fractionOpts = FRACTION_DENOMINATORS.map(d => ({ value: d, label: `1/${d}"` }));
 
   return (
     <div class="pref-subtab-wrapper">
@@ -449,6 +457,15 @@ export default function AnnotationsTab(props) {
                 <label>{t('measurement.ctrlSnap')}</label>
                 <PrefComboBox value={p.measureCtrlSnap[0]} setValue={p.measureCtrlSnap[1]}
                   options={[1, 5, 10, 20, 50, 100]} min={1} max={1000} suffix="" fallback={10} />
+              </div>
+              {/* Markset: feet-inch display for ft and in measurements */}
+              <div class="pref-row">
+                <label>{t('measurement.imperialFormat')}</label>
+                <PrefSelect value={p.measureImperialFormat[0]} setValue={p.measureImperialFormat[1]} options={imperialFormatOpts} />
+              </div>
+              <div class="pref-row">
+                <label>{t('measurement.fractionPrecision')}</label>
+                <PrefSelect value={p.measureFractionDenominator[0]} setValue={p.measureFractionDenominator[1]} options={fractionOpts} />
               </div>
             </fieldset>
 
