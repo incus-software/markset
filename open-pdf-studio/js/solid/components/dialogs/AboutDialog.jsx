@@ -3,6 +3,7 @@ import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { getAppVersion, openExternal } from '../../../core/platform.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import ForkNotice from '../../../../markset/ForkNotice.jsx';
 
 export default function AboutDialog() {
   const { t } = useTranslation('appMenu');
@@ -73,7 +74,7 @@ export default function AboutDialog() {
             </svg>
             GitHub
           </a>
-          <a href="#" class="bs-about-link" onClick={(e) => { e.preventDefault(); openExternal('mailto:maarten@open-aec.com'); }}>
+          <a href="#" class="bs-about-link" onClick={(e) => { e.preventDefault(); openExternal('mailto:support@usemarkset.com'); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
               <polyline points="22,6 12,13 2,6"/>
@@ -81,6 +82,8 @@ export default function AboutDialog() {
             {t('aboutPanel.contact')}
           </a>
         </div>
+
+        <ForkNotice />
 
         <div class="bs-about-footer">
           <p class="bs-about-copyright">{t('aboutPanel.copyright')}</p>
