@@ -15,6 +15,9 @@ import {
   sheetOptionLabel,
   formatImperialLength,
   isFeetInchText,
+  imperialOr,
+  defaultScaleBar,
+  unitDefaultsFor,
 } from './us-units.js';
 
 test('formatFeetInches rounds to the fraction and reduces it', () => {
@@ -148,4 +151,29 @@ test('formatImperialLength picks feet-inch only for ft and in lengths', () => {
 test('isFeetInchText', () => {
   for (const s of [`12'-6 3/8"`, `0'-6"`, `3/8"`, `6 3/8"`, `150"`]) assert.ok(isFeetInchText(s), s);
   for (const s of ['1550 mm', '12.50 ft', '45°', '', null]) assert.ok(!isFeetInchText(s), String(s));
+});
+
+test('imperialOr: feet-inch per the preferences, else the caller text', () => {
+  assert.equal(imperialOr(12.5, 'ft', {}, '12.50 ft'), `12'-6"`);
+  assert.equal(imperialOr(12 + 6.3 / 12, 'ft', { measureFractionDenominator: 8 }, 'x'), `12'-6 1/4"`);
+  assert.equal(imperialOr(12.5, 'ft', { measureImperialFormat: 'decimal' }, '12.50 ft'), '12.50 ft');
+  assert.equal(imperialOr(1500, 'mm', {}, '1500'), '1500');
+  assert.equal(imperialOr(10, 'ft²', {}, '10.00 ft²'), '10.00 ft²');
+  assert.equal(imperialOr(3.0625, 'in', undefined, 'x'), '3 1/16"');
+});
+
+test('defaultScaleBar: 5 m metric, 20 ft or 24 in imperial', () => {
+  assert.deepEqual(defaultScaleBar('mm'), { totalUnits: 5000, divisions: 5 });
+  assert.deepEqual(defaultScaleBar('m'), { totalUnits: 5, divisions: 5 });
+  assert.deepEqual(defaultScaleBar('ft'), { totalUnits: 20, divisions: 4 });
+  assert.deepEqual(defaultScaleBar('in'), { totalUnits: 24, divisions: 4 });
+  assert.deepEqual(defaultScaleBar('px'), { totalUnits: 5000, divisions: 5 });
+});
+
+test('unitDefaultsFor: US unless the preference says metric', () => {
+  assert.equal(unitDefaultsFor(undefined).unit, 'ft');
+  assert.deepEqual(unitDefaultsFor({ unitSystem: 'us' }),
+    { unit: 'ft', ratio: 48, scaleString: '1:48', viewportPreset: 'us:48', paper: 'arch-d' });
+  assert.deepEqual(unitDefaultsFor({ unitSystem: 'metric' }),
+    { unit: 'mm', ratio: 100, scaleString: '1:100', viewportPreset: '100', paper: 'a1' });
 });

@@ -1,6 +1,7 @@
 import { For, Show, createMemo } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { state, getActiveDocument } from '../../../../core/state.js';
+import { imperialOr } from '../../../../../markset/us-units.js'; // Markset
 import { getScaleForPoint } from '../../../../annotations/scale-bar.js';
 import { redrawAnnotations, redrawContinuous } from '../../../../annotations/rendering.js';
 import { showProperties } from '../../../../ui/panels/properties-panel.js';
@@ -79,7 +80,7 @@ export default function MeasurementsPanel() {
         const values = items.filter(m => m.measureValue != null).map(m => m.measureValue);
         const sum = values.reduce((a, b) => a + b, 0);
         const unit = items[0]?.measureUnit || '';
-        result[type] = sum.toFixed(2) + ' ' + unit;
+        result[type] = imperialOr(sum, unit, state.preferences, sum.toFixed(2) + ' ' + unit); // Markset
       }
     }
     return result;

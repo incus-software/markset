@@ -8,6 +8,7 @@ import { scanTitleBlocks, openTitleBlocksFolder, addTitleBlockFile, composeFrame
   from '../../../pdf/titleblocks.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { ANSI_SHEETS, ARCH_SHEETS, sheetOptionLabel, US_SHEETS } from '../../../../markset/us-units.js'; // Markset
+import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
 
 // Preferred defaults when the dialog opens: OpenAEC Grootformaat frame,
 // A1, landscape (liggend). These only take effect when a matching frame
@@ -42,7 +43,7 @@ export default function NewDocDialog() {
   const { t } = useTranslation('dialogs');
   const { t: tCommon } = useTranslation('common');
 
-  const [paperSize, setPaperSize] = createSignal(DEFAULT_PAPER);
+  const [paperSize, setPaperSize] = createSignal(unitDefaults().paper || DEFAULT_PAPER); // Markset: ARCH D in US units
   const [orientation, setOrientation] = createSignal(DEFAULT_ORIENTATION);
   const [numPages, setNumPages] = createSignal(1);
   const [customWidth, setCustomWidth] = createSignal(210);

@@ -162,6 +162,7 @@ export interface Preferences {
   // Markset: US units — 'feet-inch' shows ft/in lengths as 12'-6 3/8"
   measureImperialFormat: 'feet-inch' | 'decimal';
   measureFractionDenominator: number;
+  unitSystem: 'us' | 'metric';
 
   // Measure Distance defaults
   measureDistStrokeColor: string;

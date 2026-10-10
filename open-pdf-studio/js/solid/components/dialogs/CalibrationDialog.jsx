@@ -13,6 +13,7 @@ import {
   endUndoTransaction,
 } from '../../../core/undo-manager.js';
 import { ARCHITECTURAL_SCALES, ENGINEERING_SCALES, US_SCALES, findUsScale, parseLengthAs } from '../../../../markset/us-units.js'; // Markset
+import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
 
 const SCALE_PRESETS = [
   '1:1', '1:2', '1:5', '1:10', '1:20', '1:25', '1:50',
@@ -106,13 +107,13 @@ export default function CalibrationDialog(props) {
 
   // Method 1: Reference line
   const [distance, setDistance] = createSignal(1);
-  const [unit, setUnit] = createSignal('mm');
+  const [unit, setUnit] = createSignal(unitDefaults().unit); // Markset
   const [pixels, setPixels] = createSignal(72);
 
   // Method 2: Scale ratio
-  const [scalePreset, setScalePreset] = createSignal('1:100');
+  const [scalePreset, setScalePreset] = createSignal(unitDefaults().scaleString); // Markset
   const [customScale, setCustomScale] = createSignal(100);
-  const [ratioUnit, setRatioUnit] = createSignal('mm');
+  const [ratioUnit, setRatioUnit] = createSignal(unitDefaults().unit); // Markset
   const [pageSizeText, setPageSizeText] = createSignal('');
   const [detecting, setDetecting] = createSignal(false);
   const [detectResult, setDetectResult] = createSignal(null); // null | 'found' | 'notfound'

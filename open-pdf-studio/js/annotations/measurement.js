@@ -14,7 +14,7 @@ import {
   beginUndoTransaction,
   endUndoTransaction,
 } from '../core/undo-manager.js';
-import { formatImperialLength } from '../../markset/us-units.js'; // Markset
+import { formatImperialLength, imperialOr } from '../../markset/us-units.js'; // Markset
 
 // Scale calibration: pixels per unit
 // Priority: scaleRegion (innermost containing point) → viewport annotation →
@@ -256,7 +256,7 @@ export function setScaleFromLine(pixelLength, realValue, unit, sourceAnnotation)
     sourceAnnotation.measureScale = realValue / pixelLength;
     sourceAnnotation.measureUnit = unit;
     const prec = sourceAnnotation.measurePrecision !== undefined ? sourceAnnotation.measurePrecision : 2;
-    sourceAnnotation.measureText = `${realValue.toFixed(prec)} ${unit}`;
+    sourceAnnotation.measureText = imperialOr(realValue, unit, state.preferences, `${realValue.toFixed(prec)} ${unit}`); // Markset
     sourceAnnotation.modifiedAt = new Date().toISOString();
 
     // Redraw canvas

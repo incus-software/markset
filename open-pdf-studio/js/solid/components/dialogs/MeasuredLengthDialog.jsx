@@ -12,6 +12,7 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 import { cloneAnnotation } from '../../../annotations/factory.js';
 import { recordBulkModify } from '../../../core/undo-manager.js';
 import { parseLengthAs } from '../../../../markset/us-units.js'; // Markset
+import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
 
 function redraw() {
   const doc = getActiveDocument();
@@ -38,7 +39,7 @@ export default function MeasuredLengthDialog(props) {
   const target = data.target || {};
   const pixelDistance = Number(data.pixelDistance) || 0;
 
-  const defaultUnit = target.restore?.units || target.defaultUnit || 'mm';
+  const defaultUnit = target.restore?.units || target.defaultUnit || unitDefaults().unit; // Markset
   const [value, setValue] = createSignal('');
   const [unit, setUnit] = createSignal(defaultUnit);
 

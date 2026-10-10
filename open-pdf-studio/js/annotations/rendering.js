@@ -1,4 +1,5 @@
 import { state, getActiveDocument, getPageRotation, imageCache } from '../core/state.js';
+import { imperialOr } from '../../markset/us-units.js'; // Markset
 import { annotationCanvas, annotationCtx, textHighlightCanvas, textHighlightCtx } from '../ui/dom-elements.js';
 import { updateStatusAnnotations } from '../ui/chrome/status-bar.js';
 import { updateAnnotationsList } from '../ui/panels/annotations-list.js';
@@ -153,7 +154,7 @@ function _drawPolarOverlay(ctx, snapResult, scale) {
     }
   } catch (_) { /* ignore */ }
   const angleDeg = (angle * 180 / Math.PI + 360) % 360;
-  const text = `Polar: ${angleDeg.toFixed(2)}° < ${lenInUnits.toFixed(2)} ${unit}`;
+  const text = `Polar: ${angleDeg.toFixed(2)}° < ${imperialOr(lenInUnits, unit, state.preferences, `${lenInUnits.toFixed(2)} ${unit}`)}`; // Markset
   // Rechtop op het scherm, ook in een gedraaide weergave (#200).
   zetRechtopRond(ctx, snapResult.x, snapResult.y);
   const fontSize = 11 / scale;

@@ -279,6 +279,46 @@ export function formatImperialLength(value, unit, format = 'feet-inch', denomina
   return null;
 }
 
+/**
+ * Feet-inch text for a ft/in length when the preferences ask for it, else
+ * `fallback` (the caller's own decimal text). `prefs` is state.preferences.
+ * Lets upstream call sites keep their expression as the fallback.
+ */
+export function imperialOr(value, unit, prefs, fallback) {
+  return formatImperialLength(value, unit, prefs?.measureImperialFormat,
+    prefs?.measureFractionDenominator) ?? fallback;
+}
+
+// --- Unit system ------------------------------------------------------------
+//
+// The unitSystem preference ('us' by default in Markset, or 'metric') picks the
+// starting values of the scale and sheet dialogs. Existing scales on a
+// document always win; this only fills in what the user has not chosen yet.
+
+export const UNIT_SYSTEMS = Object.freeze(['us', 'metric']);
+
+const DEFAULTS = Object.freeze({
+  us: Object.freeze({ unit: 'ft', ratio: 48, scaleString: '1:48', viewportPreset: 'us:48', paper: 'arch-d' }),
+  metric: Object.freeze({ unit: 'mm', ratio: 100, scaleString: '1:100', viewportPreset: '100', paper: 'a1' }),
+});
+
+/** Dialog defaults for the unit system in `prefs` (state.preferences). */
+export function unitDefaultsFor(prefs) {
+  return prefs?.unitSystem === 'metric' ? DEFAULTS.metric : DEFAULTS.us;
+}
+
+// A new scale bar: 5 m in metric units, 20' (5' steps) or 24" (6" steps) in
+// imperial ones. Unknown units keep the old 5000-unit default.
+const SCALE_BAR_DEFAULTS = {
+  mm: [5000, 5], cm: [500, 5], m: [5, 5], ft: [20, 4], in: [24, 4],
+};
+
+/** { totalUnits, divisions } for a new scale bar in `unit`. */
+export function defaultScaleBar(unit) {
+  const [totalUnits, divisions] = SCALE_BAR_DEFAULTS[unit] || [5000, 5];
+  return { totalUnits, divisions };
+}
+
 // `12'-6 3/8"`, `0'-6"`, `3/8"`, `6 3/8"`: the unit marks are part of the
 // number, so a "hide the unit" option must leave them alone.
 const FEET_INCH_TEXT = /(?:\d+'-)?(?:\d+(?: \d+\/\d+)?|\d+\/\d+)"$/;

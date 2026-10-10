@@ -2,6 +2,7 @@ import { createSignal, batch } from 'solid-js';
 import { DRAFTING_RULE_TYPES, effectiveDraftingLineWidth } from '../../annotations/drafting-rules.js';
 import { createStore } from 'solid-js/store';
 import { state, getActiveDocument } from '../../core/state.js';
+import { imperialOr } from '../../../markset/us-units.js'; // Markset
 import {
   recordPropertyChange,
   recordModify,
@@ -376,7 +377,8 @@ export function storeShowProperties(annotation) {
           const midX = (annotation.startX + annotation.endX) / 2;
           const midY = (annotation.startY + annotation.endY) / 2;
           const ms = getMeasureScale(annotation.page, midX, midY);
-          return `${(pxLen / (ms.pixelsPerUnit || 1)).toFixed(2)} ${ms.unit || 'mm'}`;
+          const len = pxLen / (ms.pixelsPerUnit || 1);
+          return imperialOr(len, ms.unit, state.preferences, `${len.toFixed(2)} ${ms.unit || 'mm'}`); // Markset
         })()
       : '',
     measureScale: annotation.measureScale || 0,
@@ -1223,7 +1225,8 @@ function recomputeMeasureText(ann) {
     ann.measurePixels = pixelDist;
     ann.measureValue = scaledVal;
     // mm is the implied drawing unit on dimensions — no suffix.
-    ann.measureText = unit === 'mm' ? scaledVal.toFixed(prec) : `${scaledVal.toFixed(prec)} ${unit}`;
+    ann.measureText = imperialOr(scaledVal, unit, state.preferences, // Markset: feet-inch
+      unit === 'mm' ? scaledVal.toFixed(prec) : `${scaledVal.toFixed(prec)} ${unit}`);
   } else if (ann.type === 'measureDistance') {
     // No per-annotation scale override (cleared or never set): fall back to
     // the document/region scale so clearing the override actually reverts
