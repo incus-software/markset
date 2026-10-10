@@ -27,6 +27,7 @@ working notes for keeping the fork mergeable.
 | 2026-10-10 | Added NOTICE.md, this file, the dependency license report and a Windows CI build (`.github/workflows/markset-windows.yml`). |
 | 2026-10-10 | US units (`markset/us-units.js`): ft/in measurements display as feet-inch fractions (preference, default 1/16"); length fields accept `12'-6 3/8"`; architectural and engineering scale presets; title-block detection reads `1/4" = 1'-0"` as 1:48 in feet (it was read as 1:4); ANSI A-E and ARCH A-E1 sheets in New Document and Insert Page. Hooks are marked `Markset:` in measurement.js, maat-label.js, document-scale.js, loader.js, constants.ts, preferences.ts, the calibration/scale/viewport/scale-region/measured-length dialogs, NewDocDialog, InsertPageDialog and AnnotationsTab. |
 | 2026-10-10 | US units, part 2: feet-inch text in the remaining places that formatted lengths themselves (propertiesStore.js, annotation-creators.js, annotation-converter.js, measurement.js, rendering.js, snap-engine.js, MeasurementsPanel.jsx); a new scale bar is 5 m in any metric unit and 20'/24" in imperial ones (was 5000 of any unit, scale-bar.js); `unitSystem` preference for dialog defaults. |
+| 2026-10-10 | Fixed the brand overlay (`markset/vite-brand.mjs`): it skipped every file because the repository checkout is itself named "markset"; it now skips only `open-pdf-studio/markset/`. |
 
 ## Known follow-ups
 
