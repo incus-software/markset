@@ -6,7 +6,7 @@ import { getAppVersion, buildUserAgent } from '../../../core/platform.js';
 import { state } from '../../../core/state.js';
 import { savePreferences } from '../../../core/preferences.js';
 
-const API_URL = 'https://open-feedback-studio.pages.dev/api/feedback';
+const API_URL = 'https://usemarkset.com/api/feedback'; // Markset: never send user feedback to upstream
 const APP_ID = 'open-pdf-studio';
 const MAX_IMAGES = 3;
 const MAX_TOTAL_SIZE = 1024 * 1024; // 1MB

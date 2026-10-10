@@ -41,7 +41,7 @@
       "deb",
       "appimage"
     ],
-    "createUpdaterArtifacts": "v1Compatible",
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -106,9 +106,9 @@
     },
     "updater": {
       "endpoints": [
-        "https://github.com/OpenAEC-Foundation/OpenPDFStudio/releases/latest/download/latest.json"
+        "https://usemarkset.com/updates/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4N0ZBNjRBREVFNDE2M0EKUldRNkZ1VGVTcVovV0xkNk53STYvdXExbWtkTThIdDdzS0JFdG5VTXBqUlpFOUYrcm1rYTA0eTYK"
+      "pubkey": "MARKSET_UPDATER_PUBKEY_NOT_SET"
     },
     "deep-link": {
       "mobile": [

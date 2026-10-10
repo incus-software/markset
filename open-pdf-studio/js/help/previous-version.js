@@ -3,7 +3,7 @@
 // update in één klik terug kan. De download loopt via de browser (de
 // installer vraagt zelf om bevestiging/UAC); de app voert niets stil uit.
 
-const RELEASES_API = 'https://api.github.com/repos/OpenAEC-Foundation/open-pdf-studio/releases?per_page=30';
+const RELEASES_API = 'https://api.github.com/repos/incus-software/markset/releases?per_page=30';
 
 // "1.93.1" of "v1.93.1" → [1, 93, 1]; null bij alles wat geen kale
 // major.minor.patch is (nightly's, pre-releases met suffix, enz.).
