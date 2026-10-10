@@ -5,6 +5,8 @@
 // afleiden uit de pagina, een handmatige keuze per document onthouden, en de
 // argumenten voor print_pdf. Geen DOM, geen state — volledig te testen.
 
+import { US_PRINT_FORMATS } from '../../markset/us-units.js'; // Markset
+
 /** Een verlengd vel is het basisvel plus één A4-breedte in de lengte; het vouwt terug naar A4. */
 export const VERLENGING_MM = 210;
 
@@ -33,11 +35,13 @@ export const PAPIERFORMATEN = Object.freeze({
   letter: { breedte: 216, hoogte: 279, label: 'Letter' },
   legal: { breedte: 216, hoogte: 356, label: 'Legal' },
   tabloid: { breedte: 279, hoogte: 432, label: 'Tabloid' },
+  ...US_PRINT_FORMATS, // Markset: ANSI C-E, ARCH A-E1 (keys match print_instelling.rs)
 });
 
 /** Tekst in de keuzelijst en in de kop van de printdialoog: "A3L (297 x 630 mm)". */
 export function formaatTekst(sleutel) {
   const f = PAPIERFORMATEN[sleutel];
+  if (f?.inches) return `${f.label} (${f.inches})`; // Markset: US sheets in inches
   return f ? `${f.label} (${f.breedte} x ${f.hoogte} mm)` : null;
 }
 

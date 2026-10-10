@@ -35,6 +35,16 @@ pub const PAPER_SIZES: &[PaperSize] = &[
     PaperSize { id: "A0", width_mm: 841.0, height_mm: 1189.0, automatic: true },
     PaperSize { id: "Letter", width_mm: 215.9, height_mm: 279.4, automatic: false },
     PaperSize { id: "Tabloid", width_mm: 279.4, height_mm: 431.8, automatic: false },
+    // Markset: US sheets (ANSI C-E, ARCH A-E1); chosen by hand, never automatically.
+    PaperSize { id: "ANSI-C", width_mm: 431.8, height_mm: 558.8, automatic: false },
+    PaperSize { id: "ANSI-D", width_mm: 558.8, height_mm: 863.6, automatic: false },
+    PaperSize { id: "ANSI-E", width_mm: 863.6, height_mm: 1117.6, automatic: false },
+    PaperSize { id: "ARCH-A", width_mm: 228.6, height_mm: 304.8, automatic: false },
+    PaperSize { id: "ARCH-B", width_mm: 304.8, height_mm: 457.2, automatic: false },
+    PaperSize { id: "ARCH-C", width_mm: 457.2, height_mm: 609.6, automatic: false },
+    PaperSize { id: "ARCH-D", width_mm: 609.6, height_mm: 914.4, automatic: false },
+    PaperSize { id: "ARCH-E1", width_mm: 762.0, height_mm: 1066.8, automatic: false },
+    PaperSize { id: "ARCH-E", width_mm: 914.4, height_mm: 1219.2, automatic: false },
 ];
 
 pub fn paper_by_id(id: &str) -> Option<&'static PaperSize> {

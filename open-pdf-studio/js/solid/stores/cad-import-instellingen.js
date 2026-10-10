@@ -69,7 +69,9 @@ const KEUZES = Object.freeze({
   target: ['new', 'append', 'underlay'],
   units: ['file', 'mm', 'cm', 'm', 'in', 'ft'],
   area: ['extents', 'limits', 'window'],
-  paper: ['auto', 'A4', 'A3', 'A3L', 'A2', 'A2L', 'A1', 'A1L', 'A0', 'Letter', 'Tabloid', 'custom'],
+  paper: ['auto', 'A4', 'A3', 'A3L', 'A2', 'A2L', 'A1', 'A1L', 'A0', 'Letter', 'Tabloid',
+    'ANSI-C', 'ANSI-D', 'ANSI-E', 'ARCH-A', 'ARCH-B', 'ARCH-C', 'ARCH-D', 'ARCH-E1', 'ARCH-E', // Markset
+    'custom'],
   orientation: ['auto', 'portrait', 'landscape'],
   placement: ['center', 'lower_left', 'origin'],
   colors: ['file', 'black', 'gray', 'mono', 'single'],
