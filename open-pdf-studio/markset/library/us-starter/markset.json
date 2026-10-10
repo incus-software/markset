@@ -1,5 +1,5 @@
 {
-  "comment": "Markset-only symbol data, next to the upstream-format collection files. paperHeightIn is the printed height on a 24x36 sheet (width follows the viewBox); role 'review' marks print in the review mark color, 'drawing' symbols print black; shortcut is a single key.",
+  "comment": "Markset-only symbol data, next to the upstream-format collection files. paperHeightIn is the printed height on a 24x36 sheet (width follows the viewBox); role 'review' marks print in the review mark color, 'drawing' symbols print black, 'stamp' keeps its own meaning color; shortcut is a single key.",
   "symbols": {
     "checkmark": { "name": "Checkmark", "paperHeightIn": 0.375, "role": "review", "shortcut": "k" },
     "x-mark": { "name": "X", "paperHeightIn": 0.375, "role": "review", "shortcut": "x" },
@@ -26,6 +26,21 @@
     "damage": { "name": "Damage", "paperHeightIn": 0.375, "role": "review" },
     "water-moisture": { "name": "Water / moisture", "paperHeightIn": 0.375, "role": "review" },
     "crack": { "name": "Crack", "paperHeightIn": 0.375, "role": "review" },
-    "camera": { "name": "Camera (photo taken here)", "paperHeightIn": 0.375, "role": "review" }
+    "camera": { "name": "Camera (photo taken here)", "paperHeightIn": 0.375, "role": "review" },
+    "stamp-reviewed": { "name": "Reviewed", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-no-exceptions-taken": { "name": "No Exceptions Taken", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-make-corrections-noted": { "name": "Make Corrections Noted", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-revise-and-resubmit": { "name": "Revise and Resubmit", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-rejected": { "name": "Rejected", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-submit-specified-item": { "name": "Submit Specified Item", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-for-record-only": { "name": "For Record Only", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-preliminary": { "name": "Preliminary – Not for Construction", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-issued-for-permit": { "name": "Issued for Permit", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-issued-for-bid": { "name": "Issued for Bid", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-issued-for-construction": { "name": "Issued for Construction", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-record-drawing": { "name": "Record Drawing", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-superseded": { "name": "Superseded", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-void": { "name": "Void", "paperHeightIn": 0.625, "role": "stamp" },
+    "stamp-draft": { "name": "Draft", "paperHeightIn": 0.625, "role": "stamp" }
   }
 }
