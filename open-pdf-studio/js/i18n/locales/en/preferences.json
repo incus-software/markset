@@ -36,6 +36,7 @@
   "annotations": {
     "generalDefaults": "General Defaults",
     "defaultAnnotationColor": "Default Annotation Color",
+    "reviewMarkColor": "Review Mark Color (checkmark, X)",
     "defaultLineWidth": "Default Line Width",
     "defaultFontSize": "Default Font Size",
     "highlightOpacity": "Highlight Opacity",

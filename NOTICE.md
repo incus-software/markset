@@ -14,3 +14,7 @@ by the OpenAEC Foundation and its contributors.
 - Third-party components keep their own licenses; see
   [open-pdf-studio/markset/licenses.md](open-pdf-studio/markset/licenses.md).
   Source for MPL-2.0 components is available from their upstream crates.
+- The symbol and stamp artwork in
+  [open-pdf-studio/markset/library/](open-pdf-studio/markset/library/) is
+  licensed under the MIT License (see its LICENSE file), so it can be used
+  freely in drawings and documents.

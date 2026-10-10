@@ -127,6 +127,11 @@ export default function AnnotationsTab(props) {
                 <label>{t('annotations.defaultAnnotationColor')}</label>
                 <PrefColorPicker value={p.defaultAnnotationColor[0]} setValue={p.defaultAnnotationColor[1]} />
               </div>
+              {/* Markset: color of the checkmark, X and other review marks */}
+              <div class="pref-row">
+                <label>{t('annotations.reviewMarkColor')}</label>
+                <PrefColorPicker value={p.reviewMarkColor[0]} setValue={p.reviewMarkColor[1]} />
+              </div>
               <div class="pref-row">
                 <label>{t('annotations.defaultLineWidth')}</label>
                 <PrefComboBox value={p.defaultLineWidth[0]} setValue={p.defaultLineWidth[1]} options={[0.5,1,2,3,4,6,8,10,12]} min={0.5} max={20} fallback={2} suffix="pt" />

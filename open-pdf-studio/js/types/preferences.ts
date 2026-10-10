@@ -44,6 +44,7 @@ export interface Preferences {
 
   // Appearance
   defaultAnnotationColor: string;
+  reviewMarkColor: string; // Markset
   defaultLineWidth: number;
   defaultFontSize: number;
   highlightOpacity: number;
