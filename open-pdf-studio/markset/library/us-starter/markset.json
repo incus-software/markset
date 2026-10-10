@@ -1,5 +1,5 @@
 {
-  "comment": "Markset-only symbol data, next to the upstream-format collection files. paperHeightIn is the printed height on a 24x36 sheet; role 'review' marks print in the review mark color; shortcut is a single key.",
+  "comment": "Markset-only symbol data, next to the upstream-format collection files. paperHeightIn is the printed height on a 24x36 sheet (width follows the viewBox); role 'review' marks print in the review mark color, 'drawing' symbols print black; shortcut is a single key.",
   "symbols": {
     "checkmark": { "name": "Checkmark", "paperHeightIn": 0.375, "role": "review", "shortcut": "k" },
     "x-mark": { "name": "X", "paperHeightIn": 0.375, "role": "review", "shortcut": "x" },
@@ -11,6 +11,21 @@
     "ok": { "name": "OK", "paperHeightIn": 0.5, "role": "review" },
     "eq": { "name": "EQ (equal)", "paperHeightIn": 0.5, "role": "review" },
     "see-comment-dot": { "name": "See comment dot", "paperHeightIn": 0.25, "role": "review" },
-    "strike-line": { "name": "Strike line", "paperHeightIn": 0.75, "role": "review" }
+    "strike-line": { "name": "Strike line", "paperHeightIn": 0.75, "role": "review" },
+    "north-arrow": { "name": "North arrow", "paperHeightIn": 1, "role": "drawing" },
+    "centerline": { "name": "Centerline", "paperHeightIn": 0.375, "role": "drawing" },
+    "break-line": { "name": "Break line", "paperHeightIn": 0.375, "role": "drawing" },
+    "match-line": { "name": "Match line", "paperHeightIn": 0.375, "role": "drawing" },
+    "level-datum": { "name": "Level datum", "paperHeightIn": 0.375, "role": "drawing" },
+    "spot-elevation": { "name": "Spot elevation", "paperHeightIn": 0.25, "role": "drawing" },
+    "punch-pin": { "name": "Punch pin", "paperHeightIn": 0.375, "role": "review" },
+    "finish": { "name": "Finish", "paperHeightIn": 0.375, "role": "review" },
+    "door-hardware": { "name": "Door / hardware", "paperHeightIn": 0.375, "role": "review" },
+    "mep": { "name": "MEP", "paperHeightIn": 0.375, "role": "review" },
+    "safety": { "name": "Safety", "paperHeightIn": 0.375, "role": "review" },
+    "damage": { "name": "Damage", "paperHeightIn": 0.375, "role": "review" },
+    "water-moisture": { "name": "Water / moisture", "paperHeightIn": 0.375, "role": "review" },
+    "crack": { "name": "Crack", "paperHeightIn": 0.375, "role": "review" },
+    "camera": { "name": "Camera (photo taken here)", "paperHeightIn": 0.375, "role": "review" }
   }
 }
