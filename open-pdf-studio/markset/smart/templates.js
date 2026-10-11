@@ -37,9 +37,41 @@ const poly = (g, pts, w, { close = true, fill = false } = {}) =>
 const DIR = { up: -Math.PI / 2, down: Math.PI / 2, left: Math.PI, right: 0 };
 
 /**
- * The filled "hood" of a section or elevation indicator: the area between a
- * bubble (center cx, cy, radius r) and the two tangents that meet at a point
- * `reach` x r from the center, in direction `dir`.
+ * The winged hood of a section or elevation bubble: a filled triangle whose
+ * point is `reach` x r from the center in direction `dir` and whose base lies
+ * on the bubble's center line, wider than the bubble (the "wings"), minus
+ * the bubble itself.
+ */
+function wingHood(g, cx, cy, r, dir, reach = 1.8) {
+  const t = DIR[dir] ?? DIR.up;
+  const d = [Math.cos(t), Math.sin(t)], n = [-d[1], d[0]];
+  const a = r * reach;
+  const wing = a * Math.tan(Math.asin(r / a)); // where the tangents meet the center line
+  const P = (s, k) => [cx + d[0] * s + n[0] * k, cy + d[1] * s + n[1] * k];
+  const pts = [P(a, 0), P(0, wing), P(0, r)];
+  const steps = 16;
+  for (let i = 1; i < steps; i++) {
+    const ang = t + Math.PI / 2 - (Math.PI * i) / steps;
+    pts.push([cx + r * Math.cos(ang), cy + r * Math.sin(ang)]);
+  }
+  pts.push(P(0, -r), P(0, -wing));
+  return poly(g, pts, 1, { fill: true });
+}
+
+/** Filled rectangular foot at the end of a cut line, standing on it. */
+function foot(g, x, cy, dir) {
+  const y1 = dir === 'down' ? cy + 20 : cy - 20;
+  return poly(g, [[x - 3, cy], [x + 3, cy], [x + 3, y1], [x - 3, y1]], 1, { fill: true });
+}
+
+/** "SIM" (similar) flag beside a bubble, when switched on. */
+const simFlag = (g, p, cx, cy, r) => (p.sim ? [text(g, cx + r * 1.05, cy + r * 1.15, 'SIM', r * 0.42)] : []);
+const simParam = { key: 'sim', label: 'SIM (similar)', labelEn: 'SIM (similar)', type: 'boolean', default: false };
+
+/**
+ * A plain tangent hood: the area between a bubble and the two tangents that
+ * meet `reach` x r from the center. Four of them with reach √2 make the black
+ * diamond corners of the interior elevation marker.
  */
 function hood(g, cx, cy, r, dir, reach = 1.8) {
   const t = DIR[dir] ?? DIR.up;
@@ -108,11 +140,11 @@ export const MARKSET_TEMPLATES = [
     defaultSize: { width: 128, height: 64 },
     markset: { paperHeightIn: 0.625, role: 'drawing' },
     params: [field('number', 'Section', 'A'), field('sheet', 'Sheet', 'A-301'),
-      choice('direction', 'Looking', 'up', DIRS), choice('side', 'Bubble at', 'left', ['left', 'right'])],
+      choice('direction', 'Looking', 'up', ['up', 'down']), choice('side', 'Bubble at', 'left', ['left', 'right']), simParam],
     render(p, box) {
       const g = grid(box), cx = endX(p), r = 16;
-      const cut = p.side === 'right' ? line(g, 4, 32, cx - r, 32, 2.5) : line(g, cx + r, 32, 124, 32, 2.5);
-      return [hood(g, cx, 32, r, p.direction), cut, ...splitBubble(g, cx, 32, r, p.number, p.sheet)];
+      const cut = p.side === 'right' ? line(g, 4, 32, cx - r * 1.2, 32, 2.5) : line(g, cx + r * 1.2, 32, 124, 32, 2.5);
+      return [wingHood(g, cx, 32, r, p.direction), cut, ...splitBubble(g, cx, 32, r, p.number, p.sheet), ...simFlag(g, p, cx, 32, r)];
     },
     editableLabels(p, box) { return bubbleLabels(grid(box), endX(p), 32, 16); },
   },
@@ -121,14 +153,16 @@ export const MARKSET_TEMPLATES = [
     name: 'Wall section', nameEn: 'Wall section', category: CAT,
     defaultSize: { width: 128, height: 64 },
     markset: { paperHeightIn: 0.625, role: 'drawing' },
-    params: [field('number', 'Section', '1'), field('sheet', 'Sheet', 'A-501'), choice('side', 'Bubble at', 'left', ['left', 'right'])],
+    params: [field('number', 'Section', '1'), field('sheet', 'Sheet', 'A-501'),
+      choice('direction', 'Looking', 'up', ['up', 'down']), choice('side', 'Bubble at', 'left', ['left', 'right']), simParam],
     render(p, box) {
       const g = grid(box), cx = endX(p), r = 16;
       const right = p.side === 'right';
       return [
-        right ? line(g, 10, 32, cx - r, 32, 2) : line(g, cx + r, 32, 118, 32, 2),
-        right ? line(g, 8, 22, 8, 42, 5) : line(g, 120, 22, 120, 42, 5),
-        ...splitBubble(g, cx, 32, r, p.number, p.sheet),
+        wingHood(g, cx, 32, r, p.direction),
+        right ? line(g, 9, 32, cx - r * 1.2, 32, 2) : line(g, cx + r * 1.2, 32, 119, 32, 2),
+        foot(g, right ? 7 : 121, 32, p.direction),
+        ...splitBubble(g, cx, 32, r, p.number, p.sheet), ...simFlag(g, p, cx, 32, r),
       ];
     },
     editableLabels(p, box) { return bubbleLabels(grid(box), endX(p), 32, 16); },
@@ -138,14 +172,15 @@ export const MARKSET_TEMPLATES = [
     name: 'Detail section (non-directional)', nameEn: 'Detail section (non-directional)', category: CAT,
     defaultSize: { width: 128, height: 64 },
     markset: { paperHeightIn: 0.625, role: 'drawing' },
-    params: [field('number', 'Detail', '2'), field('sheet', 'Sheet', 'A-501'), choice('side', 'Bubble at', 'left', ['left', 'right'])],
+    params: [field('number', 'Detail', '2'), field('sheet', 'Sheet', 'A-501'),
+      choice('direction', 'Foot', 'up', ['up', 'down']), choice('side', 'Bubble at', 'left', ['left', 'right']), simParam],
     render(p, box) {
       const g = grid(box), cx = endX(p), r = 16;
       const right = p.side === 'right';
       return [
-        right ? line(g, 60, 32, cx - r, 32, 2) : line(g, cx + r, 32, 68, 32, 2),
-        right ? line(g, 36, 32, 48, 32, 5) : line(g, 80, 32, 92, 32, 5),
-        ...splitBubble(g, cx, 32, r, p.number, p.sheet),
+        right ? line(g, 9, 32, cx - r, 32, 2) : line(g, cx + r, 32, 119, 32, 2),
+        foot(g, right ? 7 : 121, 32, p.direction),
+        ...splitBubble(g, cx, 32, r, p.number, p.sheet), ...simFlag(g, p, cx, 32, r),
       ];
     },
     editableLabels(p, box) { return bubbleLabels(grid(box), endX(p), 32, 16); },
@@ -169,34 +204,41 @@ export const MARKSET_TEMPLATES = [
     name: 'Exterior elevation', nameEn: 'Exterior elevation', category: CAT,
     defaultSize: { width: 64, height: 64 },
     markset: { paperHeightIn: 0.625, role: 'drawing' },
-    params: [field('number', 'Elevation', '1'), field('sheet', 'Sheet', 'A-201'), choice('direction', 'Looking', 'up', DIRS)],
-    render(p, box) { const g = grid(box); return [hood(g, 32, 32, 17, p.direction), ...splitBubble(g, 32, 32, 17, p.number, p.sheet)]; },
-    editableLabels(p, box) { return bubbleLabels(grid(box), 32, 32, 17); },
+    params: [field('number', 'Elevation', '1'), field('sheet', 'Sheet', 'A-201'), choice('direction', 'Looking', 'up', DIRS), simParam],
+    render(p, box) {
+      const g = grid(box);
+      return [wingHood(g, 32, 32, 16, p.direction), ...splitBubble(g, 32, 32, 16, p.number, p.sheet), ...simFlag(g, p, 32, 32, 16)];
+    },
+    editableLabels(p, box) { return bubbleLabels(grid(box), 32, 32, 16); },
   },
   {
+    // A black diamond of four corner pointers around a white circle with the
+    // sheet number; each pointer's elevation number sits outside its point.
     id: 'us-interior-elevation',
     name: 'Interior elevation', nameEn: 'Interior elevation', category: CAT,
     defaultSize: { width: 64, height: 64 },
     markset: { paperHeightIn: 0.75, role: 'drawing' },
-    params: [field('number', 'Drawing', '5'), field('sheet', 'Sheet', 'A-401'),
+    params: [field('sheet', 'Sheet', 'A-441'),
       field('n1', 'Elevation up', '1'), field('n2', 'Elevation right', '2'),
-      field('n3', 'Elevation down', '3'), field('n4', 'Elevation left', '4')],
+      field('n3', 'Elevation down', '3'), field('n4', 'Elevation left', '4'),
+      ...['up', 'right', 'down', 'left'].map(d => ({ key: `show_${d}`, label: `Pointer ${d}`, labelEn: `Pointer ${d}`, type: 'boolean', default: true }))],
     render(p, box) {
-      const g = grid(box);
-      return [
-        poly(g, [[32, 2], [62, 32], [32, 62], [2, 32]], 2),
-        poly(g, [[18, 21], [46, 21], [46, 43], [18, 43]], 2), line(g, 18, 32, 46, 32, 1.5),
-        text(g, 32, 26.5, p.number, 8), text(g, 32, 37.5, p.sheet, 7.5),
-        text(g, 32, 12, p.n1, 8), text(g, 53, 32, p.n2, 8), text(g, 32, 53, p.n3, 8), text(g, 11, 32, p.n4, 8),
-      ];
+      const g = grid(box), r = 14;
+      const cmds = [];
+      const spots = { up: [32, 5, 'n1'], right: [59, 32, 'n2'], down: [32, 59, 'n3'], left: [5, 32, 'n4'] };
+      for (const [d, [x, y, key]] of Object.entries(spots)) {
+        if (p[`show_${d}`] === false) continue;
+        cmds.push(hood(g, 32, 32, r, d, Math.SQRT2), text(g, x, y, p[key], 8));
+      }
+      cmds.push(circle(g, 32, 32, r, 1.5), text(g, 32, 32.5, p.sheet, 7.5));
+      return cmds;
     },
     editableLabels(p, box) {
       const g = grid(box);
       return [
-        { id: 'number', rect: labelRect(g, 32, 26.5, 26, 9), fields: ['number'] },
-        { id: 'sheet', rect: labelRect(g, 32, 37.5, 26, 9), fields: ['sheet'] },
-        { id: 'n1', rect: labelRect(g, 32, 12, 10, 10), fields: ['n1'] }, { id: 'n2', rect: labelRect(g, 53, 32, 10, 10), fields: ['n2'] },
-        { id: 'n3', rect: labelRect(g, 32, 53, 10, 10), fields: ['n3'] }, { id: 'n4', rect: labelRect(g, 11, 32, 10, 10), fields: ['n4'] },
+        { id: 'sheet', rect: labelRect(g, 32, 32, 22, 10), fields: ['sheet'] },
+        { id: 'n1', rect: labelRect(g, 32, 5, 10, 9), fields: ['n1'] }, { id: 'n2', rect: labelRect(g, 59, 32, 10, 9), fields: ['n2'] },
+        { id: 'n3', rect: labelRect(g, 32, 59, 10, 9), fields: ['n3'] }, { id: 'n4', rect: labelRect(g, 5, 32, 10, 9), fields: ['n4'] },
       ];
     },
   },

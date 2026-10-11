@@ -76,10 +76,30 @@ test('section and elevation hoods point where the symbol looks', () => {
   assert.equal(circleX('right'), 104);
 });
 
-test('interior elevation: four editable elevation numbers around a detail/sheet box', () => {
+test('interior elevation: black corner pointers with numbers around a sheet circle', () => {
   const ie = T('us-interior-elevation');
-  const texts = renderTemplate(ie, { n1: 'A', n2: 'B', n3: 'C', n4: 'D' }, box(ie)).filter(c => c.kind === 'text').map(c => c.text);
-  assert.deepEqual(texts, ['5', 'A-401', 'A', 'B', 'C', 'D']);
+  const cmds = renderTemplate(ie, { n1: 'A', n2: 'B', n3: 'C', n4: 'D' }, box(ie));
+  assert.deepEqual(cmds.filter(c => c.kind === 'text').map(c => c.text), ['A', 'B', 'C', 'D', 'A-441']);
+  assert.equal(cmds.filter(c => c.kind === 'polyline' && c.fill).length, 4);
+  const two = renderTemplate(ie, { show_left: false, show_down: false }, box(ie));
+  assert.equal(two.filter(c => c.kind === 'polyline' && c.fill).length, 2);
+  assert.deepEqual(two.filter(c => c.kind === 'text').map(c => c.text), ['1', '2', 'A-441']);
+});
+
+test('sections: winged hood, rectangular foot on the hood side, optional SIM', () => {
+  const ws = T('us-wall-section');
+  const feet = (p) => renderTemplate(ws, p, box(ws)).filter(c => c.kind === 'polyline' && c.fill && c.points.length === 4);
+  const [up] = feet({}), [down] = feet({ direction: 'down' });
+  assert.ok(up.points.some(pt => pt.y < 32) && down.points.some(pt => pt.y > 32), 'foot stands on the hood side');
+  assert.ok(Math.min(...up.points.map(pt => pt.x)) > 100, 'foot at the far end');
+  // The winged hood reaches past the bubble along the center line.
+  const hoodPts = renderTemplate(ws, {}, box(ws)).find(c => c.kind === 'polyline' && c.fill && c.points.length > 4).points;
+  assert.ok(Math.max(...hoodPts.map(pt => pt.x)) > 24 + 16, 'wings wider than the bubble');
+  const ds = T('us-detail-section');
+  assert.equal(renderTemplate(ds, {}, box(ds)).filter(c => c.kind === 'polyline' && c.fill).length, 1, 'detail section: foot, no hood');
+  const sim = (on) => renderTemplate(T('us-building-section'), { sim: on }, box(T('us-building-section'))).some(c => c.text === 'SIM');
+  assert.equal(sim(true), true);
+  assert.equal(sim(false), false);
 });
 
 test('grid bubble line can be switched off', () => {
