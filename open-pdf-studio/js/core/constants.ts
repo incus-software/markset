@@ -110,7 +110,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   // Appearance
   defaultAnnotationColor: '#FF0000',
-  reviewMarkColor: '#dd0000', // Markset: checkmark, X and other review marks
+  reviewMarkColor: '#FF0000', // Markset: checkmark, X and other review marks
+  markupColorScheme: 'red', // Markset: markset/color-schemes.js
+  customColorSchemes: [], // Markset: [{ id, name, color }]
   defaultLineWidth: 2,
   defaultFontSize: 16,
   highlightOpacity: 50,

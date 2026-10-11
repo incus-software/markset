@@ -45,6 +45,8 @@ export interface Preferences {
   // Appearance
   defaultAnnotationColor: string;
   reviewMarkColor: string; // Markset
+  markupColorScheme: string; // Markset
+  customColorSchemes: Array<{ id: string; name: string; color: string }>; // Markset
   defaultLineWidth: number;
   defaultFontSize: number;
   highlightOpacity: number;

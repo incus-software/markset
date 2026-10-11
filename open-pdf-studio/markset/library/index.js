@@ -22,7 +22,7 @@ export const MARKSET_CATEGORIES = bundledGroups(files).map(g => (SMART_GROUP[g.i
   ? { ...g, symbols: [...g.symbols, ...smartPaletteEntries(undefined, SMART_GROUP[g.id])] }
   : g));
 
-export const DEFAULT_REVIEW_MARK_COLOR = '#dd0000';
+export const DEFAULT_REVIEW_MARK_COLOR = '#ff0000';
 
 /** The SVG to place: review marks take the review mark color preference. */
 export function marksetSymbolSvg(symbol, svg) {
