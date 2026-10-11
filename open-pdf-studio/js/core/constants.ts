@@ -1,5 +1,6 @@
 import type { Preferences } from '../types/preferences.js';
 import { MCP_STANDAARD } from './mcp-standaard.js';
+import { schemeValues, DEFAULT_SCHEME, SCHEME_DEFAULT_COLOR } from '../../markset/color-schemes.js'; // Markset
 
 // Handle types for annotation selection and manipulation
 export const HANDLE_SIZE = 6;
@@ -111,7 +112,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Appearance
   defaultAnnotationColor: '#FF0000',
   reviewMarkColor: '#FF0000', // Markset: checkmark, X and other review marks
-  markupColorScheme: 'red', // Markset: markset/color-schemes.js
+  markupColorScheme: DEFAULT_SCHEME, // Markset: markset/color-schemes.js
   customColorSchemes: [], // Markset: [{ id, name, color }]
   defaultLineWidth: 2,
   defaultFontSize: 16,
@@ -344,5 +345,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // CAD export/import (#400) — last used settings (null = dialog defaults)
   cadExportSettings: null,
   cadImportSettings: null,
-  cadImportPresets: null
+  cadImportPresets: null,
+
+  // Markset: new installs start on the Black markup color scheme; this
+  // overrides the red stroke defaults above (markset/color-schemes.js).
+  ...schemeValues(SCHEME_DEFAULT_COLOR),
 };

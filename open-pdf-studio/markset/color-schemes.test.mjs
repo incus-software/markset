@@ -8,7 +8,7 @@ import {
 
 test('presets: bright blue, red, green, orange and black', () => {
   assert.deepEqual(PRESET_SCHEMES.map(s => s.id), ['blue', 'red', 'green', 'orange', 'black']);
-  assert.equal(DEFAULT_SCHEME, 'red');
+  assert.equal(DEFAULT_SCHEME, 'black');
   for (const s of PRESET_SCHEMES) assert.match(s.color, /^#[0-9a-f]{6}$/);
 });
 
@@ -43,4 +43,12 @@ test('custom schemes: save, rename-safe ids, update by name, remove', () => {
   assert.equal(matchingScheme(schemeValues('#000080'), c.list).id, 'custom-navy-markup-2');
   assert.deepEqual(removeCustomScheme(c.list, 'custom-navy-markup').map(s => s.id), ['custom-navy-markup-2']);
   assert.deepEqual(removeCustomScheme(c.list, 'red').length, 2); // presets are not in the list
+});
+
+test('new installs start on the Black scheme', async () => {
+  const { DEFAULT_PREFERENCES } = await import('../js/core/constants.ts');
+  assert.equal(DEFAULT_PREFERENCES.markupColorScheme, 'black');
+  assert.equal(matchingScheme(DEFAULT_PREFERENCES).id, 'black');
+  for (const k of SCHEME_KEYS) assert.equal(DEFAULT_PREFERENCES[k], '#000000', k);
+  assert.equal(DEFAULT_PREFERENCES.highlightColor, '#FFFF00'); // not part of a scheme
 });

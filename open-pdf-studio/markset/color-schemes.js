@@ -15,7 +15,9 @@ export const PRESET_SCHEMES = Object.freeze([
   { id: 'black', name: 'Black', color: '#000000' },
 ].map(Object.freeze));
 
-export const DEFAULT_SCHEME = 'red';
+/** New installs start on Black (js/core/constants.ts applies it). */
+export const DEFAULT_SCHEME = 'black';
+export const SCHEME_DEFAULT_COLOR = '#000000';
 
 /** Preference keys a scheme sets. */
 export const SCHEME_KEYS = Object.freeze([
