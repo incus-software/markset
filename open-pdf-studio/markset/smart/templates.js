@@ -42,7 +42,7 @@ const DIR = { up: -Math.PI / 2, down: Math.PI / 2, left: Math.PI, right: 0 };
  * on the bubble's center line, wider than the bubble (the "wings"), minus
  * the bubble itself.
  */
-function wingHood(g, cx, cy, r, dir, reach = 1.8) {
+function wingHood(g, cx, cy, r, dir, reach = 1.4) {
   const t = DIR[dir] ?? DIR.up;
   const d = [Math.cos(t), Math.sin(t)], n = [-d[1], d[0]];
   const a = r * reach;
