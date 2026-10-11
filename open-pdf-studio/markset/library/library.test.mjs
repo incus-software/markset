@@ -42,7 +42,7 @@ test('the review marks batch is complete, in palette order', () => {
 
 test('batch 2: drawing symbols and punch / field icons', () => {
   const ids = (role) => starter.symbols.filter(s => s.markset?.role === role).map(s => s.markset.id);
-  assert.deepEqual(ids('drawing'), ['north-arrow', 'centerline', 'break-line', 'match-line', 'level-datum', 'spot-elevation']);
+  assert.deepEqual(ids('drawing'), ['north-arrow', 'centerline', 'break-line', 'match-line', 'align-note']);
   assert.deepEqual(ids('review').slice(11), [
     'punch-pin', 'finish', 'door-hardware', 'mep', 'safety', 'damage', 'water-moisture', 'crack', 'camera',
   ]);

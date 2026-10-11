@@ -12,14 +12,19 @@ import { svgToPdfAppearance } from '../svg-to-pdf.js';
 
 registerMarksetTemplates();
 const ARCH_D = [36 * 72, 24 * 72];
+const T = (id) => getTemplate(id);
+const box = (t, h = 64, x = 0, y = 0) => ({ x, y, width: h * (t.defaultSize.width / t.defaultSize.height), height: h });
 
-test('13 US templates are registered with English labels and defaults', () => {
-  assert.equal(MARKSET_TEMPLATES.length, 13);
-  const ids = new Set();
+test('19 US templates are registered with English labels and defaults', () => {
+  assert.deepEqual(MARKSET_TEMPLATES.map(t => t.id), [
+    'us-building-section', 'us-wall-section', 'us-detail-section', 'us-enlarged-detail',
+    'us-exterior-elevation', 'us-interior-elevation', 'us-elevation-target', 'us-spot-elevation',
+    'us-grid-bubble', 'us-drawing-title', 'us-revision-delta',
+    'us-room-tag', 'us-ceiling-height', 'us-door-tag', 'us-window-tag', 'us-partition-type',
+    'us-keynote-tag', 'us-equipment-tag', 'us-punch-marker',
+  ]);
   for (const t of MARKSET_TEMPLATES) {
-    assert.equal(getTemplate(t.id), t, t.id);
-    assert.ok(!ids.has(t.id)); ids.add(t.id);
-    assert.match(t.id, /^us-/);
+    assert.equal(T(t.id), t, t.id);
     assert.equal(t.category, 'US');
     assert.ok(t.markset.paperHeightIn > 0 && ['drawing', 'review'].includes(t.markset.role), t.id);
     for (const p of t.params) {
@@ -31,75 +36,95 @@ test('13 US templates are registered with English labels and defaults', () => {
 
 test('every template renders, converts to SVG and to a vector appearance', () => {
   for (const t of MARKSET_TEMPLATES) {
-    const box = { x: 10, y: 20, width: 36 * (t.defaultSize.width / t.defaultSize.height), height: 36 };
-    const cmds = renderTemplate(t, {}, box);
+    const b = box(t, 36, 10, 20);
+    const cmds = renderTemplate(t, {}, b);
     assert.ok(cmds.length > 0, t.id);
-    const svg = cmdsToSvg(cmds, box);
+    const svg = cmdsToSvg(cmds, b);
     assert.ok(svg, `${t.id}: svg`);
-    assert.ok(svgToPdfAppearance(svg, box.width, box.height), `${t.id}: vector`);
+    assert.ok(svgToPdfAppearance(svg, b.width, b.height), `${t.id}: vector`);
   }
 });
 
-test('typed values reach the drawing', () => {
-  const t = getTemplate('us-detail-callout');
-  const box = { x: 0, y: 0, width: 64, height: 64 };
-  const svg = cmdsToSvg(renderTemplate(t, { number: '7', sheet: 'A-999' }, box), box);
+test('drawing symbols use regular-weight text; the punch marker is bold', () => {
+  for (const t of MARKSET_TEMPLATES) {
+    const bold = renderTemplate(t, {}, box(t)).filter(c => c.kind === 'text' && c.bold).length;
+    assert.equal(bold > 0, t.id === 'us-punch-marker', t.id);
+  }
+});
+
+test('typed values reach the drawing (escaped)', () => {
+  const t = T('us-enlarged-detail');
+  const svg = cmdsToSvg(renderTemplate(t, { number: '7', sheet: 'A-999' }, box(t)), box(t));
   assert.match(svg, />7<\/text>/);
   assert.match(svg, />A-999<\/text>/);
-  const room = cmdsToSvg(renderTemplate(getTemplate('us-room-tag'), { name: 'LOBBY & STAIR' }, { x: 0, y: 0, width: 128, height: 64 }), { x: 0, y: 0, width: 128, height: 64 });
-  assert.match(room, />LOBBY &amp; STAIR</);
+  const room = T('us-room-tag');
+  assert.match(cmdsToSvg(renderTemplate(room, { name: 'LOBBY & STAIR' }, box(room)), box(room)), />LOBBY &amp; STAIR</);
+  const lvl = T('us-elevation-target');
+  assert.match(cmdsToSvg(renderTemplate(lvl, {}, box(lvl)), box(lvl)), />EL\. 100'-0"</);
 });
 
-test('section and elevation pointers follow the direction', () => {
-  const t = getTemplate('us-exterior-elevation');
-  const box = { x: 0, y: 0, width: 64, height: 64 };
-  const tip = (dir) => renderTemplate(t, { direction: dir }, box).find(c => c.kind === 'polyline').points[0];
-  assert.deepEqual(tip('up'), { x: 32, y: 2 });
-  assert.deepEqual(tip('right'), { x: 62, y: 32 });
-  const s = getTemplate('us-section-marker');
-  const cut = (on) => renderTemplate(s, { cutLine: on }, { x: 0, y: 0, width: 128, height: 64 }).filter(c => c.kind === 'line' && c.dash).length;
-  assert.equal(cut(true), 1);
-  assert.equal(cut(false), 0);
-  const ie = getTemplate('us-interior-elevation');
-  const arrows = (p) => renderTemplate(ie, p, box).filter(c => c.kind === 'polyline').length;
-  assert.equal(arrows({}), 4);
-  assert.equal(arrows({ show_left: false, show_down: false }), 2);
+test('section and elevation hoods point where the symbol looks', () => {
+  const ext = T('us-exterior-elevation');
+  const apex = (dir) => renderTemplate(ext, { direction: dir }, box(ext)).find(c => c.kind === 'polyline' && c.fill).points[0];
+  const up = apex('up'), right = apex('right');
+  assert.ok(Math.abs(up.x - 32) < 1e-6 && up.y < 32 - 17, 'up: apex above the bubble');
+  assert.ok(Math.abs(right.y - 32) < 1e-6 && right.x > 32 + 17, 'right: apex right of the bubble');
+  // Building section: bubble and cut line swap ends with `side`.
+  const bs = T('us-building-section');
+  const circleX = (side) => renderTemplate(bs, { side }, box(bs)).find(c => c.kind === 'circle').cx;
+  assert.equal(circleX('left'), 24);
+  assert.equal(circleX('right'), 104);
 });
 
-test('editable labels lie inside the symbol', () => {
+test('interior elevation: four editable elevation numbers around a detail/sheet box', () => {
+  const ie = T('us-interior-elevation');
+  const texts = renderTemplate(ie, { n1: 'A', n2: 'B', n3: 'C', n4: 'D' }, box(ie)).filter(c => c.kind === 'text').map(c => c.text);
+  assert.deepEqual(texts, ['5', 'A-401', 'A', 'B', 'C', 'D']);
+});
+
+test('grid bubble line can be switched off', () => {
+  const gb = T('us-grid-bubble');
+  const dashed = (on) => renderTemplate(gb, { gridLine: on }, box(gb)).filter(c => c.dash).length;
+  assert.equal(dashed(true), 1);
+  assert.equal(dashed(false), 0);
+});
+
+test('editable labels lie inside the symbol and name real fields', () => {
   for (const t of MARKSET_TEMPLATES) {
     if (!t.editableLabels) continue;
-    const box = { x: 100, y: 200, width: 64 * (t.defaultSize.width / t.defaultSize.height), height: 64 };
-    for (const l of t.editableLabels(t.params, box)) {
-      assert.ok(l.rect.x >= box.x - 0.01 && l.rect.y >= box.y - 0.01, `${t.id}/${l.id}`);
-      assert.ok(l.rect.x + l.rect.width <= box.x + box.width + 0.01 && l.rect.y + l.rect.height <= box.y + box.height + 0.01, `${t.id}/${l.id}`);
-      for (const f of l.fields) assert.ok(t.params.some(p => p.key === f), `${t.id}/${l.id}: ${f}`);
+    const b = box(t, 64, 100, 200);
+    for (const side of ['left', 'right']) {
+      for (const l of t.editableLabels({ side }, b)) {
+        assert.ok(l.rect.x >= b.x - 0.01 && l.rect.y >= b.y - 0.01, `${t.id}/${l.id}`);
+        assert.ok(l.rect.x + l.rect.width <= b.x + b.width + 0.01 && l.rect.y + l.rect.height <= b.y + b.height + 0.01, `${t.id}/${l.id}`);
+        for (const f of l.fields) assert.ok(t.params.some(p => p.key === f), `${t.id}/${l.id}: ${f}`);
+      }
     }
   }
 });
 
 test('placement: printed height on the sheet, centred on the click', () => {
-  const callout = smartPlacementBox(getTemplate('us-detail-callout'), 500, 300, ...ARCH_D);
-  assert.deepEqual(callout, { x: 482, y: 282, width: 36, height: 36 }); // 1/2" on 24x36
-  const room = smartPlacementBox(getTemplate('us-room-tag'), 0, 0, ...ARCH_D);
-  assert.deepEqual([room.width, room.height], [72, 36]);
-  assert.equal(smartPlacementBox(getTemplate('peilmaat'), 0, 0, ...ARCH_D), null); // upstream keeps its size
+  assert.deepEqual(smartPlacementBox(T('us-exterior-elevation'), 500, 300, ...ARCH_D), { x: 477.5, y: 277.5, width: 45, height: 45 }); // 5/8"
+  const title = smartPlacementBox(T('us-drawing-title'), 0, 0, ...ARCH_D);
+  assert.deepEqual([title.width, title.height], [144, 36]);
+  assert.equal(smartPlacementBox(T('peilmaat'), 0, 0, ...ARCH_D), null); // upstream keeps its size
 });
 
 test('colors: only the punch marker takes the review color', () => {
-  assert.deepEqual(smartColors(getTemplate('us-punch-marker'), '#0000ff'), { color: '#0000ff', strokeColor: '#0000ff' });
-  assert.deepEqual(smartColors(getTemplate('us-grid-bubble'), '#0000ff'), {});
-  assert.deepEqual(smartColors(getTemplate('peilmaat'), '#0000ff'), {});
+  assert.deepEqual(smartColors(T('us-punch-marker'), '#0000ff'), { color: '#0000ff', strokeColor: '#0000ff' });
+  assert.deepEqual(smartColors(T('us-grid-bubble'), '#0000ff'), {});
+  assert.deepEqual(smartColors(T('peilmaat'), '#0000ff'), {});
 });
 
 test('palette entries carry the template id and a vector preview', () => {
   const entries = smartPaletteEntries();
-  assert.equal(entries.length, 13);
+  assert.equal(entries.length, 19);
   for (const e of entries) {
-    assert.ok(getTemplate(e.parametricId), e.id);
-    assert.ok(svgToPdfAppearance(e.svg, 64, 64), e.id);
+    assert.ok(T(e.parametricId), e.id);
+    const vb = e.svg.match(/viewBox="0 0 ([\d.]+) 64"/);
+    assert.ok(vb && svgToPdfAppearance(e.svg, Number(vb[1]), 64), e.id);
   }
-  assert.match(templatePreviewSvg(getTemplate('us-punch-marker'), '#dd0000'), /#dd0000/);
+  assert.match(templatePreviewSvg(T('us-punch-marker'), '#dd0000'), /#dd0000/);
 });
 
 test('vector appearance: rotated into the envelope; PNG kept for others', async () => {
@@ -112,7 +137,6 @@ test('vector appearance: rotated into the envelope; PNG kept for others', async 
   const content = Buffer.from(ap.getContents()).toString('latin1');
   assert.match(content, /1 0 0 1 18 36 cm\n0 -1 1 0 0 0 cm\n1 0 0 1 -36 -18 cm/);
   assert.match(content, /\(OFFICE\) Tj/);
-  // Upstream templates and rotated pages keep the raster appearance.
   assert.equal(writeVectorParametricAppearance({ ann: { ...ann, symbolId: 'peilmaat' }, annotDict: ctx.obj({}), context: ctx, pdf: { PDFName }, rectW: 36, rectH: 72 }), false);
   assert.equal(writeVectorParametricAppearance({ ann, annotDict: ctx.obj({}), context: ctx, pdf: { PDFName }, rectW: 36, rectH: 72, pageRot: 90 }), false);
 });
