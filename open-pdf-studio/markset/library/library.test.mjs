@@ -130,3 +130,15 @@ test('sheet-relative height: 3/8" on 24x36, scaled down on smaller sheets', () =
   assert.equal(sheetSymbolHeight(0, 612, 792), null);
   assert.equal(sheetSymbolHeight(0.375, 0, 792), null);
 });
+
+test('US Electrical: its own group after the Starter Library, 22 black symbols', () => {
+  assert.deepEqual(groups.map(g => g.id), ['markset-us-starter', 'markset-us-electrical-starter']);
+  const el = groups[1];
+  assert.equal(el.name, 'US Electrical');
+  assert.equal(el.symbols.length, 22);
+  for (const s of el.symbols) {
+    assert.equal(s.markset?.role, 'drawing', s.name);
+    assert.doesNotMatch(s.svg, /#d00/, `${s.name}: prints black`);
+  }
+  assert.deepEqual(el.symbols.slice(0, 2).map(s => s.name), ['Single receptacle', 'Duplex receptacle']);
+});

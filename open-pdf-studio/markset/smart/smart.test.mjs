@@ -15,18 +15,18 @@ const ARCH_D = [36 * 72, 24 * 72];
 const T = (id) => getTemplate(id);
 const box = (t, h = 64, x = 0, y = 0) => ({ x, y, width: h * (t.defaultSize.width / t.defaultSize.height), height: h });
 
-test('19 US templates are registered with English labels and defaults', () => {
+test('21 US templates are registered with English labels and defaults', () => {
   assert.deepEqual(MARKSET_TEMPLATES.map(t => t.id), [
     'us-building-section', 'us-wall-section', 'us-detail-section', 'us-enlarged-detail',
     'us-exterior-elevation', 'us-interior-elevation', 'us-elevation-target', 'us-spot-elevation',
     'us-grid-bubble', 'us-drawing-title', 'us-revision-delta',
     'us-room-tag', 'us-ceiling-height', 'us-door-tag', 'us-window-tag', 'us-partition-type',
-    'us-keynote-tag', 'us-equipment-tag', 'us-punch-marker',
+    'us-keynote-tag', 'us-equipment-tag', 'us-punch-marker', 'us-plan-door', 'us-plan-window',
   ]);
   for (const t of MARKSET_TEMPLATES) {
     assert.equal(T(t.id), t, t.id);
     assert.equal(t.category, 'US');
-    assert.ok(t.markset.paperHeightIn > 0 && ['drawing', 'review'].includes(t.markset.role), t.id);
+    assert.ok((t.markset.paperHeightIn > 0 || t.markset.realSize) && ['drawing', 'review'].includes(t.markset.role), t.id);
     for (const p of t.params) {
       assert.ok(p.labelEn && p.label && p.default !== undefined, `${t.id}.${p.key}`);
       if (p.type === 'enum') assert.ok(p.options.some(o => o.value === p.default), `${t.id}.${p.key}`);
@@ -138,7 +138,7 @@ test('colors: only the punch marker takes the review color', () => {
 
 test('palette entries carry the template id and a vector preview', () => {
   const entries = smartPaletteEntries();
-  assert.equal(entries.length, 19);
+  assert.equal(entries.length, 21);
   for (const e of entries) {
     assert.ok(T(e.parametricId), e.id);
     const vb = e.svg.match(/viewBox="0 0 ([\d.]+) 64"/);
@@ -159,4 +159,37 @@ test('vector appearance: rotated into the envelope; PNG kept for others', async 
   assert.match(content, /\(OFFICE\) Tj/);
   assert.equal(writeVectorParametricAppearance({ ann: { ...ann, symbolId: 'peilmaat' }, annotDict: ctx.obj({}), context: ctx, pdf: { PDFName }, rectW: 36, rectH: 72 }), false);
   assert.equal(writeVectorParametricAppearance({ ann, annotDict: ctx.obj({}), context: ctx, pdf: { PDFName }, rectW: 36, rectH: 72, pageRot: 90 }), false);
+});
+
+test('plan door: real size from feet and inches, swing and hand', () => {
+  const d = T('us-plan-door');
+  assert.deepEqual(d.realSizeMm({ width: "3'-0\"", wall: "0'-4 7/8\"" }), { width: 914.4, height: 914.4 + 123.825 });
+  assert.equal(d.realSizeMm({ width: "6'-0\"", wall: "0'-6\"", leaves: 'double' }).height, 914.4 + 152.4);
+  assert.deepEqual(d.realSizeMm({ width: 'nonsense', wall: '' }), { width: 914.4, height: 914.4 + 123.825 });
+  // 1/4" = 1'-0": 3'-0" is 3/4" (54 pt) on paper.
+  const b = { x: 0, y: 0, width: 54, height: 54 * (1038.225 / 914.4) };
+  const single = renderTemplate(d, {}, b);
+  assert.equal(single.filter(c => c.kind === 'arc').length, 1);
+  const leaf = single.find(c => c.kind === 'line' && c.lineWidth === 1.4);
+  assert.equal(leaf.x1, 0, 'hinge on the left');
+  assert.ok(leaf.y2 < leaf.y1, 'swings in (up, away from the wall at the bottom)');
+  const right = renderTemplate(d, { hinge: 'right', swing: 'out' }, b).find(c => c.kind === 'line' && c.lineWidth === 1.4);
+  assert.equal(right.x1, 54);
+  assert.ok(right.y2 > right.y1, 'swings out');
+  assert.equal(renderTemplate(d, { leaves: 'double' }, b).filter(c => c.kind === 'arc').length, 2);
+  for (const p of [{}, { hinge: 'right' }, { swing: 'out' }, { leaves: 'double' }]) {
+    assert.ok(svgToPdfAppearance(cmdsToSvg(renderTemplate(d, p, b), b), b.width, b.height), JSON.stringify(p));
+  }
+});
+
+test('plan window: jambs, wall faces and double glass line', () => {
+  const w = T('us-plan-window');
+  assert.deepEqual(w.realSizeMm({ width: "4'-0\"", wall: "0'-8\"" }), { width: 1219.2, height: 203.2 });
+  const cmds = renderTemplate(w, {}, { x: 0, y: 0, width: 54, height: 9 });
+  assert.equal(cmds.length, 6);
+  assert.equal(cmds.filter(c => c.lineWidth === 0.5).length, 2);
+});
+
+test('real-size templates keep upstream placement (scale), not sheet size', () => {
+  assert.equal(smartPlacementBox(T('us-plan-door'), 0, 0, ...ARCH_D), null);
 });
