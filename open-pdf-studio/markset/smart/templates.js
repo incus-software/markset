@@ -9,6 +9,7 @@
 // height on a 24x36 sheet and the color role.
 
 import { PLAN_TEMPLATES } from './plan.js';
+import { WIRING_TEMPLATES } from './wiring.js';
 
 const CAT = 'US';
 
@@ -412,4 +413,6 @@ export const MARKSET_TEMPLATES = [
   },
   // --- Plan symbols drawn to scale (plan.js) -----------------------------------
   ...PLAN_TEMPLATES,
+  // --- Wiring runs, two-point (wiring.js; listed in US Electrical) -----------
+  ...WIRING_TEMPLATES,
 ];

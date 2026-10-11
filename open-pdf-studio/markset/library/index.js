@@ -14,10 +14,12 @@ const files = import.meta.glob(
 // a loaded PDF) refer to them; registering twice is harmless.
 registerMarksetTemplates();
 
-/** Palette groups for js/solid/stores/symbolStore.js. The US Starter
- *  Library also lists the smart (parametric) symbols, after the SVG ones. */
-export const MARKSET_CATEGORIES = bundledGroups(files).map(g => (g.id === 'markset-us-starter'
-  ? { ...g, symbols: [...g.symbols, ...smartPaletteEntries()] }
+// Which smart (parametric) templates each bundled group lists, after its SVGs.
+const SMART_GROUP = { 'markset-us-starter': 'starter', 'markset-us-electrical-starter': 'electrical' };
+
+/** Palette groups for js/solid/stores/symbolStore.js. */
+export const MARKSET_CATEGORIES = bundledGroups(files).map(g => (SMART_GROUP[g.id]
+  ? { ...g, symbols: [...g.symbols, ...smartPaletteEntries(undefined, SMART_GROUP[g.id])] }
   : g));
 
 export const DEFAULT_REVIEW_MARK_COLOR = '#dd0000';

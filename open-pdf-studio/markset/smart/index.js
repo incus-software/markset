@@ -32,9 +32,12 @@ export function templatePreviewSvg(t, color = '#000') {
   return cmdsToSvg(renderTemplate(t, {}, box), box, { color });
 }
 
-/** Palette entries for the US Starter Library group. */
-export function smartPaletteEntries(reviewColor = '#dd0000') {
-  return MARKSET_TEMPLATES.map(t => ({
+/**
+ * Palette entries for a bundled group: templates whose markset.group is
+ * `group` ('starter' when unset; wiring runs are 'electrical').
+ */
+export function smartPaletteEntries(reviewColor = '#dd0000', group = 'starter') {
+  return MARKSET_TEMPLATES.filter(t => (t.markset.group || 'starter') === group).map(t => ({
     id: `smart-${t.id}`,
     name: t.nameEn,
     parametricId: t.id,
@@ -55,6 +58,18 @@ export function smartPlacementBox(t, x, y, pageW, pageH, scale = 1) {
   const hh = h * (scale > 0 ? scale : 1);
   const w = hh * (t.defaultSize.width / t.defaultSize.height);
   return { x: x - w / 2, y: y - hh / 2, width: w, height: hh };
+}
+
+/**
+ * Two-point Markset templates (wiring runs): the band height and the length
+ * used for a plain click, both from the sheet size. Null for others.
+ */
+export function smartTwoPointSize(t, pageW, pageH, scale = 1) {
+  if (!isMarkset(t) || t.placement !== 'two-point' || !(t.markset.bandHeightIn > 0)) return null;
+  const band = sheetSymbolHeight(t.markset.bandHeightIn, pageW, pageH);
+  if (!band) return null;
+  const s = scale > 0 ? scale : 1;
+  return { band: band * s, length: band * (t.markset.lengthIn / t.markset.bandHeightIn) };
 }
 
 /** Color overrides for a new annotation: review symbols take the review color. */

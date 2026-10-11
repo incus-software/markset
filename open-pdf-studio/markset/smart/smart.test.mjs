@@ -6,8 +6,9 @@ import { MARKSET_TEMPLATES } from './templates.js';
 import { cmdsToSvg } from './cmds-svg.js';
 import {
   registerMarksetTemplates, renderTemplate, templatePreviewSvg, smartPaletteEntries,
-  smartPlacementBox, smartColors, writeVectorParametricAppearance,
+  smartPlacementBox, smartColors, writeVectorParametricAppearance, smartTwoPointSize,
 } from './index.js';
+import { runGeometry } from './wiring.js';
 import { svgToPdfAppearance } from '../svg-to-pdf.js';
 
 registerMarksetTemplates();
@@ -15,18 +16,19 @@ const ARCH_D = [36 * 72, 24 * 72];
 const T = (id) => getTemplate(id);
 const box = (t, h = 64, x = 0, y = 0) => ({ x, y, width: h * (t.defaultSize.width / t.defaultSize.height), height: h });
 
-test('21 US templates are registered with English labels and defaults', () => {
+test('27 US templates are registered with English labels and defaults', () => {
   assert.deepEqual(MARKSET_TEMPLATES.map(t => t.id), [
     'us-building-section', 'us-wall-section', 'us-detail-section', 'us-enlarged-detail',
     'us-exterior-elevation', 'us-interior-elevation', 'us-elevation-target', 'us-spot-elevation',
     'us-grid-bubble', 'us-drawing-title', 'us-revision-delta',
     'us-room-tag', 'us-ceiling-height', 'us-door-tag', 'us-window-tag', 'us-partition-type',
     'us-keynote-tag', 'us-equipment-tag', 'us-punch-marker', 'us-plan-door', 'us-plan-window',
+    'us-wire-circuit', 'us-wire-2', 'us-wire-3', 'us-wire-4', 'us-wire-switch-leg', 'us-wire-home-run',
   ]);
   for (const t of MARKSET_TEMPLATES) {
     assert.equal(T(t.id), t, t.id);
     assert.equal(t.category, 'US');
-    assert.ok((t.markset.paperHeightIn > 0 || t.markset.realSize) && ['drawing', 'review'].includes(t.markset.role), t.id);
+    assert.ok((t.markset.paperHeightIn > 0 || t.markset.realSize || t.markset.bandHeightIn > 0) && ['drawing', 'review'].includes(t.markset.role), t.id);
     for (const p of t.params) {
       assert.ok(p.labelEn && p.label && p.default !== undefined, `${t.id}.${p.key}`);
       if (p.type === 'enum') assert.ok(p.options.some(o => o.value === p.default), `${t.id}.${p.key}`);
@@ -139,6 +141,7 @@ test('colors: only the punch marker takes the review color', () => {
 test('palette entries carry the template id and a vector preview', () => {
   const entries = smartPaletteEntries();
   assert.equal(entries.length, 21);
+  assert.equal(smartPaletteEntries(undefined, 'electrical').length, 6);
   for (const e of entries) {
     assert.ok(T(e.parametricId), e.id);
     const vb = e.svg.match(/viewBox="0 0 ([\d.]+) 64"/);
@@ -192,4 +195,29 @@ test('plan window: jambs, wall faces and double glass line', () => {
 
 test('real-size templates keep upstream placement (scale), not sheet size', () => {
   assert.equal(smartPlacementBox(T('us-plan-door'), 0, 0, ...ARCH_D), null);
+});
+
+test('wiring runs: two-point, curve through the middle, hashes, dash, home-run arrow', () => {
+  const b = { x: 0, y: 0, width: 108, height: 27 };
+  const g = runGeometry({}, b);
+  assert.ok(Math.abs(Math.hypot(g.S.x - g.C.x, g.S.y - g.C.y) - g.R) < 1e-9 && Math.abs(Math.hypot(g.E.x - g.C.x, g.E.y - g.C.y) - g.R) < 1e-9, 'arc passes through both ends');
+  assert.ok(g.mid.y < 13.5, 'bends left (up) by default');
+  assert.ok(runGeometry({ bend: 'right' }, b).mid.y > 13.5, 'bends right');
+  assert.equal(runGeometry({ shape: 'straight' }, b).straight, true);
+  const kinds = (id, p = {}) => renderTemplate(T(id), p, b).map(c => c.kind);
+  assert.deepEqual(kinds('us-wire-circuit'), ['arc']);
+  assert.equal(kinds('us-wire-3').filter(k => k === 'line').length, 3);
+  assert.ok(renderTemplate(T('us-wire-switch-leg'), {}, b)[0].dash, 'switch leg is dashed');
+  const hr = renderTemplate(T('us-wire-home-run'), {}, b);
+  assert.equal(hr.filter(c => c.kind === 'line').length, 2, 'arrowhead');
+  assert.equal(hr.find(c => c.kind === 'text').text, 'LP-1, 3');
+  assert.equal(renderTemplate(T('us-wire-home-run'), { label: '' }, b).some(c => c.kind === 'text'), false);
+  for (const t of MARKSET_TEMPLATES.filter(t => t.placement === 'two-point')) {
+    assert.equal(t.markset.group, 'electrical', t.id);
+    for (const p of [{}, { shape: 'straight' }, { bend: 'right' }]) {
+      assert.ok(svgToPdfAppearance(cmdsToSvg(renderTemplate(t, p, b), b), b.width, b.height), `${t.id} ${JSON.stringify(p)}`);
+    }
+  }
+  assert.deepEqual(smartTwoPointSize(T('us-wire-2'), ...ARCH_D), { band: 27, length: 108 });
+  assert.equal(smartTwoPointSize(T('us-room-tag'), ...ARCH_D), null);
 });
