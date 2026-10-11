@@ -21,7 +21,8 @@ import { labelFontSizeAt } from '../annotations/drafting-rules.js';
 import { isKlikSleep, klemMaat, schermPxNaarPt, KLIK_DREMPEL_PX } from '../annotations/minimummaat.js';
 import { getEffectiveScale } from './effective-scale.js';
 import { randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
-import { rechtopRotatie } from '../pdf/weergave-ruimte.js';
+import { rechtopRotatie, paginaMaat } from '../pdf/weergave-ruimte.js';
+import { smartPlacementBox, smartColors } from '../../markset/smart/index.js'; // Markset
 import { rechtopVak, nieuweMaatHoekVast } from '../pdf/weergave-rotatie.js';
 
 /**
@@ -464,8 +465,11 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
             height: hPx,
           };
         } else {
+          // Markset: US smart symbols are sized to the sheet, centred on the click.
+          const maat = paginaMaat(page);
+          const mb = smartPlacementBox(template, startX, startY, maat?.breedte, maat?.hoogte);
           const ds = (template && template.defaultSize) || { width: 80, height: 80 };
-          b = { x: startX, y: startY, width: ds.width, height: ds.height };
+          b = mb || { x: startX, y: startY, width: ds.width, height: ds.height };
         }
       }
       // Gekozen symboolschaal (issue #357). Alleen bij een KLIK: heeft de
@@ -488,6 +492,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         // terugval DRAFTING_LINE_WIDTH. Bewust niet gestempeld.
         rotation: 0,
         opacity: 1,
+        ...smartColors(template, state.preferences.reviewMarkColor), // Markset: punch marker in review red
       };
     }
 

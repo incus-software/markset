@@ -33,6 +33,7 @@ working notes for keeping the fork mergeable.
 | 2026-10-10 | Review marks (Phase C, Starter Library batch 1): circled check, circled X, question mark, VIF, NIC, OK, EQ, see-comment dot and strike line join the checkmark and X. Symbol palette defaults to the United States (symbolLocales.js; was the Netherlands). |
 | 2026-10-10 | Starter Library batch 2: drawing symbols in black (north arrow, centerline, break line, match line, level datum, spot elevation; wide ones use a 128- or 192-unit viewBox, still 64 high) and punch / field icons in review red (punch pin, finish, door/hardware, MEP, safety, damage, water/moisture, crack, camera). The graphic scale bar is the existing scale-bar tool, not a symbol. |
 | 2026-10-10 | Starter Library batch 3: 15 stamps (7 submittal review, 8 issue/status) as 256x64 vector symbols with role `stamp`: fixed meaning colors (green accepted, amber conditional, red not accepted, blue informational, gray archival), not recolored. Live date, initials and firm fields are not part of the open-source app. |
+| 2026-10-10 | Smart symbols (Phase E): 13 US parametric templates in `markset/smart/` (detail callout, section marker, exterior and 4-way interior elevation, grid bubble, revision delta, keynote, room, door, window, wall-type and equipment tags, numbered punch marker), registered at start-up (main.js) with editable text fields. Placed at the sheet-relative size (annotation-creators.js); saved with a vector appearance through `cmds-svg.js` + `svg-to-pdf.js` (saver.js; upstream templates keep their PNG). Listed in the US Starter Library palette group. |
 
 ## Known follow-ups
 
@@ -51,3 +52,5 @@ working notes for keeping the fork mergeable.
 - [x] `cargo test` runs in `markset-windows.yml` (app and CAD crates; dynamic CRT in `target/rust-tests`). The two `mcp_server` screenshot tests are skipped there because the test binary cannot find PDFium; `open-pdf-render` tests are not run yet.
 - [ ] Translate the new US units strings (only `en` has them; other locales fall back to English).
 - [ ] Symbols: round-trip a saved file in Bluebeam and Acrobat (vector appearance, size, color). Three upstream floor-pattern symbols (`param-vloer-*`) still save as PNG because their SVG uses features the converter does not draw.
+- [ ] Smart symbols: auto-numbering (P-001, next revision) and a building section with bubbles at both ends of the cut. Upstream parametric templates still save as PNG; switch them to `cmds-svg.js` once each kind they draw (hatch, zigzag, rings) is supported.
+- [ ] Symbol palette: upstream groups without a country tag (e.g. "NL Elektra") still show when the country is US; the IFC category field shows Dutch descriptions.

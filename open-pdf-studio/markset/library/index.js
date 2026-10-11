@@ -3,14 +3,22 @@
 import { state } from '../../js/core/state.js';
 import { recolorSvg } from '../../js/annotations/svg-stroke-color.js';
 import { bundledGroups, symbolForShortcut } from './bundle.js';
+import { registerMarksetTemplates, smartPaletteEntries } from '../smart/index.js';
 
 const files = import.meta.glob(
   ['./*/collection.json', './*/markset.json', './*/stamps.json', './*/symbols/*.svg'],
   { query: '?raw', import: 'default', eager: true },
 );
 
-/** Palette groups for js/solid/stores/symbolStore.js. */
-export const MARKSET_CATEGORIES = bundledGroups(files);
+// The smart symbols' templates must exist before their palette entries (or
+// a loaded PDF) refer to them; registering twice is harmless.
+registerMarksetTemplates();
+
+/** Palette groups for js/solid/stores/symbolStore.js. The US Starter
+ *  Library also lists the smart (parametric) symbols, after the SVG ones. */
+export const MARKSET_CATEGORIES = bundledGroups(files).map(g => (g.id === 'markset-us-starter'
+  ? { ...g, symbols: [...g.symbols, ...smartPaletteEntries()] }
+  : g));
 
 export const DEFAULT_REVIEW_MARK_COLOR = '#dd0000';
 

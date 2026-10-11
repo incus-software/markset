@@ -31,6 +31,7 @@ import { initToolPalette } from './solid/components/ToolPalette.jsx';
 import { initSymbolPalette } from './solid/stores/symbolStore.js';
 import { initSteelCatalogs } from './symbols/steel-catalog-store.js';
 import { initLineworkCatalogs } from './symbols/linework-catalog-store.js';
+import { registerMarksetTemplates } from '../markset/smart/index.js'; // Markset
 import { initPaletteOrder } from './solid/stores/paletteOrder.js';
 import { initPlugins } from './plugins/plugin-manager.js';
 
@@ -226,6 +227,7 @@ async function init() {
   // palette entries (parametricId) resolve to templates after a restart.
   initSteelCatalogs();
   initLineworkCatalogs();
+  registerMarksetTemplates(); // Markset: US smart symbols (detail callout, tags, …)
 
   // Load installed plugins (extension palettes, custom annotation types, etc.)
   initPlugins();
