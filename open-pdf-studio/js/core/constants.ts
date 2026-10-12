@@ -45,7 +45,7 @@ export const HANDLE_TYPES = {
 // Default application preferences
 export const DEFAULT_PREFERENCES: Preferences = {
   // Theme
-  theme: 'default',
+  theme: 'light', // Markset: Light for new installs (upstream: 'default', a dark theme with low-contrast text)
 
   // Enkelpagina is de standaard-weergavemodus; opgeslagen 'continuous'
   // (de kortstondige oude default, nergens instelbaar in de UI) wordt bij

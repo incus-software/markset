@@ -8,7 +8,7 @@
 // values), so it is unit-tested directly.
 
 export const PRESET_SCHEMES = Object.freeze([
-  { id: 'blue', name: 'Bright blue', color: '#0066ff' },
+  { id: 'blue', name: 'Blue', color: '#0000ff' }, // the standard blue of the color palette
   { id: 'red', name: 'Red (traditional)', color: '#ff0000' },
   { id: 'green', name: 'Green', color: '#008a3e' },
   { id: 'orange', name: 'Orange', color: '#f07800' },
