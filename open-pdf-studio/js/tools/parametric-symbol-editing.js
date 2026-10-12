@@ -2,7 +2,8 @@ import { getActiveDocument } from '../core/state.js';
 import { annotationCanvas } from '../ui/dom-elements.js';
 import { paginaNaarClient } from '../pdf/weergave-ruimte.js';
 import { getTemplate } from '../symbols/registry.js';
-import { findEditableLabel } from '../symbols/editable-labels.js';
+import { findEditableLabel, toLocalPoint } from '../symbols/editable-labels.js';
+import { stampCheckboxAt, toggledChecked } from '../../markset/stamp-builder/layout.js'; // Markset
 import {
   showParametricLabelInput, hideParametricLabelInput,
   parametricLabelInputActive, updateAnnotProp, validateSymbolParams,
@@ -58,6 +59,15 @@ function stillAlive(annotation) {
 
 export function startParametricSymbolInput(annotation, x, y) {
   if (!annotation || annotation.type !== 'parametricSymbol' || annotation.locked) return;
+  // Markset: double-clicking a review stamp's checkbox row checks it (again: unchecks).
+  if (getTemplate(annotation.symbolId)?.markset?.stamp) {
+    const p = toLocalPoint(annotation, x, y);
+    const row = stampCheckboxAt(annotation.params, annotation, p.x, p.y);
+    if (row >= 0) {
+      updateAnnotProp('params', { ...(annotation.params || {}), checked: toggledChecked(annotation.params, row) });
+      return;
+    }
+  }
   const label = findEditableLabel(annotation, x, y);
   if (!label) return;
   const template = getTemplate(annotation.symbolId);

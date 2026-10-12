@@ -258,7 +258,7 @@ export default function StampBuilderDialog(props) {
           <div class="msb-size">Print size {size().width.toFixed(1)} x {size().height.toFixed(2)} in · stamp language {d().discPt} pt</div>
           <For each={warnings()}>{(w) => <div class="msb-warn">{w}</div>}</For>
           <Show when={status()}><div class="msb-status" role="status">{status()}</div></Show>
-          <p class="msb-note">After placing, pick the checked box and fill in By and Date in the Properties panel. Right-click a stamp in My Stamps to edit it.</p>
+          <p class="msb-note">After placing, double-click a checkbox on the stamp to check it, or a line (By, Date, Project no.) to type on it; the Properties panel has the same fields. Right-click a stamp in My Stamps to edit its design.</p>
         </div>
       </div>
     </Dialog>

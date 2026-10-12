@@ -8,6 +8,7 @@ import { decodePdfTextObject } from '../saver/pdf-text.js';
 import { readPluginPdfAnnotation } from '../../plugins/plugin-pdf.js';
 import { laagVanOc } from '../saver/annotatie-lagen.js';
 import { leesPlattegrondMeta } from './plattegrond-meta.js';
+import { readStampLogo } from '../../../markset/stamp-builder/pdf-assets.js'; // Markset
 import { leesLijnSleutels } from './maatlijn-uit-bestand.js';
 
 // Documenten waarvan de knipsel-bronpagina's al in de store staan: dat
@@ -515,6 +516,12 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
       if (opsParamsRaw) {
         const p = leesPdfTekst(context, opsParamsRaw);
         if (p !== undefined) colors.opsParams = p;
+      }
+      // Markset: a review stamp's logo, stored once per PDF (stamp-builder/pdf-assets.js)
+      const opsLogoRaw = annotDict.get(PDFName.of('OPS_MarksetLogo'));
+      if (opsLogoRaw) {
+        const logo = readStampLogo(context, opsLogoRaw, PDFName);
+        if (logo) colors.opsMarksetLogo = logo;
       }
       const opsIfcRaw = annotDict.get(PDFName.of('OPS_IfcCategory'));
       if (opsIfcRaw) {
