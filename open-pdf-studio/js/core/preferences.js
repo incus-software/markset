@@ -7,6 +7,7 @@ import { isTauri, getUsername, savePreferencesFile, loadPreferencesFile } from '
 import { preferencesMirrorJson } from './preferences-mirror.js';
 import { voegSamenMetStandaarden } from './preferences-merge.js';
 import { usMeasureFallback } from '../../markset/us-units.js'; // Markset
+import { saveTextStyleDefault, textStyleDefault } from '../../markset/text-defaults.js'; // Markset
 import { randkleurVoorVoorkeur, randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
 import { zetRanddikte } from '../annotations/rendering/textbox-layout.js';
 
@@ -285,6 +286,8 @@ export function setAsDefaultStyle(annotation) {
     prefs[p + 'DimExtension'] = !!annotation.dimExtension;
   }
 
+  saveTextStyleDefault(prefs, annotation); // Markset: text color, font, bold, alignment of text boxes and callouts
+
   savePreferences();
   updateStatusMessage('Style set as default');
 }
@@ -320,6 +323,7 @@ export function applyDefaultStyle(annotation) {
   if (m.fontSize && prefs[p + m.fontSize]) annotation.fontSize = prefs[p + m.fontSize];
   if (m.icon && prefs[p + m.icon]) annotation.icon = prefs[p + m.icon];
   if (m.overlayColor && prefs[p + m.overlayColor]) annotation.overlayColor = prefs[p + m.overlayColor];
+  Object.assign(annotation, textStyleDefault(prefs, annotation.type)); // Markset: saved text style
 
   // Hatch properties
   if (m.hatch) {
