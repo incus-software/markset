@@ -27,6 +27,10 @@ import { savePreferences } from '../../../core/preferences.js';
 import { toggleSchedule, scheduleVisible } from '../../stores/scheduleStore.js';
 import { isDynamicScalingEnabled, setDynamicScalingEnabled } from '../../../annotations/dynamic-scaling.js';
 import PrefSelect from '../preferences/PrefSelect.jsx';
+import { registerMarksetScaleTools, openSetScale, startCalibrate, CALIBRATE_TOOL } from '../../../../markset/scale-tools.js'; // Markset
+
+registerMarksetScaleTools(); // Markset: the Calibrate tool
+const setScaleIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="8" rx="1" stroke-width="1.5"/><path stroke-width="1.2" d="M6 8v3m3-3v4.5M12 8v3m3-3v4.5M18 8v3"/></svg>`; // Markset
 
 const scheduleIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.5" stroke-width="1.5"/><line x1="3" y1="8" x2="21" y2="8" stroke-width="1.5"/><line x1="3" y1="13" x2="21" y2="13" stroke-width="1"/><line x1="3" y1="18" x2="21" y2="18" stroke-width="1"/><line x1="9" y1="8" x2="9" y2="21" stroke-width="1"/><line x1="15" y1="8" x2="15" y2="21" stroke-width="1"/></svg>`;
 
@@ -47,6 +51,9 @@ export function CommentGroups() {
         </RibbonGroup>
 
         <RibbonGroup label={t('comment.text')}>
+          {/* Markset: plain text (click and type, no box); upstream has it only on the Edit & Combine tab */}
+          <RibbonButton id="tool-text" title="Text: click and type, no box" icon={textAnnotIcon} label="Text"
+            disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'text'} onClick={() => setTool('text')} />
           <RibbonButton id="tool-textbox" title={t('comment.textBox')} icon={textboxIcon} label={t('comment.textBox')}
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'textbox'} onClick={() => setTool('textbox')} />
           <RibbonButton id="tool-callout" title={t('comment.callout')} icon={calloutIcon} label={t('comment.callout')}
@@ -150,6 +157,18 @@ export function CommentGroups() {
 
         {/* Schaal group (Schaalgebied / Schaalgebied op pagina) moved to the
             Tekenen tab — see DrawingTab.jsx. */}
+
+        {/* Markset: the document's measuring scale, next to the measuring tools */}
+        <RibbonGroup label="Scale">
+          <RibbonButton id="btn-markset-set-scale"
+            title="Set the drawing scale (e.g. 1/4&quot; = 1'-0&quot;), or read it from the title block"
+            icon={setScaleIcon} label="Set Scale"
+            disabled={noPdf() || isPdfAReadOnly()} onClick={openSetScale} />
+          <RibbonButton id="btn-markset-calibrate"
+            title="Calibrate: click both ends of a dimension you know, then type its length"
+            icon={calibrateIcon} label="Calibrate"
+            disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === CALIBRATE_TOOL} onClick={startCalibrate} />
+        </RibbonGroup>
 
         <RibbonGroup label={t('measure.schedule') || 'HOEVEELHEDEN'}>
           <RibbonButton id="btn-open-schedule"
