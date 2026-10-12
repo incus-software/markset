@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Markset: placed next to each `cargo test` binary in markset-windows.yml.
+     Test binaries have no embedded manifest, so Windows reads this file and
+     loads Common Controls v6, which Tauri's dialogs need; without it a test
+     binary stops at start-up with 0xc0000139 (STATUS_ENTRYPOINT_NOT_FOUND). -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
+        processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
+</assembly>

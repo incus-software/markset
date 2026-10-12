@@ -49,11 +49,6 @@ fn main() {
     // setup (CI left __imp_MAPISendMail unresolved), so force the link here.
     if target.contains("windows") {
         println!("cargo:rustc-link-lib=mapi32");
-        // Markset: `cargo test` binaries need Common Controls v6 (the app gets
-        // it from Tauri's manifest); without it they stop at start-up with
-        // STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139). Test targets only.
-        println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
-        println!("cargo:rustc-link-arg-tests=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'");
     }
 
     // tauri.conf.json lists resources/tessdata and resources/fonts as bundle
