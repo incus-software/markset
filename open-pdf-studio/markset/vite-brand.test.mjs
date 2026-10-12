@@ -27,9 +27,12 @@ test('Markset files, dependencies and other file types are left alone', () => {
 });
 
 test('the plugin rewrites the product name', () => {
+  // A root in this platform's own path form: path.resolve() reads a Windows
+  // path as relative on Linux and macOS (CI), and the reverse.
+  const root = process.platform === 'win32' ? roots[0] : roots[2];
   const plugin = marksetBrand();
-  plugin.configResolved({ root: roots[0] });
-  const out = plugin.transform('const t = `Open PDF Studio v${v}`;', `${roots[0]}/js/ui/chrome/tabs.js`);
+  plugin.configResolved({ root });
+  const out = plugin.transform('const t = `Open PDF Studio v${v}`;', `${root}/js/ui/chrome/tabs.js`);
   assert.equal(out.code, 'const t = `Markset v${v}`;');
-  assert.equal(plugin.transform('Open PDF Studio', `${roots[0]}/markset/ForkNotice.jsx`), null);
+  assert.equal(plugin.transform('Open PDF Studio', `${root}/markset/ForkNotice.jsx`), null);
 });
