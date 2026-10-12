@@ -34,11 +34,29 @@ test('the US Starter Library loads as a built-in group', () => {
 
 test('the review marks batch is complete, in palette order', () => {
   const review = starter.symbols.filter(s => s.markset?.role === 'review').map(s => s.markset.id);
-  assert.deepEqual(review, [
+  assert.deepEqual(review.slice(0, 11), [
     'checkmark', 'x-mark', 'circled-check', 'circled-x', 'question-mark',
     'vif', 'nic', 'ok', 'eq', 'see-comment-dot', 'strike-line',
   ]);
-  for (const s of starter.symbols) assert.match(s.svg, /#d00/, `${s.name}: drawn in the recolorable review red`);
+});
+
+test('batch 2: drawing symbols and punch / field icons', () => {
+  const ids = (role) => starter.symbols.filter(s => s.markset?.role === role).map(s => s.markset.id);
+  assert.deepEqual(ids('drawing'), ['north-arrow', 'centerline', 'break-line', 'match-line', 'level-datum', 'spot-elevation']);
+  assert.deepEqual(ids('review').slice(11), [
+    'punch-pin', 'finish', 'door-hardware', 'mep', 'safety', 'damage', 'water-moisture', 'crack', 'camera',
+  ]);
+});
+
+test('review marks are drawn in the recolorable red, drawing symbols in black', () => {
+  for (const s of starter.symbols) {
+    if (s.markset?.role === 'review') {
+      assert.match(s.svg, /#d00/, `${s.name}: review red`);
+      assert.doesNotMatch(s.svg, /#000/, `${s.name}: no black in a review mark`);
+    } else {
+      assert.doesNotMatch(s.svg, /#d00/, `${s.name}: drawing symbols print black`);
+    }
+  }
 });
 
 test('every symbol follows the library format and draws as vectors', () => {
@@ -47,7 +65,9 @@ test('every symbol follows the library format and draws as vectors', () => {
   for (const [path, svg] of svgs) {
     const name = path.split('/').pop();
     assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*\.svg$/, `${path}: kebab-case file name`);
-    assert.match(svg, /viewBox="0 0 64 64"/, `${path}: 64-unit viewBox`);
+    // 64 units high like the upstream format; wide symbols (match line,
+    // break line, level datum) may be 2, 3 or 4 squares wide.
+    assert.match(svg, /viewBox="0 0 (64|128|192|256) 64"/, `${path}: 64-unit-high viewBox`);
     assert.ok(isSafeSymbolSvg(svg), `${path}: self-contained`);
     assert.ok(svgToPdfAppearance(svg, 64, 64), `${path}: converts to a vector appearance`);
   }

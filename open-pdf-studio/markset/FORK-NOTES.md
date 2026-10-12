@@ -31,6 +31,7 @@ working notes for keeping the fork mergeable.
 | 2026-10-10 | Symbol groundwork (Phase B): SVG symbol stamps save as vector appearances (`markset/svg-to-pdf.js`, `stamp-vector.js`; hook in saver.js) with the SVG in `OPS_StampSvg` (read back in color-extraction.js / annotation-converter.js); bundled US Starter Library (`markset/library/`, MIT) listed first in the palette (symbolStore.js); sheet-relative size (stamps.js), review mark color (`reviewMarkColor`, SymbolPalette.jsx, AnnotationsTab.jsx) and K / X shortcuts (keyboard-handlers.js; `selectSymbol` exported). NOTICE.md notes the artwork license. |
 | 2026-10-10 | Fixed the brand overlay (`markset/vite-brand.mjs`): it skipped every file because the repository checkout is itself named "markset"; it now skips only `open-pdf-studio/markset/`. |
 | 2026-10-10 | Review marks (Phase C, Starter Library batch 1): circled check, circled X, question mark, VIF, NIC, OK, EQ, see-comment dot and strike line join the checkmark and X. Symbol palette defaults to the United States (symbolLocales.js; was the Netherlands). |
+| 2026-10-10 | Starter Library batch 2: drawing symbols in black (north arrow, centerline, break line, match line, level datum, spot elevation; wide ones use a 128- or 192-unit viewBox, still 64 high) and punch / field icons in review red (punch pin, finish, door/hardware, MEP, safety, damage, water/moisture, crack, camera). The graphic scale bar is the existing scale-bar tool, not a symbol. |
 
 ## Known follow-ups
 
