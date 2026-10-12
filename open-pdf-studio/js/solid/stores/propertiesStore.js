@@ -3,6 +3,7 @@ import { DRAFTING_RULE_TYPES, effectiveDraftingLineWidth } from '../../annotatio
 import { createStore } from 'solid-js/store';
 import { state, getActiveDocument } from '../../core/state.js';
 import { imperialOr } from '../../../markset/us-units.js'; // Markset
+import { fitStampToDesign } from '../../../markset/stamp-builder/layout.js'; // Markset
 import {
   recordPropertyChange,
   recordModify,
@@ -1715,6 +1716,7 @@ function applyAnnotProp(key, value) {
         // Keep geometry synchronous: recordPropertyChange captures newState in
         // a microtask, so endpoints/bbox must be final before this stack ends.
         applyTemplateRealSize(currentAnnotation, 'center');
+        fitStampToDesign(currentAnnotation); // Markset: a review stamp's height follows its content
       }
       break;
     }

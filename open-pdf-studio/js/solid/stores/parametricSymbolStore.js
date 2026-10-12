@@ -51,6 +51,13 @@ export function setPendingSymbolId(symbolId) {
   setPendingParamsSignal(resolveSymbolParams(symbolId));
 }
 
+// Markset: place a saved review stamp. Its whole design comes with the
+// palette entry, not from the tool defaults (and is not saved as them).
+export function setPendingSymbolWithParams(symbolId, params) {
+  setPendingSymbolIdSignal(symbolId);
+  setPendingParamsSignal({ ...validateSymbolParams(symbolId, {}), ...(params || {}) });
+}
+
 export function setPendingParams(values) {
   const symbolId = pendingSymbolId();
   const validated = validateSymbolParams(symbolId, values);

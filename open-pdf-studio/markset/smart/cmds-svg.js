@@ -4,8 +4,10 @@
 //
 // Mirrors the canvas renderer in js/annotations/rendering.js for the command
 // kinds Markset templates use: line, circle, polyline (close / fill / dash),
-// arc and text (bold or not, centred on its point). Any other kind returns
-// null and the caller keeps its raster appearance.
+// arc, text (bold or not, centred on its point, or left/right-aligned with
+// `align: 'start' | 'end'`) and image (a data URL; previews only, the PDF
+// appearance embeds images itself). Any other kind returns null and the
+// caller keeps its raster appearance.
 
 const n = (v) => Math.round(v * 1000) / 1000;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -57,10 +59,16 @@ export function cmdsToSvg(cmds, box, { color = '#000', lineWidth = 1 } = {}) {
       case 'text': {
         const text = String(c.text ?? '');
         if (!text.trim()) break;
+        const anchor = c.align === 'start' || c.align === 'left' ? 'start' : c.align === 'end' || c.align === 'right' ? 'end' : 'middle';
         out.push(`<text x="${n(c.x)}" y="${n(c.y)}" font-family="Helvetica, Arial, sans-serif" font-size="${n(c.size || 12)}"` +
-          `${c.bold ? ' font-weight="bold"' : ''} text-anchor="middle" dominant-baseline="middle" fill="${color}" stroke="none">${esc(text)}</text>`);
+          `${c.bold ? ' font-weight="bold"' : ''} text-anchor="${anchor}" dominant-baseline="middle" fill="${color}" stroke="none">${esc(text)}</text>`);
         break;
       }
+      case 'image':
+        if (/^data:image\//.test(String(c.src || '')) && c.width > 0 && c.height > 0) {
+          out.push(`<image href="${esc(c.src).replace(/"/g, '&quot;')}" x="${n(c.x)}" y="${n(c.y)}" width="${n(c.width)}" height="${n(c.height)}" preserveAspectRatio="xMidYMid meet"/>`);
+        }
+        break;
       default:
         return null; // hatch, zigzag, rings, … — not drawn here
     }

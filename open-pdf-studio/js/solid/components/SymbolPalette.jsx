@@ -26,7 +26,8 @@ import { registerPaletteDock, unregisterPaletteDock } from '../stores/paletteOrd
 import { ifcCategoryForSymbol } from '../data/ifcCategoryMap.js';
 import { nenIfcForSymbolId } from '../data/nenIfcMap.js';
 import { SYMBOL_STAMP_DEFAULT_SIZE } from '../../annotations/stamp-defaults.js';
-import { setPendingSymbolId } from '../stores/parametricSymbolStore.js';
+import { setPendingSymbolId, setPendingSymbolWithParams } from '../stores/parametricSymbolStore.js';
+import { MY_STAMPS_GROUP } from '../../../markset/stamp-builder/store.js'; // Markset
 import { symboolSchaal, setSymboolSchaal } from '../../symbols/symbol-scale-store.js';
 import { marksetSymbolSvg, marksetSymbolOverrides } from '../../../markset/library/index.js'; // Markset
 import { SCHAAL_STAPPEN, schaalLabel } from '../../symbols/symbol-scale.js';
@@ -106,6 +107,11 @@ export function selectSymbol(symbol) { // Markset: exported for the K/X shortcut
   // click on the page goes through the parametricSymbol tool and the params
   // stay editable in the properties panel.
   if (symbol.parametricId) {
+    if (symbol.parametricParams) { // Markset: a saved review stamp
+      setPendingSymbolWithParams(symbol.parametricId, symbol.parametricParams);
+      setTool('parametricSymbol');
+      return;
+    }
     setPendingSymbolId(symbol.parametricId);
     setTool('parametricSymbol');
     return;
@@ -263,6 +269,15 @@ function SymbolContent() {
                       innerHTML={`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="10" height="10"/><line x1="4.3" y1="1" x2="4.3" y2="11"/><line x1="7.6" y1="1" x2="7.6" y2="11"/><line x1="1" y1="4.3" x2="11" y2="4.3"/><line x1="1" y1="7.6" x2="11" y2="7.6"/></svg>`}
                     />
                   </Show>
+                  {/* Markset: build a new review stamp */}
+                  <Show when={cat.id === MY_STAMPS_GROUP}>
+                    <button
+                      class="sp-settings-btn"
+                      title="New stamp..."
+                      onClick={(e) => { e.stopPropagation(); openDialog('markset-stamp-builder'); }}
+                      innerHTML={`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><line x1="6" y1="1.5" x2="6" y2="10.5"/><line x1="1.5" y1="6" x2="10.5" y2="6"/></svg>`}
+                    />
+                  </Show>
                   <span class="sp-cat-count">{cat.symbols.length}</span>
                 </div>
                 <Show when={isCategoryExpanded(cat.id)}>
@@ -273,6 +288,11 @@ function SymbolContent() {
                           class={`sp-symbol-btn${state.toolOverrides?.stampSvg === sym.svg ? ' active' : ''}${isCatalogusFamilie(sym) ? ' sp-symbol-named' : ''}`}
                           title={sym.name}
                           onClick={() => selectSymbol(sym)}
+                          onContextMenu={(e) => { // Markset: edit a saved review stamp
+                            if (!sym.markset?.stampId) return;
+                            e.preventDefault();
+                            openDialog('markset-stamp-builder', { stampId: sym.markset.stampId });
+                          }}
                         >
                           <span class="sp-symbol-icon" innerHTML={colorizeSvg(sym.svg, cat.color)} />
                           {/* Catalogus-ingangen zijn families met een maat-keuze,
