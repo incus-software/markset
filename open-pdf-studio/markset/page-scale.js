@@ -72,3 +72,18 @@ export function mergeStoredScale(stored, current) {
   if (!current?.pages) return stored;
   return { ...(stored || {}), pages: { ...current.pages, ...(stored?.pages || {}) } };
 }
+
+/**
+ * Does the document have a real scale anywhere: a calibration, Set Scale,
+ * a scale the PDF brought, or a scale region / scale bar / viewport drawn
+ * on it? The measure tools only fall back to their manual preference scale
+ * (upstream: 1 pt = 1 mm) when it has none; before, they checked only the
+ * drawn sources and ignored a calibration.
+ */
+export function docHasScale(doc) {
+  if (!doc) return false;
+  const ms = doc.measureScale;
+  if (ms && (ms.pixelsPerUnit > 0 || Object.values(ms.pages || {}).some(s => s?.pixelsPerUnit > 0))) return true;
+  if (doc.pdfViewports && Object.values(doc.pdfViewports).some(l => l?.length)) return true;
+  return !!doc.annotations?.some(a => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport');
+}

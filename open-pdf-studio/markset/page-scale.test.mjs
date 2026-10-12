@@ -107,3 +107,27 @@ test('number formats show feet and inches; this computer\'s calibration wins on 
   assert.equal(mergeStoredScale(local, null), local);
   assert.equal(restorePageCalibrations(local, { 1: [{ name: MARKSET_VP_NAME, pixelsPerUnit: 5, unit: 'ft' }] }), local);
 });
+
+// --- Measure tools respect the calibration ------------------------------------
+import { docHasScale } from './page-scale.js';
+import { usMeasureFallback } from './us-units.js';
+
+test('a calibration, Set Scale or the PDF\'s scale stops the 1 pt = 1 mm fallback', () => {
+  assert.equal(docHasScale({ annotations: [] }), false);
+  assert.equal(docHasScale({ annotations: [], measureScale: withPageScale(null, 2, cal(19.6)) }), true);
+  assert.equal(docHasScale({ annotations: [], measureScale: { pages: { 2: cal(19.6) } } }), true);
+  assert.equal(docHasScale({ annotations: [], measureScale: { pixelsPerUnit: 18, unit: 'ft' } }), true);
+  assert.equal(docHasScale({ annotations: [], pdfViewports: { 1: [{}] } }), true);
+  assert.equal(docHasScale({ annotations: [{ type: 'scaleRegion' }] }), true);
+  assert.equal(docHasScale(null), false);
+});
+
+test('US units: no-scale measurements are paper feet-and-inches; user choices stay', () => {
+  const upstream = { measureDistDimScale: 1, measureDistDimUnit: 'mm', measureAreaDimScale: 1, measureAreaDimUnit: 'mm', measurePerimDimScale: 1, measurePerimDimUnit: 'mm' };
+  const out = usMeasureFallback(upstream);
+  assert.equal(out.measureDistDimUnit, 'ft');
+  assert.equal(out.measureDistDimScale, 1 / 864); // 1 pt = 1/72 in on paper
+  assert.equal(72 * out.measureDistDimScale * 12, 1); // one paper inch reads 0'-1"
+  assert.deepEqual(usMeasureFallback({ ...upstream, unitSystem: 'metric' }), {});
+  assert.equal(usMeasureFallback({ ...upstream, measureDistDimUnit: 'in' }).measureDistDimUnit, undefined); // the user's own choice
+});

@@ -366,3 +366,30 @@ export function formatPageSizeIn(widthPt, heightPt) {
     (near(w, x.width / 72) && near(h, x.height / 72)) || (near(w, x.height / 72) && near(h, x.width / 72)));
   return `${fmt(w)} x ${fmt(h)}${s ? ` (${s.label})` : ''}`;
 }
+
+// With no scale at all, a US measurement shows its true size on the paper in
+// feet and inches (1 pt = 1/72 in = 1/864 ft) instead of upstream's 1 pt = 1 mm.
+const US_MEASURE_FALLBACK = Object.freeze({
+  measureDistDimScale: 1 / 864, measureDistDimUnit: 'ft',
+  measureAreaDimScale: 1 / 864, measureAreaDimUnit: 'ft',
+  measurePerimDimScale: 1 / 864, measurePerimDimUnit: 'ft',
+});
+
+/**
+ * The measure tools' no-scale fallback for the unit system: US units get
+ * paper feet-and-inches. Also moves preferences still on upstream's untouched
+ * default (scale 1, mm) over; anything the user set stays.
+ * Returns the keys to apply (empty for metric).
+ */
+export function usMeasureFallback(prefs) {
+  if (prefs?.unitSystem === 'metric') return {};
+  const out = {};
+  for (const kind of ['Dist', 'Area', 'Perim']) {
+    const s = `measure${kind}DimScale`, u = `measure${kind}DimUnit`;
+    if (prefs?.[s] === undefined || (prefs[s] === 1 && prefs[u] === 'mm')) {
+      out[s] = US_MEASURE_FALLBACK[s];
+      out[u] = US_MEASURE_FALLBACK[u];
+    }
+  }
+  return out;
+}

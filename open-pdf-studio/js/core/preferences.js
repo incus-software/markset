@@ -6,6 +6,7 @@ import { changeLanguage } from '../i18n/useTranslation.js';
 import { isTauri, getUsername, savePreferencesFile, loadPreferencesFile } from './platform.js';
 import { preferencesMirrorJson } from './preferences-mirror.js';
 import { voegSamenMetStandaarden } from './preferences-merge.js';
+import { usMeasureFallback } from '../../markset/us-units.js'; // Markset
 import { randkleurVoorVoorkeur, randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
 import { zetRanddikte } from '../annotations/rendering/textbox-layout.js';
 
@@ -53,6 +54,8 @@ export async function loadPreferences() {
       // Merge with defaults to ensure all keys exist
       state.preferences = voegSamenMetStandaarden(DEFAULT_PREFERENCES, loaded);
     }
+    // Markset: with US units, measurements without any scale read paper feet-and-inches, not mm.
+    Object.assign(state.preferences, usMeasureFallback(state.preferences));
 
     // Persist to both storages so they stay in sync — bestand eerst,
     // spiegel apart en (in Tauri) alleen het thema (#353, zie savePreferences).
