@@ -1,0 +1,62 @@
+/* Markset: Stamp Builder dialog. */
+.markset-stamp-builder .msb-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(320px, 1fr);
+  gap: 16px;
+  max-height: 72vh;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--theme-text, inherit);
+}
+.markset-stamp-builder .msb-form { display: grid; gap: 8px; align-content: start; }
+.markset-stamp-builder .msb-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: start; }
+.markset-stamp-builder .msb-row > span { padding-top: 4px; color: var(--theme-text-secondary, #666); }
+.markset-stamp-builder input[type="text"],
+.markset-stamp-builder select,
+.markset-stamp-builder textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid var(--theme-border, #ccc);
+  border-radius: 3px;
+  background: var(--theme-surface, #fff);
+  color: inherit;
+}
+.markset-stamp-builder textarea { resize: vertical; margin-top: 4px; line-height: 1.35; }
+.markset-stamp-builder .msb-inline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.markset-stamp-builder .msb-inline select { width: auto; flex: 1; }
+.markset-stamp-builder .msb-checks { display: flex; gap: 12px; flex-wrap: wrap; padding-top: 4px; }
+.markset-stamp-builder .msb-check { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.markset-stamp-builder .msb-file { position: relative; overflow: hidden; cursor: pointer; }
+.markset-stamp-builder .msb-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.markset-stamp-builder .msb-swatch {
+  width: 20px; height: 20px; border-radius: 50%; padding: 0; cursor: pointer;
+  border: 2px solid var(--theme-panel-bg, #fff); outline: 1px solid var(--theme-border, #999);
+}
+.markset-stamp-builder .msb-swatch.active { outline: 2px solid var(--theme-accent, #0066ff); }
+.markset-stamp-builder .msb-preview { display: grid; gap: 8px; align-content: start; }
+/* White "paper" in every theme, so any ink color stays readable. */
+.markset-stamp-builder .msb-paper {
+  background: #fff;
+  border: 1px solid var(--theme-border, #ccc);
+  border-radius: 4px;
+  padding: 14px;
+}
+.markset-stamp-builder .msb-paper svg { display: block; width: 100%; height: auto; }
+.markset-stamp-builder .msb-size { font-family: Consolas, monospace; color: var(--theme-text-secondary, #666); }
+.markset-stamp-builder .msb-warn {
+  padding: 4px 8px; border-radius: 3px; border-left: 3px solid #b26b00;
+  background: rgba(240, 120, 0, 0.12);
+}
+.markset-stamp-builder .msb-status { color: var(--theme-text-secondary, #666); }
+.markset-stamp-builder .msb-note { margin: 4px 0 0; color: var(--theme-text-secondary, #666); font-size: 11px; line-height: 1.4; }
+.markset-stamp-builder .msb-footer { display: flex; gap: 6px; width: 100%; align-items: center; }
+@media (max-width: 820px) {
+  .markset-stamp-builder .msb-body { grid-template-columns: 1fr; }
+}
+.markset-stamp-builder select option { background: var(--theme-surface, #fff); color: var(--theme-text, inherit); }
+.markset-stamp-builder input[type="text"],
+.markset-stamp-builder select,
+.markset-stamp-builder textarea { color: var(--theme-text, inherit); }
+.markset-stamp-builder.modal-dialog { max-width: 96vw; }

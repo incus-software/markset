@@ -470,7 +470,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         } else {
           // Markset: US smart symbols are sized to the sheet, centred on the click.
           const maat = paginaMaat(page);
-          const mb = smartPlacementBox(template, startX, startY, maat?.breedte, maat?.hoogte);
+          const mb = smartPlacementBox(template, startX, startY, maat?.breedte, maat?.hoogte, 1, params);
           const ds = (template && template.defaultSize) || { width: 80, height: 80 };
           b = mb || { x: startX, y: startY, width: ds.width, height: ds.height };
         }
@@ -495,7 +495,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         // terugval DRAFTING_LINE_WIDTH. Bewust niet gestempeld.
         rotation: 0,
         opacity: 1,
-        ...smartColors(template, state.preferences.reviewMarkColor), // Markset: punch marker in review red
+        ...smartColors(template, state.preferences.reviewMarkColor, params), // Markset: punch marker in review red, stamps in their ink
       };
     }
 

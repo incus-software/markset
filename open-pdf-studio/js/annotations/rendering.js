@@ -1,5 +1,6 @@
 import { state, getActiveDocument, getPageRotation, imageCache } from '../core/state.js';
 import { imperialOr } from '../../markset/us-units.js'; // Markset
+import { getMarksetImage, registerMarksetImageRedraw } from '../../markset/stamp-builder/image-cache.js'; // Markset
 import { annotationCanvas, annotationCtx, textHighlightCanvas, textHighlightCtx } from '../ui/dom-elements.js';
 import { updateStatusAnnotations } from '../ui/chrome/status-bar.js';
 import { updateAnnotationsList } from '../ui/panels/annotations-list.js';
@@ -1783,13 +1784,18 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
           case 'text': {
             ctx.save();
             ctx.font = `${c.bold ? 'bold ' : ''}${c.size || 12}px Arial`;
-            ctx.textAlign = 'center';
+            ctx.textAlign = c.align || 'center'; // Markset: left-aligned stamp text
             ctx.textBaseline = 'middle';
             if (inHotLabel(c.x, c.y)) ctx.fillStyle = EDITABLE_NUMBER_COLOR;
             ctx.fillText(c.text || '', c.x, c.y);
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
             ctx.restore();
+            break;
+          }
+          case 'image': { // Markset: a review stamp's logo
+            const img = getMarksetImage(c.src);
+            if (img) ctx.drawImage(img, c.x, c.y, c.width, c.height);
             break;
           }
         }
@@ -2782,6 +2788,12 @@ bijNieuweTegel(() => {
 });
 
 registerSysteemSymbolRedraw(() => {
+  const doc = state.documents[state.activeDocumentIndex];
+  if (doc?.viewMode === 'continuous') redrawContinuous();
+  else redrawAnnotations();
+});
+
+registerMarksetImageRedraw(() => { // Markset: a stamp logo finished loading
   const doc = state.documents[state.activeDocumentIndex];
   if (doc?.viewMode === 'continuous') redrawContinuous();
   else redrawAnnotations();
