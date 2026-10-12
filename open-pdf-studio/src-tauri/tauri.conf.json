@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Open PDF Studio",
+  "productName": "Markset",
   "version": "2026.41.0",
-  "identifier": "org.openaec.openpdfstudio",
+  "identifier": "com.usemarkset.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3041",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Open PDF Studio",
+        "title": "Markset",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
@@ -41,7 +41,7 @@
       "deb",
       "appimage"
     ],
-    "createUpdaterArtifacts": "v1Compatible",
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -91,7 +91,7 @@
           "pdf"
         ],
         "mimeType": "application/pdf",
-        "name": "OpenPDFStudio.pdf",
+        "name": "Markset.pdf",
         "description": "Portable Document Format",
         "role": "Editor"
       }
@@ -106,9 +106,9 @@
     },
     "updater": {
       "endpoints": [
-        "https://github.com/OpenAEC-Foundation/OpenPDFStudio/releases/latest/download/latest.json"
+        "https://usemarkset.com/updates/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4N0ZBNjRBREVFNDE2M0EKUldRNkZ1VGVTcVovV0xkNk53STYvdXExbWtkTThIdDdzS0JFdG5VTXBqUlpFOUYrcm1rYTA0eTYK"
+      "pubkey": "MARKSET_UPDATER_PUBKEY_NOT_SET"
     },
     "deep-link": {
       "mobile": [
@@ -121,7 +121,7 @@
       ],
       "desktop": {
         "schemes": [
-          "openpdfstudio"
+          "markset"
         ]
       }
     }

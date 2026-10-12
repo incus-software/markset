@@ -1,0 +1,59 @@
+name: Markset Windows build
+
+# Unsigned Windows installer for testing. Runs on every push and pull request
+# in the Markset repository and can be started by hand from the Actions tab.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: markset-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: github.repository != 'OpenAEC-Foundation/open-pdf-studio'
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: open-pdf-studio
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: open-pdf-studio/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Unit and quality tests
+        run: |
+          npm run test:quality
+          npm run test:unit
+
+      - name: Build pdfium-worker sidecar
+        shell: pwsh
+        working-directory: .
+        run: |
+          cargo build --release -p pdfium-worker
+          New-Item -ItemType Directory -Force open-pdf-studio/src-tauri/binaries | Out-Null
+          Copy-Item target/release/pdfium-worker.exe open-pdf-studio/src-tauri/binaries/pdfium-worker-x86_64-pc-windows-msvc.exe -Force
+
+      - name: Build installer (unsigned)
+        run: npm run tauri -- build --bundles nsis
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: markset-windows-installer
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error

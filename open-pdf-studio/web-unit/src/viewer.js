@@ -21,8 +21,9 @@ async function pdfjs() {
 
 let _mupdfModule = null;
 async function mupdf() {
-  if (!_mupdfModule) _mupdfModule = await import('../../js/pdf/mupdf-renderer.js');
-  return _mupdfModule;
+  // Markset: the AGPL-licensed MuPDF engine is not shipped. Throwing here makes
+  // the existing fallback below render with PDF.js instead.
+  throw new Error('MuPDF engine is not available in Markset');
 }
 
 /** Zoomstand ('fit' | 'fit-width' | factor) omzetten naar een schaalgetal. */

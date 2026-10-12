@@ -89,8 +89,8 @@ export function _clearJSBitmapCache() {
 // They were never wired up — the active path is the Rust vector renderer
 // via `extract_draw_commands` + `vector-renderer.js`, with PDF.js as the
 // fallback for raster-only pages. The unused helpers have been removed.
-// `mupdf-renderer.js` is still imported once below for `closeDocument()`
-// cleanup (no-op when the runtime never loaded the WASM module).
+// Markset: the last `mupdf-renderer.js` import (a no-op cleanup call) was
+// removed together with the AGPL-licensed `mupdf` package.
 
 function setupCanvasHiDPI(canvas, width, height) {
   const dpr = getCanvasDPR();
@@ -2581,7 +2581,6 @@ export async function tekenNaPaginaRotatie() {
 
 // Clear the PDF view when no document is open
 export function clearPdfView() {
-  import('./mupdf-renderer.js').then(m => m.closeDocument());
   const pdfCanvas = getPdfCanvas();
   const annotationCanvas = getAnnotationCanvas();
   if (!pdfCanvas || !annotationCanvas) return;
