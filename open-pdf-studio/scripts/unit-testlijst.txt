@@ -253,4 +253,5 @@ markset/smart/smart.test.mjs
 markset/color-schemes.test.mjs
 markset/recent.test.mjs
 markset/stamp-builder/stamp.test.mjs
+markset/translations/translations.test.mjs
 markset/vite-brand.test.mjs
