@@ -37,6 +37,7 @@ import { koppenUitBestand } from '../lijnkoppen.js';
 import { kiesTekstvakTekst, runsZonderInspringing } from './tekstvak-tekst.js';
 import { inzetUitDsMarge, tolerantieVoorDsInzet } from '../../annotations/rendering/textbox-layout.js';
 import { caretPropsFromPdf, textEditPropsFromPdf } from './correction-load.js';
+import { isSafeSymbolSvg } from '../../solid/data/symbolLibraryOnline.js'; // Markset
 
 /**
  * Zet een PDF-annotatie om naar het model van de app.
@@ -1481,6 +1482,12 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
       // de opgeslagen OPS-sleutels; oudere bestanden zonder die sleutels
       // worden via symbool-id of stempelnaam alsnog geclassificeerd.
       if (extraColors.opsSymbolId) stampProps.symbolId = extraColors.opsSymbolId;
+      // Markset: keep the symbol's SVG so it saves as vectors again and can
+      // still be recolored after reopening.
+      if (extraColors.opsStampSvg && isSafeSymbolSvg(extraColors.opsStampSvg)) {
+        stampProps.stampSvg = extraColors.opsStampSvg;
+        stampProps.stampBaseSvg = extraColors.opsStampSvg;
+      }
       const nenStampInfo = nenIfcForStamp(extraColors.opsSymbolId, appStampName);
       stampProps.ifcCategory = extraColors.opsIfcCategory || nenStampInfo?.ifcCategory || undefined;
       stampProps.ifcPredefinedType = extraColors.opsIfcPredefined || nenStampInfo?.ifcPredefinedType || undefined;

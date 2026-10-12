@@ -11,6 +11,7 @@ import { getCachedPdfBytes, setCachedPdfBytes, hidePdfABar } from './loader.js';
 import { PDFDocument, PDFString, PDFHexString, PDFName, PDFArray, PDFStream, degrees,
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } from 'pdf-lib';
 import { kopNaarLE, koppenSleutel } from './lijnkoppen.js';
+import { writeVectorStampAppearance } from '../../markset/stamp-vector.js'; // Markset
 import { bouwKnipselAppearance, tekenKnipselInPagina, alInBasis, markeerGebakken, ruimKnipselRestenOp, CATALOGUS_SLEUTEL as KNIPSEL_CATALOGUS } from './saver/vector-snippet.js';
 import { schrijfHatchMeta } from './saver/hatch-meta.js';
 import { schrijfWandJoinMeta } from './saver/wand-join-meta.js';
@@ -1648,7 +1649,12 @@ async function _savePDFNu(saveAsPath, activeDoc) {
             }
 
             // Embed image data if present (e.g. north arrow, custom stamps)
-            if (ann.imageData) {
+            // Markset: a symbol with its SVG is saved as vector drawing
+            // commands instead; the PNG stays the fallback.
+            if (ann.imageData && !writeVectorStampAppearance({
+              ann, annotDict, context, pdf: { PDFName, PDFHexString },
+              compensation: pageCompensationForAp(ann.width, ann.height, pageRot),
+            })) {
               try {
                 const { bytes, isJpeg } = await imageBytesFromDataUrl(ann.imageData);
                 const embeddedImage = isJpeg

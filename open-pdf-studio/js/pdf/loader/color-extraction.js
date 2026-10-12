@@ -505,6 +505,12 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         const s = leesPdfTekst(context, opsSymRaw);
         if (s !== undefined) colors.opsSymbolId = s;
       }
+      // Markset: the SVG of a vector symbol stamp (markset/stamp-vector.js)
+      const opsStampSvgRaw = annotDict.get(PDFName.of('OPS_StampSvg'));
+      if (opsStampSvgRaw) {
+        const s = leesPdfTekst(context, opsStampSvgRaw);
+        if (s !== undefined) colors.opsStampSvg = s;
+      }
       const opsParamsRaw = annotDict.get(PDFName.of('OPS_Params'));
       if (opsParamsRaw) {
         const p = leesPdfTekst(context, opsParamsRaw);

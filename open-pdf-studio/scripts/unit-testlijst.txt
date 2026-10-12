@@ -247,4 +247,6 @@ js/text/leesrichting.test.mjs
 # Markset
 markset/us-units.test.mjs
 markset/us-units-hooks.test.mjs
+markset/svg-to-pdf.test.mjs
+markset/library/library.test.mjs
 markset/vite-brand.test.mjs

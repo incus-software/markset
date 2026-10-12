@@ -1,0 +1,11 @@
+{
+  "id": "us-starter",
+  "name": { "en": "US Starter Library" },
+  "description": { "en": "Review marks, stamps and US drawing symbols drawn for Markset." },
+  "sector": "aec",
+  "types": ["symbols"],
+  "scope": "national",
+  "status": "available",
+  "version": "0.1.0",
+  "license": "MIT"
+}

@@ -28,6 +28,7 @@ import { nenIfcForSymbolId } from '../data/nenIfcMap.js';
 import { SYMBOL_STAMP_DEFAULT_SIZE } from '../../annotations/stamp-defaults.js';
 import { setPendingSymbolId } from '../stores/parametricSymbolStore.js';
 import { symboolSchaal, setSymboolSchaal } from '../../symbols/symbol-scale-store.js';
+import { marksetSymbolSvg, marksetSymbolOverrides } from '../../../markset/library/index.js'; // Markset
 import { SCHAAL_STAPPEN, schaalLabel } from '../../symbols/symbol-scale.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
 import { parseLineworkCatalog, lineworkCatalogToGroup, LINEWORK_TEMPLATE_PREFIX } from '../../symbols/linework-catalog.js';
@@ -99,7 +100,7 @@ function startDrag(e, fromDocked) {
 }
 
 // --- Select symbol → activate stamp tool with SVG override ---
-function selectSymbol(symbol) {
+export function selectSymbol(symbol) { // Markset: exported for the K/X shortcuts
   // Parametric entries (NL Tekenwerk: stramien, peilmaat, …) place an
   // editable parametricSymbol annotation instead of a static stamp — the
   // click on the page goes through the parametricSymbol tool and the params
@@ -129,7 +130,7 @@ function selectSymbol(symbol) {
   // Resolve any user-edited geometry for this type. effectiveSvg is what gets
   // rasterized/placed; stampBaseSvg keeps the original source so a later
   // "Edit Type" on the placed stamp maps back to the same override key.
-  const effectiveSvg = resolveSymbolSvg(symbol.svg);
+  const effectiveSvg = marksetSymbolSvg(symbol, resolveSymbolSvg(symbol.svg)); // Markset: review color
   // Set overrides BEFORE setTool — manager.js preserves them for stamp tool
   state.toolOverrides = {
     stampSvg: effectiveSvg,
@@ -146,6 +147,7 @@ function selectSymbol(symbol) {
     // (en de saver/loader-roundtrip) de herkomst kent — zie nenIfcMap.js.
     symbolId: symbol.id,
     ifcPredefinedType: nenIfcForSymbolId(symbol.id)?.ifcPredefinedType,
+    ...marksetSymbolOverrides(symbol), // Markset: sheet-relative height
   };
   // Pre-cache rasterized preview image for cursor preview
   const blob = new Blob([effectiveSvg], { type: 'image/svg+xml' });

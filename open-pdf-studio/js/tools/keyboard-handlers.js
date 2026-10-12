@@ -28,6 +28,7 @@ import { getTool } from './tool-registry.js';
 import { resolvePointerCoords, buildToolContext, isModalOpen } from './tool-context.js';
 import { tryStartGMove, isGMoveModeActive } from './g-move-mode.js';
 import { tryStartGRotate, isGRotateModeActive } from './g-rotate-mode.js';
+import { marksetSymbolKey } from '../../markset/library/shortcuts.js'; // Markset
 import { toggleFullscreen, exitFullscreen, getFullscreenState } from '../ui/chrome/fullscreen.js';
 import { typeLengthActive, consumeKey as typeLengthConsumeKey, typeLengthCursor } from './type-length-input.js';
 import { startGripLengteInvoer, stopGripLengteInvoer, herstelStramienMeeslepen } from './tool-dispatcher.js';
@@ -909,6 +910,8 @@ export async function handleKeydown(e) {
     } else if (!pdfaLocked && (e.key === 'n' || e.key === 'N')) {
       e.preventDefault();
       setTool('comment');
+    } else if (!pdfaLocked && !e.ctrlKey && !e.metaKey && !e.altKey && marksetSymbolKey(e.key)) {
+      e.preventDefault(); // Markset: K = checkmark, X = X (bundled library shortcuts)
     }
   }
 

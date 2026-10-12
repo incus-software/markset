@@ -110,6 +110,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   // Appearance
   defaultAnnotationColor: '#FF0000',
+  reviewMarkColor: '#dd0000', // Markset: checkmark, X and other review marks
   defaultLineWidth: 2,
   defaultFontSize: 16,
   highlightOpacity: 50,

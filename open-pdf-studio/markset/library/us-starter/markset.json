@@ -1,0 +1,7 @@
+{
+  "comment": "Markset-only symbol data, next to the upstream-format collection files. paperHeightIn is the printed height on a 24x36 sheet; role 'review' marks print in the review mark color; shortcut is a single key.",
+  "symbols": {
+    "checkmark": { "name": "Checkmark", "paperHeightIn": 0.375, "role": "review", "shortcut": "k" },
+    "x-mark": { "name": "X", "paperHeightIn": 0.375, "role": "review", "shortcut": "x" }
+  }
+}

@@ -11,6 +11,7 @@ import { svgRealSizeMm, stampPlacementSize } from './svg-real-size.js';
 import { stampPxPerMm } from './stamp-scale.js';
 import { rasterizeSvg } from './svg-raster.js';
 import { paginaMaat, rechtopRotatie } from '../pdf/weergave-ruimte.js';
+import { sheetSymbolHeight } from '../../markset/library/sizing.js'; // Markset
 
 // Built-in stamp definitions
 // (in stamp-defaults.js, zodat ook de loader ze kan lezen)
@@ -127,7 +128,10 @@ export async function placeOverrideStamp(x, y) {
       pxPerMm: stampPxPerMm(page, x, y),
       aspect,
       defaultWidth: overrides.stampWidth,
-      defaultHeight: overrides.stampHeight || OVERRIDE_STAMP_DEFAULT_HEIGHT,
+      // Markset: Starter Library symbols are sized to the sheet (3/8" on 24x36).
+      defaultHeight: sheetSymbolHeight(overrides.stampPaperHeightIn,
+        paginaMaat(page, getActiveDocument())?.breedte, paginaMaat(page, getActiveDocument())?.hoogte)
+        || overrides.stampHeight || OVERRIDE_STAMP_DEFAULT_HEIGHT,
       schaal: huidigeSymboolSchaal(),
     });
     stampWidth = size.width;
