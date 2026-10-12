@@ -62,12 +62,24 @@ jobs:
       # try. Tests link against the dynamic CRT (tesseract-rs is built for it;
       # the workspace's +crt-static only suits the release app, see
       # render-regression.yml) in their own target dir, so the installer's
-      # build cache is not thrown away. The two screenshot tests need a PDFium
-      # library the test binary cannot find; they are skipped.
+      # build cache is not thrown away.
+      #
+      # Test binaries have no embedded manifest, so Windows would not give them
+      # Common Controls v6, which Tauri's dialogs import; they would stop at
+      # start-up with 0xc0000139. Build them first, put
+      # .github/test-binary.manifest next to each one, then run them.
+      # The two screenshot tests need a PDFium library the test binary cannot
+      # find; they are skipped.
       - name: Rust tests
         shell: pwsh
         working-directory: .
         env:
           RUSTFLAGS: -C target-feature=-crt-static
           CARGO_TARGET_DIR: target/rust-tests
-        run: cargo test -p open-pdf-studio -p open-pdf-cad -- --skip mcp_server::tests::tool_screenshot
+        run: |
+          cargo test --no-run -p open-pdf-studio -p open-pdf-cad
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem target/rust-tests/debug/deps/*.exe | ForEach-Object {
+            Copy-Item .github/test-binary.manifest "$($_.FullName).manifest" -Force
+          }
+          cargo test -p open-pdf-studio -p open-pdf-cad -- --skip mcp_server::tests::tool_screenshot
