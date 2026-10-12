@@ -30,7 +30,25 @@ const ALLEEN_ASCII = /^[\x00-\x7F]*$/;
  */
 export function pdfTextString(text) {
   const s = String(text ?? '');
-  return ALLEEN_ASCII.test(s) ? PDFString.of(s) : PDFHexString.fromText(s);
+  // Markset: PDFString.of writes the text between ( ) without escaping. An
+  // unbalanced ")" ("1) Confirm ...") ended the string early and corrupted
+  // the object (and the object stream it was in), and so did a "\" before a
+  // parenthesis or at the end. Such text goes as hex, which needs no
+  // escaping and reads back exactly (decodePdfTextObject).
+  return ALLEEN_ASCII.test(s) && veiligeLiteral(s) ? PDFString.of(s) : PDFHexString.fromText(s);
+}
+
+// Markset: can `s` be written as ( ... ) without escapes? No backslash right
+// before a parenthesis or at the end (it would escape it), and every ")"
+// closes an earlier "(" with none left open.
+function veiligeLiteral(s) {
+  if (/\\(?=[()]|$)/.test(s)) return false;
+  let diepte = 0;
+  for (const ch of s) {
+    if (ch === '(') diepte++;
+    else if (ch === ')' && --diepte < 0) return false;
+  }
+  return diepte === 0;
 }
 
 /**

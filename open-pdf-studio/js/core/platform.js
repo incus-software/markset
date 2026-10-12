@@ -323,9 +323,17 @@ export async function writeBinaryFileAtomic(path, data) {
   if (!isTauri()) return writeBinaryFile(path, data);
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   const mobile = window.__TAURI__?.os?.type?.() === 'android';
-  await getTauriCore().invoke('write_file_atomic', mobile ? { data: Array.from(bytes) } : bytes, {
-    headers: { 'x-opds-path': encodeURIComponent(path) },
-  });
+  const options = { headers: { 'x-opds-path': encodeURIComponent(path) } };
+  try {
+    await getTauriCore().invoke('write_file_atomic', mobile ? { data: Array.from(bytes) } : bytes, options);
+  } catch (err) {
+    // Markset: when the WebView's IPC protocol fails once, Tauri switches to
+    // postMessage for the rest of the session, which cannot carry a raw body:
+    // the bytes arrive as JSON without `data` ("Missing file data") and every
+    // save failed until a restart. Send them in the JSON form instead.
+    if (mobile || !/Missing file data/i.test(String(err?.message ?? err))) throw err;
+    await getTauriCore().invoke('write_file_atomic', { data: Array.from(bytes) }, options);
+  }
   return true;
 }
 
