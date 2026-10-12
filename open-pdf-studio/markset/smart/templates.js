@@ -8,6 +8,9 @@
 // its box, so it looks the same at any size. `markset` holds the printed
 // height on a 24x36 sheet and the color role.
 
+import { PLAN_TEMPLATES } from './plan.js';
+import { WIRING_TEMPLATES } from './wiring.js';
+
 const CAT = 'US';
 
 // --- Drawing helpers (grid units → page coordinates; 64 units = box height)
@@ -408,4 +411,8 @@ export const MARKSET_TEMPLATES = [
     render(p, box) { const g = grid(box); return [circle(g, 32, 32, 28, 4), text(g, 32, 33, p.number, 20, true)]; },
     editableLabels(p, box) { const g = grid(box); return [{ id: 'number', rect: labelRect(g, 32, 32, 48, 26), fields: ['number'] }]; },
   },
+  // --- Plan symbols drawn to scale (plan.js) -----------------------------------
+  ...PLAN_TEMPLATES,
+  // --- Wiring runs, two-point (wiring.js; listed in US Electrical) -----------
+  ...WIRING_TEMPLATES,
 ];

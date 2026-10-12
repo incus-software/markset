@@ -28,7 +28,14 @@ export function bundledGroups(files, lang = 'en') {
     byCollection.get(m[1])[m[2]] = text;
   }
   const groups = [];
-  for (const [id, f] of [...byCollection].sort(([a], [b]) => a.localeCompare(b))) {
+  // markset.json may give a palette position ("order", lowest first);
+  // collections without one follow, by id.
+  const rank = ([id, f]) => [parseJson(f['markset.json'], {}).order ?? 1e9, id];
+  const sorted = [...byCollection].sort((a, b) => {
+    const [ra, ia] = rank(a), [rb, ib] = rank(b);
+    return ra - rb || ia.localeCompare(ib);
+  });
+  for (const [id, f] of sorted) {
     const meta = parseJson(f['collection.json'], null);
     if (!meta || meta.id !== id || meta.status !== 'available') continue;
     const extra = parseJson(f['markset.json'], {}).symbols || {};

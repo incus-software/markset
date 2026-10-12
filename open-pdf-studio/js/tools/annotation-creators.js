@@ -22,7 +22,7 @@ import { isKlikSleep, klemMaat, schermPxNaarPt, KLIK_DREMPEL_PX } from '../annot
 import { getEffectiveScale } from './effective-scale.js';
 import { randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
 import { rechtopRotatie, paginaMaat } from '../pdf/weergave-ruimte.js';
-import { smartPlacementBox, smartColors } from '../../markset/smart/index.js'; // Markset
+import { smartPlacementBox, smartColors, smartTwoPointSize } from '../../markset/smart/index.js'; // Markset
 import { rechtopVak, nieuweMaatHoekVast } from '../pdf/weergave-rotatie.js';
 
 /**
@@ -409,13 +409,16 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         const k = pxPerMmAt(page, startX, startY);
         const realSize = typeof template.realSizeMm === 'function'
           ? template.realSizeMm(params) : null;
+        // Markset: wiring runs take their band height and click length from the sheet.
+        const maatTp = paginaMaat(page);
+        const sheetTp = smartTwoPointSize(template, maatTp?.breedte, maatTp?.hoogte);
         const bandHeight = (realSize?.height > 0
           ? realSize.height * k
-          : (template.defaultSize?.height || 48)) * huidigeSymboolSchaal();
+          : (sheetTp?.band || template.defaultSize?.height || 48)) * huidigeSymboolSchaal();
         if (isKlik(pointEndX - startX, pointEndY - startY)) {
           const defaultLength = realSize?.width > 0
             ? realSize.width * k
-            : (template.defaultSize?.width || 320);
+            : (sheetTp?.length || template.defaultSize?.width || 320);
           pointEndX = startX + defaultLength;
           pointEndY = startY;
         }

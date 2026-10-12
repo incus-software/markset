@@ -1,0 +1,28 @@
+{
+  "order": 2,
+  "comment": "Markset-only symbol data. paperHeightIn is the printed height on a 24x36 sheet; electrical symbols print black.",
+  "symbols": {
+    "receptacle-single": { "name": "Single receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-duplex": { "name": "Duplex receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-triplex": { "name": "Triplex receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-fourplex": { "name": "Fourplex receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-gfci": { "name": "GFCI duplex receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-weatherproof": { "name": "Weatherproof duplex receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-usb": { "name": "Duplex receptacle with USB", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-240v": { "name": "240V receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-split-wired": { "name": "Split-wired duplex receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-special-purpose": { "name": "Special purpose receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "receptacle-floor": { "name": "Floor receptacle", "paperHeightIn": 0.375, "role": "drawing" },
+    "switch-single-pole": { "name": "Single-pole switch", "paperHeightIn": 0.375, "role": "drawing" },
+    "switch-three-way": { "name": "Three-way switch", "paperHeightIn": 0.375, "role": "drawing" },
+    "switch-four-way": { "name": "Four-way switch", "paperHeightIn": 0.375, "role": "drawing" },
+    "light-ceiling": { "name": "Ceiling light", "paperHeightIn": 0.375, "role": "drawing" },
+    "light-wall": { "name": "Wall-mounted light", "paperHeightIn": 0.375, "role": "drawing" },
+    "light-recessed": { "name": "Recessed light", "paperHeightIn": 0.375, "role": "drawing" },
+    "light-outdoor": { "name": "Outdoor light", "paperHeightIn": 0.375, "role": "drawing" },
+    "light-floor": { "name": "Floor light", "paperHeightIn": 0.375, "role": "drawing" },
+    "ceiling-outlet": { "name": "Ceiling outlet", "paperHeightIn": 0.375, "role": "drawing" },
+    "junction-box": { "name": "Junction box", "paperHeightIn": 0.375, "role": "drawing" },
+    "telephone-outlet": { "name": "Telephone / data outlet", "paperHeightIn": 0.375, "role": "drawing" }
+  }
+}

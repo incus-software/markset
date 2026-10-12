@@ -1,0 +1,17 @@
+{
+  "id": "us-electrical-starter",
+  "name": {
+    "en": "US Electrical"
+  },
+  "description": {
+    "en": "Receptacle, switch and lighting symbols for US plans, drawn for Markset."
+  },
+  "sector": "electrical",
+  "types": [
+    "symbols"
+  ],
+  "scope": "national",
+  "status": "available",
+  "version": "0.1.0",
+  "license": "MIT"
+}
