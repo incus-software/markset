@@ -42,3 +42,33 @@ export function sheetInches(points) {
   const v = Number(points);
   return v > 0 ? `${Math.round((v / 72) * 100) / 100}"` : '';
 }
+
+/** /Name of the viewport a calibration is saved as (page-scale-pdf.js). */
+export const MARKSET_VP_NAME = 'Markset calibration';
+
+/**
+ * On opening: the "Markset calibration" viewports read from the PDF
+ * (`viewports` = { page: [{ name, pixelsPerUnit, unit, ratio }] }) become the
+ * pages' calibrations, unless this computer already has one for that page.
+ * Returns the new document scale (the old one when nothing changes).
+ */
+export function restorePageCalibrations(measureScale, viewports) {
+  let out = measureScale;
+  for (const [page, list] of Object.entries(viewports || {})) {
+    const v = (list || []).find(x => x?.name === MARKSET_VP_NAME && x.pixelsPerUnit > 0);
+    if (!v || out?.pages?.[page]) continue;
+    const s = { pixelsPerUnit: v.pixelsPerUnit, unit: v.unit || 'mm', method: 'reference', scaleRatio: /^1:/.test(v.ratio || '') ? v.ratio : null };
+    out = { ...(out || {}), pages: { ...(out?.pages || {}), [page]: s } };
+  }
+  return out;
+}
+
+/**
+ * The document scale stored on this computer, merged with one already in
+ * the document (calibrations read from the PDF): this computer's own
+ * calibration of a page wins, the PDF's fills in the other pages.
+ */
+export function mergeStoredScale(stored, current) {
+  if (!current?.pages) return stored;
+  return { ...(stored || {}), pages: { ...current.pages, ...(stored?.pages || {}) } };
+}

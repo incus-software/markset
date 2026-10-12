@@ -14,6 +14,7 @@ import { kopNaarLE, koppenSleutel } from './lijnkoppen.js';
 import { writeVectorStampAppearance } from '../../markset/stamp-vector.js'; // Markset
 import { writeVectorParametricAppearance, embedSmartImages } from '../../markset/smart/index.js'; // Markset
 import { stampParamsForSave } from '../../markset/stamp-builder/pdf-assets.js'; // Markset
+import { writePageCalibrations } from '../../markset/page-scale-pdf.js'; // Markset
 import { bouwKnipselAppearance, tekenKnipselInPagina, alInBasis, markeerGebakken, ruimKnipselRestenOp, CATALOGUS_SLEUTEL as KNIPSEL_CATALOGUS } from './saver/vector-snippet.js';
 import { schrijfHatchMeta } from './saver/hatch-meta.js';
 import { schrijfWandJoinMeta } from './saver/wand-join-meta.js';
@@ -2951,6 +2952,13 @@ async function _savePDFNu(saveAsPath, activeDoc) {
       } catch (err) {
         console.warn('[saver] knipsel-resten opruimen overgeslagen:', err?.message || err);
       }
+    }
+
+    // Markset: each sheet's calibration as a standard measurement viewport (page-scale-pdf.js)
+    try {
+      writePageCalibrations(pdfDocLib, activeDoc?.measureScale, { PDFName, PDFArray, PDFString });
+    } catch (err) {
+      console.warn('[saver] calibration viewports skipped:', err?.message || err);
     }
 
     // Save the PDF

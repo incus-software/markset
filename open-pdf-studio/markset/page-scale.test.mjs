@@ -46,3 +46,64 @@ test('page sizes and reference lines in inches', () => {
   assert.equal(sheetInches(142.36), '1.98"');
   assert.equal(sheetInches(''), '');
 });
+
+// --- Saved in the PDF ------------------------------------------------------
+import { PDFDocument, PDFName, PDFArray, PDFString } from 'pdf-lib';
+import { writePageCalibrations, measureFormats } from './page-scale-pdf.js';
+import { leesViewportsVanPagina } from '../js/pdf/pdf-viewports.js';
+import { restorePageCalibrations, mergeStoredScale, MARKSET_VP_NAME } from './page-scale.js';
+
+const lib = { PDFName, PDFArray, PDFString };
+
+async function cadPdf() {
+  // Two ARCH D sheets; sheet 1 carries a CAD viewport with a wrong scale (18 pt/ft).
+  const pdf = await PDFDocument.create();
+  const p1 = pdf.addPage([2592, 1728]);
+  pdf.addPage([2592, 1728]);
+  const nf = pdf.context.obj({ Type: 'NumberFormat', U: PDFString.of('ft'), C: 1 / 18 });
+  const m = pdf.context.obj({ Type: 'Measure', Subtype: 'RL', R: PDFString.of('1/4" = 1\'-0"'), X: [nf], D: [nf], A: [nf] });
+  p1.node.set(PDFName.of('VP'), pdf.context.obj([pdf.context.obj({ Type: 'Viewport', BBox: [100, 100, 1500, 1200], Name: PDFString.of('Plan'), Measure: m })]));
+  return pdf;
+}
+
+test('a sheet calibration is written as a standard viewport and read back', async () => {
+  const pdf = await cadPdf();
+  const ms = withPageScale(null, 1, cal(19.635)); // 1.98" = 7'-3"
+  assert.equal(writePageCalibrations(pdf, ms, lib), 1);
+  const reloaded = await PDFDocument.load(await pdf.save());
+  const vps = leesViewportsVanPagina(reloaded.getPage(0));
+  assert.equal(vps.length, 1); // the CAD viewport is set aside, ours covers the sheet
+  assert.equal(vps[0].name, MARKSET_VP_NAME);
+  assert.ok(Math.abs(vps[0].pixelsPerUnit - 19.635) < 1e-6);
+  assert.equal(vps[0].unit, 'ft');
+  assert.equal(vps[0].width, 2592);
+  assert.ok(reloaded.getPage(0).node.lookup(PDFName.of('OPS_OriginalVP')) instanceof PDFArray);
+  assert.equal(leesViewportsVanPagina(reloaded.getPage(1)).length, 0); // sheet 2 untouched
+  // Opening on another computer: the viewport becomes sheet 1's calibration.
+  const restored = restorePageCalibrations(null, { 1: vps });
+  assert.ok(Math.abs(pageScaleAt({ measureScale: restored }, 1).pixelsPerUnit - 19.635) < 1e-6);
+});
+
+test('reset gives the CAD viewport back', async () => {
+  const pdf = await cadPdf();
+  writePageCalibrations(pdf, withPageScale(null, 1, cal(20)), lib);
+  const again = await PDFDocument.load(await pdf.save());
+  writePageCalibrations(again, null, lib); // calibration reset
+  const vps = leesViewportsVanPagina((await PDFDocument.load(await again.save())).getPage(0));
+  assert.deepEqual(vps.map(v => v.name), ['Plan']);
+  assert.ok(Math.abs(vps[0].pixelsPerUnit - 18) < 1e-6);
+});
+
+test('number formats show feet and inches; this computer\'s calibration wins on merge', () => {
+  const f = measureFormats(18, 'ft');
+  assert.equal(f.X[0].U, 'ft');
+  assert.ok(Math.abs(f.X[0].C - 1 / 18) < 1e-12);
+  assert.deepEqual(f.D.map(d => d.U), ['ft', 'in']);
+  const fromPdf = { pages: { 1: cal(19), 2: cal(9) } };
+  const local = withPageScale(null, 1, cal(20));
+  const m = mergeStoredScale(local, fromPdf);
+  assert.equal(m.pages[1].pixelsPerUnit, 20);
+  assert.equal(m.pages[2].pixelsPerUnit, 9);
+  assert.equal(mergeStoredScale(local, null), local);
+  assert.equal(restorePageCalibrations(local, { 1: [{ name: MARKSET_VP_NAME, pixelsPerUnit: 5, unit: 'ft' }] }), local);
+});
