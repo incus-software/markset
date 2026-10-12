@@ -58,6 +58,20 @@ export const ASSISTANT_EN = {
       String.raw`invoke: 'Lay out the structure on the sheet: column grid, columns at the grid intersections, beams on the grid lines, the span direction of each floor bay, levels, member marks and a member schedule. Brief: ',`],
     [String.raw`'Antwoord in het Nederlands, bondig en praktisch. Voer gevraagde acties direct uit en meld kort wat je gedaan hebt.\n'`,
       String.raw`'Answer in English (or in the language the user writes in), briefly and practically. Text placed on the sheet is in English unless the user asks otherwise. Carry out requested actions right away and report briefly what you did.\n'`],
+    // Hidden in Markset: Floor plan, Structural layout and Structural overview
+    // follow Dutch building practice (NEN materials, Dutch cavity walls,
+    // European steel shapes, millimetres). Their buttons go, and so do their
+    // instructions, so the model does not fall back on them when asked in chat.
+    ['export const ASSISTANT_SKILLS = [', 'const UPSTREAM_ASSISTANT_SKILLS = ['],
+    ['export const SKILLS_SYSTEM_PROMPT =', 'const UPSTREAM_SKILLS_SYSTEM_PROMPT ='],
+    ['  CONSTRUCTIEOVERZICHT_PROMPT +\n  PLATTEGROND_PROMPT;',
+      String.raw`  CONSTRUCTIEOVERZICHT_PROMPT +
+  PLATTEGROND_PROMPT;
+
+// Markset: only the general skills (see markset/translations/assistant-en.js).
+export const MARKSET_HIDDEN_SKILLS = ['structural-layout', 'structural-overview', 'floorplan'];
+export const ASSISTANT_SKILLS = UPSTREAM_ASSISTANT_SKILLS.filter((s) => !MARKSET_HIDDEN_SKILLS.includes(s.id));
+export const SKILLS_SYSTEM_PROMPT = UPSTREAM_SKILLS_SYSTEM_PROMPT.split('\nCONSTRUCTIETEKENING')[0];`],
   ],
 
   'js/plattegrond/skill.js': [
@@ -83,11 +97,15 @@ export const ASSISTANT_EN = {
   ],
 };
 
-/** `code` of upstream file `relPath` (from open-pdf-studio/) with the English text. */
+/**
+ * `code` of upstream file `relPath` (from open-pdf-studio/) with the English
+ * text. Line endings become LF, so pairs that span lines also match in a
+ * Windows checkout.
+ */
 export function applyTranslations(code, relPath, table = ASSISTANT_EN) {
   const pairs = table[relPath];
   if (!pairs) return code;
-  let out = code;
+  let out = code.replace(/\r\n/g, '\n');
   for (const [from, to] of pairs) out = out.split(from).join(to);
   return out;
 }
