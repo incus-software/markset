@@ -32,6 +32,7 @@ working notes for keeping the fork mergeable.
 | 2026-10-10 | Fixed the brand overlay (`markset/vite-brand.mjs`): it skipped every file because the repository checkout is itself named "markset"; it now skips only `open-pdf-studio/markset/`. |
 | 2026-10-10 | Review marks (Phase C, Starter Library batch 1): circled check, circled X, question mark, VIF, NIC, OK, EQ, see-comment dot and strike line join the checkmark and X. Symbol palette defaults to the United States (symbolLocales.js; was the Netherlands). |
 | 2026-10-10 | Starter Library batch 2: drawing symbols in black (north arrow, centerline, break line, match line, level datum, spot elevation; wide ones use a 128- or 192-unit viewBox, still 64 high) and punch / field icons in review red (punch pin, finish, door/hardware, MEP, safety, damage, water/moisture, crack, camera). The graphic scale bar is the existing scale-bar tool, not a symbol. |
+| 2026-10-10 | Starter Library batch 3: 15 stamps (7 submittal review, 8 issue/status) as 256x64 vector symbols with role `stamp`: fixed meaning colors (green accepted, amber conditional, red not accepted, blue informational, gray archival), not recolored. Live date, initials and firm fields are not part of the open-source app. |
 
 ## Known follow-ups
 

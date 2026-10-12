@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { bundledGroups, symbolForShortcut } from './bundle.js';
 import { sheetSymbolHeight, MIN_HEIGHT_IN } from './sizing.js';
 import { isSafeSymbolSvg } from '../../js/solid/data/symbolLibraryOnline.js';
-import { svgToPdfAppearance } from '../svg-to-pdf.js';
+import { svgToPdfAppearance, helveticaWidth } from '../svg-to-pdf.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 
@@ -53,8 +53,28 @@ test('review marks are drawn in the recolorable red, drawing symbols in black', 
     if (s.markset?.role === 'review') {
       assert.match(s.svg, /#d00/, `${s.name}: review red`);
       assert.doesNotMatch(s.svg, /#000/, `${s.name}: no black in a review mark`);
+    } else if (s.markset?.role === 'stamp') {
+      // A stamp's color carries its meaning, so it is not the review red.
+      assert.doesNotMatch(s.svg, /#d00\b/, `${s.name}: stamps keep their own color`);
     } else {
       assert.doesNotMatch(s.svg, /#d00/, `${s.name}: drawing symbols print black`);
+    }
+  }
+});
+
+test('stamps: 15, wide, one meaning color each, text that fits', () => {
+  const stamps = starter.symbols.filter(s => s.markset?.role === 'stamp');
+  assert.equal(stamps.length, 15);
+  const meaning = new Set(['#15803d', '#b45309', '#b91c1c', '#1d4ed8', '#4b5563']);
+  for (const s of stamps) {
+    assert.match(s.markset.id, /^stamp-/, s.name);
+    assert.match(s.svg, /viewBox="0 0 256 64"/, `${s.name}: 4:1 stamp`);
+    const colors = new Set(s.svg.match(/#[0-9a-f]{6}/g));
+    assert.equal(colors.size, 1, `${s.name}: one color`);
+    assert.ok(meaning.has([...colors][0]), `${s.name}: a meaning color`);
+    for (const [, size, text] of s.svg.matchAll(/font-size="([\d.]+)"[^>]*>([^<]+)</g)) {
+      assert.ok(helveticaWidth(text, Number(size), true) <= 236, `${s.name}: "${text}" fits inside the inner border`);
+      assert.ok(Number(size) >= 15, `${s.name}: text large enough to read`);
     }
   }
 });
@@ -82,7 +102,7 @@ test('markset.json only describes symbols that exist, with valid data', () => {
     for (const [id, x] of Object.entries(extra)) {
       assert.ok(ids.has(id), `${dir}/${id} in markset.json has no SVG`);
       if (x.paperHeightIn != null) assert.ok(x.paperHeightIn > 0 && x.paperHeightIn < 3, `${id}: paperHeightIn`);
-      if (x.role != null) assert.ok(['review', 'drawing'].includes(x.role), `${id}: role`);
+      if (x.role != null) assert.ok(['review', 'drawing', 'stamp'].includes(x.role), `${id}: role`);
       if (x.shortcut != null) {
         assert.match(x.shortcut, /^[a-z]$/, `${id}: one lower-case key`);
         assert.ok(!keys.has(x.shortcut), `${id}: shortcut ${x.shortcut} used twice`);
