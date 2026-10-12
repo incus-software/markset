@@ -188,6 +188,6 @@ jobs:
       - name: Verify and launch macOS app
         if: matrix.platform == 'macos-26'
         run: |
-          APP_PATH="../target/universal-apple-darwin/release/bundle/macos/Open PDF Studio.app"
+          APP_PATH="../target/universal-apple-darwin/release/bundle/macos/Markset.app" # Markset: productName
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           bash scripts/macos-startup-smoke.sh "$APP_PATH"
