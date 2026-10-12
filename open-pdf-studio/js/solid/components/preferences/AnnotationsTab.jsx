@@ -97,6 +97,10 @@ export default function AnnotationsTab(props) {
     { value: 'decimal', label: t('measurement.imperialDecimal') },
   ];
   const fractionOpts = FRACTION_DENOMINATORS.map(d => ({ value: d, label: `1/${d}"` }));
+  const unitSystemOpts = [
+    { value: 'us', label: t('measurement.unitSystemUs') },
+    { value: 'metric', label: t('measurement.unitSystemMetric') },
+  ];
 
   return (
     <div class="pref-subtab-wrapper">
@@ -458,7 +462,11 @@ export default function AnnotationsTab(props) {
                 <PrefComboBox value={p.measureCtrlSnap[0]} setValue={p.measureCtrlSnap[1]}
                   options={[1, 5, 10, 20, 50, 100]} min={1} max={1000} suffix="" fallback={10} />
               </div>
-              {/* Markset: feet-inch display for ft and in measurements */}
+              {/* Markset: unit system and feet-inch display for ft and in measurements */}
+              <div class="pref-row">
+                <label>{t('measurement.unitSystem')}</label>
+                <PrefSelect value={p.unitSystem[0]} setValue={p.unitSystem[1]} options={unitSystemOpts} />
+              </div>
               <div class="pref-row">
                 <label>{t('measurement.imperialFormat')}</label>
                 <PrefSelect value={p.measureImperialFormat[0]} setValue={p.measureImperialFormat[1]} options={imperialFormatOpts} />

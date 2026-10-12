@@ -16,6 +16,7 @@ import { recalculateAllMeasurements } from '../../../annotations/measurement.js'
 import { invalidateScaleRegionCache } from '../../../annotations/scale-region.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { US_SCALES } from '../../../../markset/us-units.js'; // Markset
+import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
 
 // Standard drawing scales for the dropdown (largest → smallest denominator).
 const PRESET_SCALES = [
@@ -47,9 +48,9 @@ export default function ScaleRegionDialog(props) {
   // distance and reopens it with data.initial (previous values + computed
   // scale) so nothing the user typed is lost.
   const initial = data.initial || initialSnapshot || {};
-  const initialScale = initial.scaleString || '1:100';
+  const initialScale = initial.scaleString || unitDefaults().scaleString; // Markset
   const [scaleString, setScaleString] = createSignal(initialScale);
-  const [units, setUnits] = createSignal(initial.units || 'mm');
+  const [units, setUnits] = createSignal(initial.units || unitDefaults().unit); // Markset
   const [label, setLabel] = createSignal(initial.label || '');
   // True when the user picked "Aangepast…" — shows the free-text scale input.
   // A computed scale like "1:53.42" is not a preset, so it starts as custom.

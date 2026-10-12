@@ -1,4 +1,5 @@
 import { state, getActiveDocument } from '../core/state.js';
+import { imperialOr } from '../../markset/us-units.js'; // Markset
 import { getPdfSnapPointsNear, getPdfEdgeSegmentsNear } from './pdf-snap-extractor.js';
 import { snapPointToGrid } from '../annotations/rendering/ui-state.js';
 import { zetRechtopRond } from '../pdf/weergave-ruimte.js';
@@ -674,7 +675,7 @@ export function drawPolarRay(ctx, snapResult, scale) {
     }
   } catch (_) { /* ignore */ }
   const angleDeg = (angle * 180 / Math.PI + 360) % 360;
-  const text = `Polar: ${angleDeg.toFixed(2)}° < ${lenInUnits.toFixed(2)} ${unit}`;
+  const text = `Polar: ${angleDeg.toFixed(2)}° < ${imperialOr(lenInUnits, unit, state.preferences, `${lenInUnits.toFixed(2)} ${unit}`)}`; // Markset
   // Rechtop op het scherm, ook in een gedraaide weergave (#200).
   zetRechtopRond(ctx, snapResult.x, snapResult.y);
   const fontSize = 11 / scale;

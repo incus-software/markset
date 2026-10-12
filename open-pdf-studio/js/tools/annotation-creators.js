@@ -1,6 +1,7 @@
 import { huidigeSymboolSchaal } from '../symbols/symbol-scale-store.js';
 import { schaalVakOmMidden } from '../symbols/symbol-scale.js';
 import { state, getActiveDocument } from '../core/state.js';
+import { imperialOr } from '../../markset/us-units.js'; // Markset
 import { getColorPickerValue, getLineWidthValue } from '../bridge.js';
 import { createAnnotation } from '../annotations/factory.js';
 import { snapAngle } from '../utils/helpers.js';
@@ -698,7 +699,7 @@ export function createMeasurePerimeterAnnotation(points) {
     const scaledPerim = pixelPerim * mPrefs.measurePerimDimScale;
     const unit = mPrefs.measurePerimDimUnit || 'mm';
     const prec = mPrefs.measurePerimDimPrecision ?? 2;
-    perimProps.measureText = `${scaledPerim.toFixed(prec)} ${unit}`;
+    perimProps.measureText = imperialOr(scaledPerim, unit, state.preferences, `${scaledPerim.toFixed(prec)} ${unit}`); // Markset
     perimProps.measureValue = scaledPerim;
     perimProps.measureUnit = unit;
   } else {

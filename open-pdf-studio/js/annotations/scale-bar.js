@@ -3,6 +3,7 @@ import { getActiveDocument } from '../core/state.js';
 import { detectScaleInDocument, scaleFromScaleBar } from './document-scale.js';
 import { schaalOpPuntUitBronnen } from './schaal-op-punt.js';
 import { schaalBronnen } from './schaal-bronnen.js';
+import { defaultScaleBar } from '../../markset/us-units.js'; // Markset
 
 /**
  * Create a scale bar annotation at the given position.
@@ -14,8 +15,9 @@ export function createScaleBar(x, y) {
   const unit = ms?.unit || 'mm';
 
   // Default: 5000mm (5m) scale bar with 5 divisions (each 1000mm = 1m)
-  const totalUnits = 5000;
-  const divisions = 5;
+  // Markset: the same 5 m in cm/m, and 20' or 24" in imperial units (a
+  // fixed 5000 would make a 5 km or 5000 ft bar there).
+  const { totalUnits, divisions } = defaultScaleBar(unit);
 
   let pixelsPerUnit = ms?.pixelsPerUnit || 0;
   let barWidth;

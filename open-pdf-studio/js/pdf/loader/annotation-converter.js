@@ -1,4 +1,5 @@
 import { state, imageCache } from '../../core/state.js';
+import { imperialOr } from '../../../markset/us-units.js'; // Markset
 import { createAnnotation } from '../../annotations/factory.js';
 import { generateImageId } from '../../utils/helpers.js';
 import { colorArrayToHex } from '../../utils/colors.js';
@@ -521,7 +522,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
               const pixelDist = Math.sqrt((lex - lsx) ** 2 + (ley - lsy) ** 2);
               const scaledVal = pixelDist * mdProps.measureScale;
               const unit = mdProps.measureUnit || 'mm';
-              mdText = `${scaledVal.toFixed(prec)} ${unit}`;
+              mdText = imperialOr(scaledVal, unit, state.preferences, `${scaledVal.toFixed(prec)} ${unit}`); // Markset
             } else {
               const dist = calculateDistance(lsx, lsy, lex, ley, pageNum);
               mdText = formatMeasurement(dist);

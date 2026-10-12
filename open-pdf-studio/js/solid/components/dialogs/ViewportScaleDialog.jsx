@@ -14,6 +14,7 @@ import { redrawAnnotations, redrawContinuous } from '../../../annotations/render
 import { recalculateAllMeasurements } from '../../../annotations/measurement.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { US_SCALES, usScaleLabel, pointsPerFoot } from '../../../../markset/us-units.js'; // Markset
+import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
 
 const PRESET_SCALES = [
   { label: '1:10', ratio: 10 },
@@ -58,14 +59,14 @@ export default function ViewportScaleDialog(props) {
   const data = props.data || {};
   const initialAnnotation = findAnnotation(data.annotationId);
   const initialSnapshot = initialAnnotation ? cloneAnnotation(initialAnnotation) : null;
-  let initialRatio = String(initialAnnotation?.scaleRatio || '').match(/^1:(\d+)$/)?.[1] || '100';
+  let initialRatio = String(initialAnnotation?.scaleRatio || '').match(/^1:(\d+)$/)?.[1] || unitDefaults().viewportPreset; // Markset
   // Markset: reopen a feet-calibrated US scale on its US preset.
   if (['ft', 'in'].includes(initialAnnotation?.unit) && usScaleLabel(Number(initialRatio))) initialRatio = `us:${initialRatio}`;
   const [mode, setMode] = createSignal(data.isNew || initialAnnotation?.scaleRatio ? 'preset' : 'custom');
   const [presetRatio, setPresetRatio] = createSignal(initialRatio);
   const hasCustomScale = !!initialAnnotation && !initialAnnotation.scaleRatio && initialAnnotation.pixelsPerUnit > 0;
   const [customValue, setCustomValue] = createSignal(hasCustomScale ? '1' : '');
-  const [customUnit, setCustomUnit] = createSignal(initialAnnotation?.unit || 'mm');
+  const [customUnit, setCustomUnit] = createSignal(initialAnnotation?.unit || unitDefaults().unit); // Markset
   const [refPixels, setRefPixels] = createSignal(hasCustomScale ? String(initialAnnotation.pixelsPerUnit) : '');
   const [viewportName, setViewportName] = createSignal(initialAnnotation?.name || '');
 

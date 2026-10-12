@@ -214,6 +214,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Markset: US units (markset/us-units.js)
   measureImperialFormat: 'feet-inch',
   measureFractionDenominator: 16,
+  unitSystem: 'us', // 'us' | 'metric': starting unit, scale and sheet in the dialogs
 
   // Measure Distance defaults
   measureDistStrokeColor: '#FF0000',
