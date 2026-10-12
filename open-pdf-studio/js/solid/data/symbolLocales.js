@@ -11,12 +11,13 @@ export const INDUSTRIES = [
 ];
 
 export const COUNTRIES = [
+  { id: 'us', name: 'United States', flag: '🇺🇸' }, // Markset
   { id: 'nl', name: 'Nederland', flag: '🇳🇱' },
 ];
 
 // Standaardselectie bij een verse installatie.
 export const DEFAULT_INDUSTRY = 'aec';
-export const DEFAULT_COUNTRY = 'nl';
+export const DEFAULT_COUNTRY = 'us'; // Markset: US symbols by default (was 'nl')
 
 export function industryName(id) {
   return INDUSTRIES.find(i => i.id === id)?.name || id;
