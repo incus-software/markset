@@ -49,6 +49,7 @@ import {
   isStramien, startMeeslepen, sleepMee, meesleepWijzigingen, herstelMeeslepen,
 } from '../annotations/stramien-koppeling.js';
 import { magMeeVeranderen } from '../annotations/stramien-slot.js';
+import { recordPointer } from '../../markset/paste-at-pointer.js'; // Markset
 
 // ── Gekoppelde stramienuiteinden meeslepen ─────────────────────────────────
 // Sleep je de maatgreep aan het uiteinde van een stramienlijn waarvan dat
@@ -373,6 +374,7 @@ function _handlePointerMoveNu(e) {
 
   const coords = resolvePointerCoords(e);
   const ctx = buildToolContext(e, coords);
+  recordPointer(coords.pageNum || getActiveDocument()?.currentPage, coords.x, coords.y); // Markset: paste at the pointer
 
   // 2D-cursor drag: while Shift+right stays down the cursor follows the
   // pointer (object-snapped); release ends the drag.

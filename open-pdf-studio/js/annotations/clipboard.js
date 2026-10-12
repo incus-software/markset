@@ -1,6 +1,7 @@
 import { state, getActiveDocument, imageCache } from '../core/state.js';
 import { cloneAnnotation } from './factory.js';
 import { cloneAnnotationsInPlace } from './paste-in-place.js';
+import { moveToPointer, shiftUnmoved } from '../../markset/paste-at-pointer.js'; // Markset
 import { relinkPastedCorrections } from './corrections/model.js';
 import { generateImageId } from '../utils/helpers.js';
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
@@ -243,6 +244,7 @@ export function pasteAnnotation() {
   // Een losse helft van een vervanging (#508) hoort niet bij het origineel;
   // de kopie krijgt bij opslaan een eigen /NM.
   relinkPastedCorrections([state.clipboardAnnotation], [newAnnotation]);
+  if (!moveToPointer([newAnnotation], getActiveDocument()?.pageDims)) shiftUnmoved([newAnnotation], [state.clipboardAnnotation], off); // Markset: paste where the mouse is
 
   // For images/signatures, need to copy the cached image
   if (newAnnotation.type === 'image' || newAnnotation.type === 'signature') {
@@ -336,6 +338,7 @@ export function pasteAnnotations() {
   }
   // Vervangingen (#508) koppelen aan hun eigen kopie, niet aan het origineel.
   relinkPastedCorrections(state.clipboardAnnotations, newAnnotations);
+  if (!moveToPointer(newAnnotations, getActiveDocument()?.pageDims)) shiftUnmoved(newAnnotations, state.clipboardAnnotations, off); // Markset: paste where the mouse is
   const _pasteDocAdd = getActiveDocument();
   if (_pasteDocAdd) _pasteDocAdd.annotations.push(...newAnnotations);
 
