@@ -24,6 +24,7 @@
 // gebruiken.
 
 import { viewportOp } from '../pdf/pdf-viewports.js';
+import { pageScaleAt } from '../../markset/page-scale.js'; // Markset
 
 /**
  * @typedef {object} SchaalBronnen
@@ -113,6 +114,11 @@ export function schaalOpPuntUitBronnen(bronnen, doc, pageNum, x, y) {
       }
     }
   }
+
+  // Markset: this sheet's own calibration (Calibrate / Set Scale) beats the
+  // scale that came with the PDF, scale bars and the document scale.
+  const paginaSchaal = pageScaleAt(doc, pageNum);
+  if (paginaSchaal) return { pixelsPerUnit: paginaSchaal.pixelsPerUnit, unit: paginaSchaal.unit || 'mm', method: 'page' };
 
   const balk = opPagina(bronnen.balkOpPagina, pageNum);
   if (balk) return { pixelsPerUnit: balk.pixelsPerUnit, unit: balk.unit, method: 'scaleBar' };

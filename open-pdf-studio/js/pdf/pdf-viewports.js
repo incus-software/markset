@@ -6,6 +6,7 @@
 // De viewports worden alleen gelezen; de PDF blijft ongewijzigd.
 
 import { PDFName, PDFArray, PDFDict, PDFNumber, PDFString, PDFHexString } from 'pdf-lib';
+import { restorePageCalibrations } from '../../markset/page-scale.js'; // Markset
 
 /** Millimeters per eenheid voor de eenheden die in een `/U`-label voorkomen. */
 const MM_PER = Object.freeze({ mm: 1, cm: 10, dm: 100, m: 1000, km: 1000000, in: 25.4, ft: 304.8, yd: 914.4, mi: 1609344 });
@@ -290,6 +291,10 @@ export function rondViewportLezingAf(doc, kenmerk, viewports) {
   if (!doc || doc._viewportLezing !== kenmerk) return false;
   doc._viewportLezing = null;
   if (viewports) doc.pdfViewports = Object.keys(viewports).length ? viewports : undefined;
+  if (viewports) { // Markset: a calibration saved in the PDF is that sheet's calibration again
+    const ms = restorePageCalibrations(doc.measureScale, viewports);
+    if (ms !== doc.measureScale) doc.measureScale = ms;
+  }
   return true;
 }
 

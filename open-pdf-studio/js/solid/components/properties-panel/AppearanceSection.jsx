@@ -1,12 +1,12 @@
 import { Show, For, createSignal, createEffect } from 'solid-js';
-import { annotProps, sectionVis, updateAnnotProp, getLineWidthLabel, cycleSelectNext } from '../../stores/propertiesStore.js';
+import { annotProps, sectionVis, updateAnnotProp, getLineWidthLabel, cycleSelectNext, getCurrentAnnotation } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import ColorPalettePicker from './ColorPalettePicker.jsx';
 import PrefComboBox from '../preferences/PrefComboBox.jsx';
 import Dialog from '../Dialog.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { state } from '../../../core/state.js';
-import { savePreferences } from '../../../core/preferences.js';
+import { savePreferences, setAsDefaultStyle } from '../../../core/preferences.js';
 import {
   getStylePresets, createStylePreset, deleteStylePreset, renameStylePreset,
   applyStylePresetById, copyStyleFromSelection, pasteStyleToSelection, copiedStyle,
@@ -240,6 +240,19 @@ export default function AppearanceSection() {
               disabled={!copiedStyle() || isLocked()} onClick={() => pasteStyleToSelection()}>
               {t('stylePresets.pasteStyle')}
             </button>
+          </div>
+          {/* Markset: make this markup's style the default for new ones of its kind */}
+          <div class="style-preset-actions">
+            <Show when={annotProps.id !== '__tool-defaults__'} fallback={
+              <small style="opacity:0.75;line-height:1.3">Changes here are saved as the default for new markups of this kind.</small>
+            }>
+              <button class="prop-action-btn style-preset-btn" id="prop-set-as-default"
+                title="Use this markup's style (colors, line, text) for new ones of this kind"
+                disabled={(annotProps.multiCount || 0) > 0}
+                onClick={() => setAsDefaultStyle(getCurrentAnnotation())}>
+                Set as Default
+              </button>
+            </Show>
           </div>
         </Show>
       </CollapsibleSection>

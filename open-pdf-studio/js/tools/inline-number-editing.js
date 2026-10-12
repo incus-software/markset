@@ -26,6 +26,9 @@ import { systeemrasterBuildOpts } from '../annotations/systeemraster-scale.js';
 import { buildSysteemraster, resolveSysteemrasterParams } from '../annotations/systeemraster.js';
 import { startStavenreeksInput } from './stavenreeks-editing.js';
 import { startParametricSymbolInput } from './parametric-symbol-editing.js';
+import { toLocalPoint } from '../symbols/editable-labels.js';
+import { getTemplate } from '../symbols/registry.js';
+import { stampHitAt } from '../../markset/stamp-builder/layout.js'; // Markset
 import {
   showParametricLabelInput, updateAnnotProp, storeShowProperties,
 } from '../bridge.js';
@@ -145,6 +148,17 @@ function startSysteemrasterMaatInput(annotation) {
  * @returns {boolean} true = afgehandeld (aanroeper mag géén sleep starten).
  */
 export function tryStartInlineNumberEdit(annotation, x, y) {
+  // Markset: on a selected review stamp, a click on a fill-in line or a
+  // checkbox row edits it in place and does not start a move.
+  if (annotation?.type === 'parametricSymbol' && !annotation.locked
+      && getTemplate(annotation.symbolId)?.markset?.stamp) {
+    const p = toLocalPoint(annotation, x, y);
+    if (stampHitAt(annotation.params, annotation, p.x, p.y)) {
+      storeShowProperties(annotation);
+      startParametricSymbolInput(annotation, x, y);
+      return true;
+    }
+  }
   const entry = hitInlineNumberAt(annotation, x, y);
   if (!entry) return false;
   // De inline editors schrijven via updateAnnotProp op de annotatie die het

@@ -22,8 +22,8 @@ test('every scheme key is a real preference with a color default', () => {
 });
 
 test('applying a scheme sets every key; the scheme is recognised back', () => {
-  const prefs = { ...schemeValues('#0066FF'), highlightColor: '#ffff00' };
-  assert.equal(prefs.cloudStrokeColor, '#0066ff');
+  const prefs = { ...schemeValues('#0000FF'), highlightColor: '#ffff00' };
+  assert.equal(prefs.cloudStrokeColor, '#0000ff');
   assert.equal(matchingScheme(prefs).id, 'blue');
   assert.equal(matchingScheme({ ...prefs, lineStrokeColor: '#123456' }), null); // a mix
   assert.equal(matchingScheme(schemeValues('#123456')), null);                   // not a scheme
@@ -51,4 +51,14 @@ test('new installs start on the Black scheme', async () => {
   assert.equal(matchingScheme(DEFAULT_PREFERENCES).id, 'black');
   for (const k of SCHEME_KEYS) assert.equal(DEFAULT_PREFERENCES[k], '#000000', k);
   assert.equal(DEFAULT_PREFERENCES.highlightColor, '#FFFF00'); // not part of a scheme
+});
+
+test('new installs start on the Light theme', () => {
+  const src = readFileSync(new URL('../js/core/constants.ts', import.meta.url), 'utf8');
+  assert.match(src, /^  theme: 'light',/m);
+  assert.doesNotMatch(src, /^  theme: 'default',/m);
+});
+
+test('the Blue scheme is the standard palette blue', () => {
+  assert.equal(PRESET_SCHEMES.find(s => s.id === 'blue').color, '#0000ff');
 });

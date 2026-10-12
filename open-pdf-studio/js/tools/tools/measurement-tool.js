@@ -5,6 +5,8 @@ import { calculateArea, formatMeasurement, formatDimensionText, arcControlPoint,
 import { applyToolTransform } from '../tool-context.js';
 import { randkleurenUitVoorkeur } from '../../annotations/fill-utils.js';
 import { zetRechtopRond } from '../../pdf/weergave-ruimte.js';
+import { docHasScale } from '../../../markset/page-scale.js'; // Markset
+import { imperialOr } from '../../../markset/us-units.js'; // Markset
 import {
   enterTypeLengthMode,
   exitTypeLengthMode,
@@ -125,7 +127,8 @@ export const measureDistanceTool = {
       // its scale from that source (calculateDistance resolves the innermost
       // scale region at the measured point). The manual preference scale only
       // applies when no source exists at all.
-      const hasScaleSource = getActiveDocument()?.annotations?.some(a => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport');
+      const hasScaleSource = getActiveDocument()?.annotations?.some(a => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport')
+        || docHasScale(getActiveDocument()); // Markset: a calibration / Set Scale / the PDF's own scale counts too
       const dimScale = hasScaleSource ? 0 : (prefs.measureDistDimScale || 0);
       const dimUnit = hasScaleSource ? dist.unit : (prefs.measureDistDimUnit || dist.unit);
       // mm shows whole numbers (no decimals); other units use the user pref.
@@ -136,7 +139,7 @@ export const measureDistanceTool = {
         const pixelDist = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
         const v = (pixelDist * dimScale).toFixed(dimPrecision);
         // mm is the implied drawing unit on dimensions — no suffix.
-        mText = dimUnit === 'mm' ? v : `${v} ${dimUnit}`;
+        mText = imperialOr(pixelDist * dimScale, dimUnit, prefs, dimUnit === 'mm' ? v : `${v} ${dimUnit}`); // Markset: feet-inch
       } else {
         mText = formatDimensionText(dist);
       }
@@ -238,7 +241,8 @@ export const measureDistanceTool = {
     const dimExt = prefs.measureDistDimExtension !== false; // default ON
     // Same scale-inheritance rule as the commit path: any scale source
     // (scale region / bar / viewport) wins over the manual preference scale.
-    const hasScaleSourcePreview = getActiveDocument()?.annotations?.some(a => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport');
+    const hasScaleSourcePreview = getActiveDocument()?.annotations?.some(a => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport')
+      || docHasScale(getActiveDocument()); // Markset
     const dimScale = hasScaleSourcePreview ? 0 : (prefs.measureDistDimScale || 0);
     const dimUnit = prefs.measureDistDimUnit || '';
     // mm shows whole numbers (no decimals); other units use the user pref.
@@ -249,7 +253,7 @@ export const measureDistanceTool = {
       if (dimScale) {
         const pixelDist = Math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2);
         const v = (pixelDist * dimScale).toFixed(dimPrecision);
-        return dimUnit === 'mm' ? v : `${v} ${dimUnit}`;
+        return imperialOr(pixelDist * dimScale, dimUnit, prefs, dimUnit === 'mm' ? v : `${v} ${dimUnit}`); // Markset: feet-inch
       }
       const d = ctx.calculateDistance(sx, sy, ex, ey, getActiveDocument()?.currentPage);
       return formatDimensionText(d);

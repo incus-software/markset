@@ -1,6 +1,7 @@
 import { batch } from 'solid-js';
 import { state, getActiveDocument } from '../core/state.js';
 import { openDialog } from '../bridge.js';
+import { mergeStoredScale } from '../../markset/page-scale.js'; // Markset
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { savePreferences } from '../core/preferences.js';
 import { getScaleForPoint } from './scale-bar.js';
@@ -388,7 +389,7 @@ export function loadDocumentScale(doc) {
   try {
     const raw = localStorage.getItem(scaleStorageKey(doc.filePath));
     if (raw) {
-      doc.measureScale = JSON.parse(raw);
+      doc.measureScale = mergeStoredScale(JSON.parse(raw), doc.measureScale); // Markset: keep calibrations read from the PDF
     }
   } catch { /* corrupted data */ }
 }

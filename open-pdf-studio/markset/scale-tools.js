@@ -54,7 +54,7 @@ function makeCalibrateTool() {
       st.p1 = null;
       ctx.redraw();
       import('../js/tools/manager.js').then((m) => m.setTool('select'));
-      openDialog('calibration', { referencePixelLength: len });
+      openDialog('calibration', { referencePixelLength: len, page: ctx.pageNum || undefined });
       updateStatusMessage('Calibrate: type the real length of the line you drew.', 6000);
     },
 

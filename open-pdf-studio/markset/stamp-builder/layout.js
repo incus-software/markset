@@ -144,22 +144,26 @@ export function stampLayout(params) {
 
   // Fill-in lines: label, then a rule to the right edge with the value on it.
   const fieldSize = Math.max(6.5, 7.5 * u); // stays readable on a 3" stamp
-  const field = (label, value, x0, x1) => {
+  const fields = []; // click-to-edit regions: the fill-in line and the space above it
+  const field = (label, value, x0, x1, key) => {
     cmds.push(text(label, x0, y, fieldSize, { bold: true }));
     const lx = x0 + helveticaWidth(label, fieldSize, true) + 3 * u;
     cmds.push(line(lx, y + 4.5 * u, x1, y + 4.5 * u, 0.5 * u));
+    fields.push({ key, rect: { x: x0, y: y - fieldSize * 0.8, width: x1 - x0, height: fieldSize * 0.8 + 6 * u } });
     if (String(value ?? '').trim()) cmds.push(text(fit(value, fieldSize, x1 - lx - 2 * u), lx + 2 * u, y, fieldSize, { role: 'value' }));
   };
-  if (p.showProject) { y += 8 * u; field('PROJECT NO.:', p.projectNo, pad, W - pad); y += 5 * u; }
-  if (p.showSubmittal) { y += 8 * u; field('SUBMITTAL NO.:', p.submittalNo, pad, W - pad); y += 5 * u; }
+  if (p.showProject) { y += 8 * u; field('PROJECT NO.:', p.projectNo, pad, W - pad, 'projectNo'); y += 5 * u; }
+  if (p.showSubmittal) { y += 8 * u; field('SUBMITTAL NO.:', p.submittalNo, pad, W - pad, 'submittalNo'); y += 5 * u; }
 
   // Checkboxes, one per action, the checked one with a bold check mark.
   const actions = actionList(p);
   const boxS = 8 * u, rowH = 13 * u, actSize = Math.max(7, 8.5 * u);
   const checked = Number.isInteger(Number(p.checked)) ? Number(p.checked) : -1;
   if (actions.length) y += 5 * u;
+  const boxes = []; // click a row to check it
   actions.forEach((label, i) => {
     const cy = y + rowH / 2;
+    boxes.push({ index: i, rect: { x: pad, y, width: inner, height: rowH } });
     cmds.push(rect(pad, cy - boxS / 2, boxS, boxS, 0.7 * u));
     cmds.push(text(fit(label, actSize, inner - boxS - 6 * u), pad + boxS + 6 * u, cy, actSize));
     if (i === checked) {
@@ -180,10 +184,10 @@ export function stampLayout(params) {
     y += 9 * u;
     const mid = pad + inner * 0.6;
     if (p.showBy && p.showDate) {
-      field('BY:', p.by, pad, mid - 6 * u);
-      field('DATE:', p.date, mid, W - pad);
-    } else if (p.showBy) field('BY:', p.by, pad, W - pad);
-    else field('DATE:', p.date, pad, W - pad);
+      field('BY:', p.by, pad, mid - 6 * u, 'by');
+      field('DATE:', p.date, mid, W - pad, 'date');
+    } else if (p.showBy) field('BY:', p.by, pad, W - pad, 'by');
+    else field('DATE:', p.date, pad, W - pad, 'date');
     y += 5 * u;
   }
 
@@ -203,7 +207,33 @@ export function stampLayout(params) {
 
   // Double border.
   cmds.unshift(rect(1.5 * u, 1.5 * u, W - 3 * u, H - 3 * u, 2 * u), rect(4.5 * u, 4.5 * u, W - 9 * u, H - 9 * u, 0.6 * u));
-  return { width: W, height: H, cmds, discLines };
+  return { width: W, height: H, cmds, discLines, fields, boxes };
+}
+
+/** The fill-in lines and checkbox rows in `box` coordinates (same fit as stampCommands). */
+export function stampRegions(params, box) {
+  const { width, height, fields, boxes } = stampLayout(params);
+  const s = Math.min(box.width / width, box.height / height);
+  if (!(s > 0)) return { fields: [], boxes: [] };
+  const ox = box.x + (box.width - width * s) / 2, oy = box.y + (box.height - height * s) / 2;
+  const map = (r) => ({ x: ox + r.x * s, y: oy + r.y * s, width: r.width * s, height: r.height * s });
+  return {
+    fields: fields.map(f => ({ key: f.key, rect: map(f.rect) })),
+    boxes: boxes.map(b => ({ index: b.index, rect: map(b.rect) })),
+  };
+}
+
+const inRect = (r, x, y) => x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
+
+/** The checkbox row at (x, y) in `box` coordinates, or -1. */
+export function stampCheckboxAt(params, box, x, y) {
+  const hit = stampRegions(params, box).boxes.find(b => inRect(b.rect, x, y));
+  return hit ? hit.index : -1;
+}
+
+/** `checked` after clicking row `index`: that row, or none when it was already checked. */
+export function toggledChecked(params, index) {
+  return Number(params?.checked) === index ? -1 : index;
 }
 
 /** Print size of a stamp in inches, e.g. { width: 4, height: 3.12 }. */
@@ -252,4 +282,17 @@ export function fitStampToDesign(ann) {
   if (!(h > 0) || Math.abs(h - ann.height) < 0.01) return;
   ann.y += (ann.height - h) / 2;
   ann.height = h;
+}
+
+/**
+ * What a click at (x, y) hits on a placed stamp (`box`, unrotated
+ * coordinates): `{ field: key }`, `{ row: index }` or null. A hit edits in
+ * place instead of starting a move (inline-number-editing.js hook).
+ */
+export function stampHitAt(params, box, x, y) {
+  const r = stampRegions(params, box);
+  const f = r.fields.find(f => inRect(f.rect, x, y));
+  if (f) return { field: f.key };
+  const b = r.boxes.find(b => inRect(b.rect, x, y));
+  return b ? { row: b.index } : null;
 }

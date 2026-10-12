@@ -160,3 +160,97 @@ test('PNG export carries 300 dpi', () => {
   assert.equal(pngDpi(out), 300);
   assert.deepEqual(withPngDpi(new Uint8Array([1, 2, 3]), 300), new Uint8Array([1, 2, 3]));
 });
+
+// --- Click-to-edit on the sheet -------------------------------------------
+import { stampRegions, stampCheckboxAt, toggledChecked } from './layout.js';
+
+test('click regions: fill-in lines and checkbox rows, in the placed box', () => {
+  const l = stampLayout({});
+  const box = { x: 100, y: 200, width: l.width * 2, height: l.height * 2 };
+  const r = stampRegions({}, box);
+  assert.deepEqual(r.fields.map(f => f.key), ['projectNo', 'submittalNo', 'by', 'date']);
+  assert.equal(r.boxes.length, 5);
+  for (const f of r.fields) assert.ok(f.rect.x >= box.x && f.rect.x + f.rect.width <= box.x + box.width + 1e-9);
+  const row2 = r.boxes[2].rect;
+  assert.equal(stampCheckboxAt({}, box, row2.x + 5, row2.y + row2.height / 2), 2);
+  assert.equal(stampCheckboxAt({}, box, box.x + 1, box.y + 1), -1);
+  assert.equal(toggledChecked({ checked: 2 }, 2), -1);
+  assert.equal(toggledChecked({ checked: -1 }, 2), 2);
+  const none = stampRegions({ showProject: false, showSubmittal: false, showBy: false, showDate: false }, box);
+  assert.equal(none.fields.length, 0);
+});
+
+test('the template offers the fill-in lines to the inline editor', () => {
+  const t = getTemplate(STAMP_TEMPLATE_ID);
+  const l = stampLayout({});
+  const labels = t.editableLabels({}, { x: 0, y: 0, width: l.width, height: l.height });
+  assert.deepEqual(labels.map(x => x.fields[0]), ['projectNo', 'submittalNo', 'by', 'date']);
+  const byDef = t.params.find(p => p.key === 'by');
+  assert.equal(byDef.label, 'By');
+  assert.equal(byDef.type, 'string');
+});
+
+// --- One logo per PDF ------------------------------------------------------
+import { stampParamsForSave, readStampLogo, restoreStampParams, LOGO_REF } from './pdf-assets.js';
+
+test('logo stored once: shared stream, reference in params, read back on open', async () => {
+  const pdf = await PDFDocument.create();
+  const ann = (n) => ({ symbolId: STAMP_TEMPLATE_ID, params: { ...defaultStampDesign(), logo: LOGO, by: `JS${n}` } });
+  const a = stampParamsForSave(ann(1), pdf), b = stampParamsForSave(ann(2), pdf);
+  assert.equal(a.params.logo, LOGO_REF);
+  assert.equal(a.params.by, 'JS1');
+  assert.ok(a.extra.OPS_MarksetLogo);
+  assert.equal(a.extra.OPS_MarksetLogo, b.extra.OPS_MarksetLogo); // same object, stored once
+  assert.equal(readStampLogo(pdf.context, a.extra.OPS_MarksetLogo, PDFName), LOGO);
+  assert.equal(restoreStampParams(a.params, LOGO).logo, LOGO);
+  assert.equal(restoreStampParams({ logo: LOGO }, undefined).logo, LOGO); // older files
+  const other = { symbolId: 'us-room-tag', params: { name: 'X' } };
+  assert.deepEqual(stampParamsForSave(other, pdf), { params: other.params, extra: {} });
+  const noLogo = { symbolId: STAMP_TEMPLATE_ID, params: { logo: '' } };
+  assert.deepEqual(stampParamsForSave(noLogo, pdf).extra, {});
+});
+
+test('20 stamps with a logo cost about as much as one', async () => {
+  const big = new Uint8Array(30000).map((_, i) => (i * 7919) % 256); // stand-in for a 30 KB logo
+  const pngLogo = await (async () => {
+    // A real PNG so the appearance embed works: 1px image plus a 30 KB text chunk.
+    const base = Buffer.from(PNG_1PX, 'base64');
+    const data = Buffer.concat([Buffer.from('tEXt'), Buffer.from('k\0'), Buffer.from(big)]);
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length - 4);
+    const crc = Buffer.alloc(4); // pdf-lib does not check text-chunk CRCs
+    return 'data:image/png;base64,' + Buffer.concat([base.subarray(0, 33), len, data, crc, base.subarray(33)]).toString('base64');
+  })();
+  const save = async (n) => {
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([36 * 72, 24 * 72]);
+    const annots = [];
+    for (let i = 0; i < n; i++) {
+      const params = { ...defaultStampDesign(), logo: pngLogo, by: `R${i}` };
+      const { width, height } = stampLayout(params);
+      const ann = { symbolId: STAMP_TEMPLATE_ID, params, width, height };
+      const s = stampParamsForSave(ann, pdf);
+      const dict = pdf.context.obj({ Type: 'Annot', Subtype: 'Square', Rect: [0, 0, width, height], OPS_Params: JSON.stringify(s.params), ...s.extra });
+      const images = await embedSmartImages(ann, pdf);
+      writeVectorParametricAppearance({ ann, annotDict: dict, context: pdf.context, pdf: { PDFName }, rectW: width, rectH: height, images });
+      annots.push(pdf.context.register(dict));
+    }
+    page.node.set(PDFName.of('Annots'), pdf.context.obj(annots));
+    return (await pdf.save()).length;
+  };
+  const one = await save(1), twenty = await save(20);
+  assert.ok(twenty - one < 19 * 15000, `20 stamps added ${twenty - one} bytes over one`); // well under one logo each
+});
+
+import { stampHitAt } from './layout.js';
+
+test('a click on a line or a checkbox row is an edit, elsewhere a move', () => {
+  const l = stampLayout({});
+  const box = { x: 0, y: 0, width: l.width, height: l.height };
+  const r = stampRegions({}, box);
+  const by = r.fields.find(f => f.key === 'by').rect;
+  assert.deepEqual(stampHitAt({}, box, by.x + by.width / 2, by.y + by.height / 2), { field: 'by' });
+  const row = r.boxes[3].rect;
+  assert.deepEqual(stampHitAt({}, box, row.x + 2, row.y + row.height / 2), { row: 3 });
+  assert.equal(stampHitAt({}, box, l.width / 2, l.height - 12), null); // limitation text: drag to move
+  assert.equal(stampHitAt({}, box, 2, 2), null); // the border
+});

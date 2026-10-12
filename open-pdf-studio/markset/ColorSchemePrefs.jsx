@@ -28,7 +28,7 @@ export default function ColorSchemePrefs(props) {
     p.markupColorScheme[1](id);
   }
   const [name, setName] = createSignal('');
-  const [color, setColor] = createSignal(p.defaultAnnotationColor[0]() || '#0066ff');
+  const [color, setColor] = createSignal(p.defaultAnnotationColor[0]() || '#0000ff');
   function save() {
     const r = saveCustomScheme(custom(), name(), color());
     if (!r) return;

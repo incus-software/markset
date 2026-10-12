@@ -2,6 +2,8 @@ import { huidigeSymboolSchaal } from '../symbols/symbol-scale-store.js';
 import { schaalVakOmMidden } from '../symbols/symbol-scale.js';
 import { state, getActiveDocument } from '../core/state.js';
 import { imperialOr } from '../../markset/us-units.js'; // Markset
+import { docHasScale } from '../../markset/page-scale.js'; // Markset
+import { textStyleDefault } from '../../markset/text-defaults.js'; // Markset
 import { getColorPickerValue, getLineWidthValue } from '../bridge.js';
 import { createAnnotation } from '../annotations/factory.js';
 import { snapAngle } from '../utils/helpers.js';
@@ -325,6 +327,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         textColor: '#000000',
         fontSize: prefs.textboxFontSize,
         fontFamily: 'Arial',
+        ...textStyleDefault(prefs, 'textbox'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.textboxBorderWidth,
         borderStyle: prefs.textboxBorderStyle,
         opacity: (prefs.textboxOpacity || 100) / 100
@@ -357,6 +360,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         textColor: '#000000',
         fontSize: prefs.calloutFontSize,
         fontFamily: 'Arial',
+        ...textStyleDefault(prefs, 'callout'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.calloutBorderWidth,
         borderStyle: prefs.calloutBorderStyle,
         opacity: (prefs.calloutOpacity || 100) / 100
@@ -698,7 +702,8 @@ export function createMeasurePerimeterAnnotation(points) {
   const currentPage = getActiveDocument()?.currentPage || 1;
   // Scale regions count as a scale source too — measurements inside one must
   // inherit its scale instead of the manual preference scale.
-  const hasScaleSource = getActiveDocument()?.annotations?.some(a => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport');
+  const hasScaleSource = getActiveDocument()?.annotations?.some(a => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport')
+    || docHasScale(getActiveDocument()); // Markset: a calibration / Set Scale / the PDF's own scale counts too
   if (!hasScaleSource && mPrefs.measurePerimDimScale && typeof mPrefs.measurePerimDimScale === 'number') {
     perimProps.measureScale = mPrefs.measurePerimDimScale;
     perimProps.measureUnit = mPrefs.measurePerimDimUnit || 'mm';

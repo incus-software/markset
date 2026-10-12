@@ -98,19 +98,28 @@ const FONTS = { F1: 'Helvetica', F2: 'Helvetica-Bold' };
  * image that cannot be embedded is left out. Returns [{ cmd, ref }] in the
  * order of the image commands.
  */
+const embedded = new WeakMap(); // pdf-lib document -> Map(image src -> embedded image ref)
+
 export async function embedSmartImages(ann, pdfDoc) {
   const t = getTemplate(ann?.symbolId);
   if (!isMarkset(t) || !pdfDoc || !(ann.width > 0) || !(ann.height > 0)) return [];
   const box = { x: 0, y: 0, width: Math.abs(ann.width), height: Math.abs(ann.height) };
+  let cache = embedded.get(pdfDoc);
+  if (!cache) embedded.set(pdfDoc, (cache = new Map()));
   const out = [];
   for (const cmd of renderTemplate(t, ann.params, box)) {
     if (cmd?.kind !== 'image') continue;
     const m = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(String(cmd.src || ''));
     if (!m) continue;
     try {
-      const bytes = Uint8Array.from(atob(m[2]), ch => ch.charCodeAt(0));
-      const img = m[1].toLowerCase() === 'png' ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
-      out.push({ cmd, ref: img.ref });
+      let ref = cache.get(cmd.src);
+      if (!ref) {
+        const bytes = Uint8Array.from(atob(m[2]), ch => ch.charCodeAt(0));
+        const img = m[1].toLowerCase() === 'png' ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+        ref = img.ref;
+        cache.set(cmd.src, ref); // one image per PDF, however many stamps show it
+      }
+      out.push({ cmd, ref });
     } catch { /* not a readable image: skipped */ }
   }
   return out;

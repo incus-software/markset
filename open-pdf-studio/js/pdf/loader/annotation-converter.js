@@ -38,6 +38,7 @@ import { kiesTekstvakTekst, runsZonderInspringing } from './tekstvak-tekst.js';
 import { inzetUitDsMarge, tolerantieVoorDsInzet } from '../../annotations/rendering/textbox-layout.js';
 import { caretPropsFromPdf, textEditPropsFromPdf } from './correction-load.js';
 import { isSafeSymbolSvg } from '../../solid/data/symbolLibraryOnline.js'; // Markset
+import { restoreStampParams } from '../../../markset/stamp-builder/pdf-assets.js'; // Markset
 
 /**
  * Zet een PDF-annotatie om naar het model van de app.
@@ -239,6 +240,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
         const symbolId = extraColors.opsSymbolId || '';
         let params = {};
         try { if (extraColors.opsParams) params = JSON.parse(extraColors.opsParams); } catch (_) {}
+        params = restoreStampParams(params, extraColors.opsMarksetLogo); // Markset: shared stamp logo
         const symbol = createAnnotation({
           ...baseProps,
           type: 'parametricSymbol',

@@ -13,6 +13,8 @@ import { PDFDocument, PDFString, PDFHexString, PDFName, PDFArray, PDFStream, deg
 import { kopNaarLE, koppenSleutel } from './lijnkoppen.js';
 import { writeVectorStampAppearance } from '../../markset/stamp-vector.js'; // Markset
 import { writeVectorParametricAppearance, embedSmartImages } from '../../markset/smart/index.js'; // Markset
+import { stampParamsForSave } from '../../markset/stamp-builder/pdf-assets.js'; // Markset
+import { writePageCalibrations } from '../../markset/page-scale-pdf.js'; // Markset
 import { bouwKnipselAppearance, tekenKnipselInPagina, alInBasis, markeerGebakken, ruimKnipselRestenOp, CATALOGUS_SLEUTEL as KNIPSEL_CATALOGUS } from './saver/vector-snippet.js';
 import { schrijfHatchMeta } from './saver/hatch-meta.js';
 import { schrijfWandJoinMeta } from './saver/wand-join-meta.js';
@@ -2656,6 +2658,7 @@ async function _savePDFNu(saveAsPath, activeDoc) {
               psy2 = cy + newH / 2;
             }
             const strokeColorArr = ann.strokeColor ? hexToColorArray(ann.strokeColor) : colorArr;
+            const stampSave = stampParamsForSave(ann, pdfDocLib); // Markset: one copy of a stamp logo per PDF
             const psDict = {
               Type: 'Annot',
               Subtype: 'Square',
@@ -2670,7 +2673,10 @@ async function _savePDFNu(saveAsPath, activeDoc) {
               OPS_SymbolId: pdfTextString(ann.symbolId || ''),
               OPS_Params: pdfTextString(JSON.stringify(ann.params || {})),
               OPS_IfcCategory: pdfTextString(ann.ifcCategory || ''),
+              ...stampSave.extra,
             };
+            // Markset: a stamp's logo is a reference to the shared copy, not a data URL per stamp.
+            if (stampSave.extra.OPS_MarksetLogo) psDict.OPS_Params = pdfTextString(JSON.stringify(stampSave.params));
             psDict.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
             if (psAnn.rotation) {
               psDict.OPS_Rotation = psAnn.rotation;
@@ -2946,6 +2952,13 @@ async function _savePDFNu(saveAsPath, activeDoc) {
       } catch (err) {
         console.warn('[saver] knipsel-resten opruimen overgeslagen:', err?.message || err);
       }
+    }
+
+    // Markset: each sheet's calibration as a standard measurement viewport (page-scale-pdf.js)
+    try {
+      writePageCalibrations(pdfDocLib, activeDoc?.measureScale, { PDFName, PDFArray, PDFString });
+    } catch (err) {
+      console.warn('[saver] calibration viewports skipped:', err?.message || err);
     }
 
     // Save the PDF
