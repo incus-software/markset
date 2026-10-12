@@ -240,3 +240,17 @@ test('20 stamps with a logo cost about as much as one', async () => {
   const one = await save(1), twenty = await save(20);
   assert.ok(twenty - one < 19 * 15000, `20 stamps added ${twenty - one} bytes over one`); // well under one logo each
 });
+
+import { stampHitAt } from './layout.js';
+
+test('a click on a line or a checkbox row is an edit, elsewhere a move', () => {
+  const l = stampLayout({});
+  const box = { x: 0, y: 0, width: l.width, height: l.height };
+  const r = stampRegions({}, box);
+  const by = r.fields.find(f => f.key === 'by').rect;
+  assert.deepEqual(stampHitAt({}, box, by.x + by.width / 2, by.y + by.height / 2), { field: 'by' });
+  const row = r.boxes[3].rect;
+  assert.deepEqual(stampHitAt({}, box, row.x + 2, row.y + row.height / 2), { row: 3 });
+  assert.equal(stampHitAt({}, box, l.width / 2, l.height - 12), null); // limitation text: drag to move
+  assert.equal(stampHitAt({}, box, 2, 2), null); // the border
+});

@@ -4,6 +4,7 @@ import { createStore } from 'solid-js/store';
 import { state, getActiveDocument } from '../../core/state.js';
 import { imperialOr } from '../../../markset/us-units.js'; // Markset
 import { fitStampToDesign } from '../../../markset/stamp-builder/layout.js'; // Markset
+import { formatPageSizeIn } from '../../../markset/us-units.js'; // Markset
 import {
   recordPropertyChange,
   recordModify,
@@ -858,7 +859,8 @@ export async function populateDocInfo() {
       const page = await pdfDoc.getPage(pageNum);
       if (!_docInfoRefresh.isCurrent(token)) return;
       const vp = page.getViewport({ scale: 1 });
-      setDocInfo('pageSize', formatPageSizeMm(vp.width, vp.height));
+      setDocInfo('pageSize', (state.preferences.unitSystem !== 'metric' && formatPageSizeIn(vp.width, vp.height)) // Markset: inches with US units
+        || formatPageSizeMm(vp.width, vp.height));
     } catch (e) {
       if (!_docInfoRefresh.isCurrent(token)) return;
       setDocInfo('pageSize', DOC_INFO_EMPTY);

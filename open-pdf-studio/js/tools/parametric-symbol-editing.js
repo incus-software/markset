@@ -10,6 +10,7 @@ import {
 } from '../bridge.js';
 
 let editingAnnotation = null;
+let lastStampToggle = { annotation: null, row: -1, at: 0 }; // Markset
 
 function activeCanvas(annotation) {
   const documentState = getActiveDocument();
@@ -59,11 +60,15 @@ function stillAlive(annotation) {
 
 export function startParametricSymbolInput(annotation, x, y) {
   if (!annotation || annotation.type !== 'parametricSymbol' || annotation.locked) return;
-  // Markset: double-clicking a review stamp's checkbox row checks it (again: unchecks).
+  // Markset: clicking a selected review stamp's checkbox row checks it (again: unchecks).
   if (getTemplate(annotation.symbolId)?.markset?.stamp) {
     const p = toLocalPoint(annotation, x, y);
     const row = stampCheckboxAt(annotation.params, annotation, p.x, p.y);
     if (row >= 0) {
+      // A click and the double-click right after it arrive as two calls: toggle once.
+      const now = Date.now();
+      if (lastStampToggle.annotation === annotation && lastStampToggle.row === row && now - lastStampToggle.at < 500) return;
+      lastStampToggle = { annotation, row, at: now };
       updateAnnotProp('params', { ...(annotation.params || {}), checked: toggledChecked(annotation.params, row) });
       return;
     }

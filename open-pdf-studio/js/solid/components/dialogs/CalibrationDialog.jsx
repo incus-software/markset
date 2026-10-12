@@ -14,6 +14,8 @@ import {
 } from '../../../core/undo-manager.js';
 import { ARCHITECTURAL_SCALES, ENGINEERING_SCALES, US_SCALES, findUsScale, parseLengthAs } from '../../../../markset/us-units.js'; // Markset
 import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
+import { withPageScale, withoutPageScale, pageScaleAt, sheetInches } from '../../../../markset/page-scale.js'; // Markset
+import { formatPageSizeIn } from '../../../../markset/us-units.js'; // Markset
 
 const SCALE_PRESETS = [
   '1:1', '1:2', '1:5', '1:10', '1:20', '1:25', '1:50',
@@ -105,6 +107,7 @@ export default function CalibrationDialog(props) {
   // Method tab: 'reference' or 'ratio'
   const [method, setMethod] = createSignal('reference');
   const usFirst = ['ft', 'in'].includes(unitDefaults().unit); // Markset: US scales first in the list
+  const calPage = () => props.data?.page || getActiveDocument()?.currentPage || 1; // Markset: the sheet being calibrated
 
   // Method 1: Reference line
   const [distance, setDistance] = createSignal(1);
@@ -129,7 +132,7 @@ export default function CalibrationDialog(props) {
 
     // Load existing scale from document
     const doc = getActiveDocument();
-    const ms = doc?.measureScale;
+    const ms = pageScaleAt(doc, calPage()) || doc?.measureScale; // Markset: this sheet's calibration first
     if (ms) {
       setUnit(ms.unit || 'mm');
       setRatioUnit(ms.unit || 'mm');
@@ -156,7 +159,7 @@ export default function CalibrationDialog(props) {
         // PDF points to mm: 1 pt = 25.4/72 mm
         const wMm = (vp.width * 25.4 / 72).toFixed(0);
         const hMm = (vp.height * 25.4 / 72).toFixed(0);
-        setPageSizeText(`${wMm} \u00d7 ${hMm} mm`);
+        setPageSizeText((!usFirst ? null : formatPageSizeIn(vp.width, vp.height)) || `${wMm} \u00d7 ${hMm} mm`); // Markset: inches with US units
       }
     } catch { /* ignore */ }
   });
@@ -253,7 +256,7 @@ export default function CalibrationDialog(props) {
           ['measureDistance', 'measureArea', 'measurePerimeter', 'measureAngle'].includes(annotation.type)
         );
         const originals = measurements.map(annotation => cloneAnnotation(annotation));
-        doc.measureScale = scaleData;
+        doc.measureScale = withPageScale(doc.measureScale, calPage(), scaleData); // Markset: per sheet (page-scale.js)
         recalculateAllMeasurements();
         beginUndoTransaction();
         recordBulkModify(measurements, originals);
@@ -275,7 +278,7 @@ export default function CalibrationDialog(props) {
         ['measureDistance', 'measureArea', 'measurePerimeter', 'measureAngle'].includes(annotation.type)
       );
       const originals = measurements.map(annotation => cloneAnnotation(annotation));
-      doc.measureScale = null;
+      doc.measureScale = withoutPageScale(doc.measureScale, calPage()); // Markset: Reset clears this sheet only
       recalculateAllMeasurements();
       beginUndoTransaction();
       recordBulkModify(measurements, originals);
@@ -341,7 +344,7 @@ export default function CalibrationDialog(props) {
             value={pixels()}
             onInput={(e) => setPixels(e.target.value)}
           />
-          <span class="calibration-unit">px</span>
+          <span class="calibration-unit">px{sheetInches(pixels()) ? ` = ${sheetInches(pixels())} on the sheet` : ''}</span>
         </div>
         <div class="calibration-row">
           <label class="calibration-label">{t('calibration.knownDistance')}</label>
@@ -349,6 +352,8 @@ export default function CalibrationDialog(props) {
             type="text"
             inputmode="decimal"
             class="calibration-input"
+            placeholder={unit() === 'ft' || unit() === 'in' ? `e.g. 7'-3"` : ''}
+            title={`Feet and inches work too: 7'-3", 12'-6 1/2"`}
             value={distance()}
             onInput={(e) => setDistance(e.target.value)}
           />

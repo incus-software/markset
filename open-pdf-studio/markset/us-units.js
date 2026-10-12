@@ -350,3 +350,19 @@ const FEET_INCH_TEXT = /(?:\d+'-)?(?:\d+(?: \d+\/\d+)?|\d+\/\d+)"$/;
 export function isFeetInchText(text) {
   return typeof text === 'string' && FEET_INCH_TEXT.test(text.trim());
 }
+
+/**
+ * A page size in inches, landscape or portrait as given, with the US sheet
+ * name when it is one (within 1/16"): `36" x 24" (ARCH D)`, `8.5" x 11" (ANSI A)`.
+ * Sizes are PDF points.
+ */
+export function formatPageSizeIn(widthPt, heightPt) {
+  const ok = (v) => Number.isFinite(v) && v > 0;
+  if (!ok(widthPt) || !ok(heightPt)) return null;
+  const w = widthPt / 72, h = heightPt / 72;
+  const fmt = (v) => `${Math.round(v * 100) / 100}"`;
+  const near = (a, b) => Math.abs(a - b) <= 1 / 16;
+  const s = Object.values(US_SHEETS).find(x =>
+    (near(w, x.width / 72) && near(h, x.height / 72)) || (near(w, x.height / 72) && near(h, x.width / 72)));
+  return `${fmt(w)} x ${fmt(h)}${s ? ` (${s.label})` : ''}`;
+}

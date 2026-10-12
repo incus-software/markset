@@ -283,3 +283,16 @@ export function fitStampToDesign(ann) {
   ann.y += (ann.height - h) / 2;
   ann.height = h;
 }
+
+/**
+ * What a click at (x, y) hits on a placed stamp (`box`, unrotated
+ * coordinates): `{ field: key }`, `{ row: index }` or null. A hit edits in
+ * place instead of starting a move (inline-number-editing.js hook).
+ */
+export function stampHitAt(params, box, x, y) {
+  const r = stampRegions(params, box);
+  const f = r.fields.find(f => inRect(f.rect, x, y));
+  if (f) return { field: f.key };
+  const b = r.boxes.find(b => inRect(b.rect, x, y));
+  return b ? { row: b.index } : null;
+}
