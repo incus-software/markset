@@ -16,6 +16,10 @@ import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset:
 const DEFAULT_STIJL = 'grootformaat';
 const DEFAULT_PAPER = 'a1';
 const DEFAULT_ORIENTATION = 'landscape';
+// Markset: open on a blank sheet (no frame, no title block) at the unit
+// system's paper size (ARCH D in US units). Frames and title blocks the user
+// adds to the app-data folders stay available in the lists.
+const MARKSET_BLANK_DEFAULT = true;
 
 const _cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
@@ -66,13 +70,15 @@ export default function NewDocDialog() {
         setTitleBlocks(tbs);
         // Standaard de eerste onderhoek, zodat een nieuw vel meteen een
         // titelblok heeft zoals voorheen (toen het in het kader zat).
-        if (tbs.length && !titleBlock()) setTitleBlock(tbs[0].path);
+        // Markset: no title block until the user picks one.
+        if (!MARKSET_BLANK_DEFAULT && tbs.length && !titleBlock()) setTitleBlock(tbs[0].path);
       } catch (e) { console.warn('[new-doc] onderhoeken scannen mislukt:', e); }
       setFrameIndex(idx);
       // Default to the Grootformaat frame (A1 liggend) when it exists on
       // disk. If that exact size/orientation isn't available the keep-valid
       // effect below will pick the closest match for the style.
-      if (idx?.byStijl?.has(DEFAULT_STIJL)) {
+      // Markset: start on no frame (a blank US sheet) instead.
+      if (!MARKSET_BLANK_DEFAULT && idx?.byStijl?.has(DEFAULT_STIJL)) {
         setStijl(DEFAULT_STIJL);
       }
     } catch (e) {

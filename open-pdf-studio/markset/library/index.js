@@ -3,6 +3,7 @@
 import { state } from '../../js/core/state.js';
 import { recolorSvg } from '../../js/annotations/svg-stroke-color.js';
 import { bundledGroups, symbolForShortcut } from './bundle.js';
+import './symbol-tiles.css'; // white "paper" tiles behind symbol previews
 import { registerMarksetTemplates, smartPaletteEntries } from '../smart/index.js';
 
 const files = import.meta.glob(

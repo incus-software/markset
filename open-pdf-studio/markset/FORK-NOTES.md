@@ -38,6 +38,7 @@ working notes for keeping the fork mergeable.
 | 2026-10-11 | Section hoods restyled (winged, flatter), rectangular foot on wall and detail sections, SIM option, interior elevation as black corner pointers around a sheet circle. Plan door and window drawn to the drawing scale (`markset/smart/plan.js`: width, wall thickness, swing, hinge side, single/double leaves typed in feet and inches). US Electrical collection (`markset/library/us-electrical-starter/`, 22 receptacle, switch and light symbols); `markset.json` `order` sets the palette position of bundled collections. |
 | 2026-10-11 | Wiring runs (`markset/smart/wiring.js`): circuit, 2-, 3- and 4-wire, switch leg and home run as two-point templates (curved either side or straight, panel/circuit label on home runs), listed in US Electrical; two-point placement takes its band height and click length from the sheet (annotation-creators.js). |
 | 2026-10-11 | Markup color schemes (`markset/color-schemes.js`, `ColorSchemePrefs.jsx`; AnnotationsTab.jsx): presets Bright blue, Red (traditional), Green, Orange and Black (the default for new installs, applied over the upstream red defaults at the end of DEFAULT_PREFERENCES in constants.ts) set the markup tools' stroke colors, the default annotation color and Review Mark Color at once; users can save and delete their own named schemes (`customColorSchemes`). |
+| 2026-10-12 | Markset icon (white sheet with a red check on blue) for the app, installer, window, favicon and title bar (src-tauri/icons, public/icon.*), plus a matching PDF file icon (file-icon.*). New Document opens on a blank sheet at the unit system's size (ARCH D) with no frame or title block, and the installer no longer bundles upstream's Dutch A-size frames or the OpenAEC title block (tauri.conf.json resources); frames and title blocks in the app-data folders still appear. Recent files on the start screen (`markset/StartRecent.jsx`). Symbol previews on white tiles in every theme (`markset/library/symbol-tiles.css`) so black and red symbols stay readable; symbol library settings in English. |
 
 ## Known follow-ups
 
@@ -45,7 +46,10 @@ working notes for keeping the fork mergeable.
 - [ ] Code-signing certificate for Windows installers.
 - [ ] Rust-side names: the virtual printer is still called "Open PDF Printer", and `standaard_app.rs` / `ocr.rs` / `lib.rs` contain `Open PDF Studio` install paths and `.desktop` names used for default-app detection.
 - [ ] "Sign in with OpenAEC" accounts commands (`src-tauri/src/accounts.rs`) are still registered; no UI calls them today. Remove or gate before release.
-- [ ] Replace icons, splash and theme with the Markset design.
+- [x] Markset icon set (app, installer, window, favicon, PDF file icon).
+- [ ] Markset splash and theme.
+- [ ] US frames and title blocks for New Document (e.g. ARCH D border with a US title block).
+- [ ] Accessibility: a light, high-contrast theme option; check theme text contrast (WCAG AA) for color-blind and low-vision users.
 - [ ] Set up support@usemarkset.com and the usemarkset.com feedback endpoint.
 - [ ] Confirm the license of the npm package `@crabnebula/tauri-plugin-drag`.
 - [x] US units: feet-inch fractions, architectural scales, ARCH/ANSI sheet sizes (`markset/us-units.js`).
