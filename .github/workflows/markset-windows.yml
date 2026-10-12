@@ -71,3 +71,28 @@ jobs:
           RUSTFLAGS: -C target-feature=-crt-static
           CARGO_TARGET_DIR: target/rust-tests
         run: cargo test -p open-pdf-studio -p open-pdf-cad -- --skip mcp_server::tests::tool_screenshot
+
+      # When a test binary cannot start (0xc0000139: a function missing from a
+      # DLL), Windows logs which function and DLL in the System event log.
+      # Print that, the binary's DLL imports and where each non-system DLL
+      # resolves on this runner's PATH.
+      - name: Diagnose a test binary that cannot start
+        if: failure()
+        shell: pwsh
+        working-directory: .
+        run: |
+          Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Application Popup' } -MaxEvents 10 -ErrorAction SilentlyContinue |
+            ForEach-Object { "$($_.TimeCreated)  $($_.Message)" }
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -products * -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1 -ExpandProperty FullName
+          $exe = Get-ChildItem target/rust-tests/debug/deps/app_lib-*.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          "--- imports of $($exe.Name)"
+          $dlls = & $dumpbin /dependents $exe.FullName | Select-String '^\s+\S+\.dll$' | ForEach-Object { $_.Line.Trim() }
+          $dlls
+          "--- where the non-system DLLs resolve (first match wins after the exe dir and System32)"
+          foreach ($d in $dlls | Where-Object { $_ -notmatch '^(api-ms-|ext-ms-)' }) {
+            if (Test-Path "$env:SystemRoot\System32\$d") { continue }
+            "$d -> " + ((Get-Command $d -All -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join '; ')
+          }
+          "--- manifest embedded in the test binary"
+          & $dumpbin /headers $exe.FullName | Select-String -Pattern 'manifest' -SimpleMatch
