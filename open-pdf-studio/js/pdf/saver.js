@@ -12,6 +12,7 @@ import { PDFDocument, PDFString, PDFHexString, PDFName, PDFArray, PDFStream, deg
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } from 'pdf-lib';
 import { kopNaarLE, koppenSleutel } from './lijnkoppen.js';
 import { writeVectorStampAppearance } from '../../markset/stamp-vector.js'; // Markset
+import { writeVectorParametricAppearance } from '../../markset/smart/index.js'; // Markset
 import { bouwKnipselAppearance, tekenKnipselInPagina, alInBasis, markeerGebakken, ruimKnipselRestenOp, CATALOGUS_SLEUTEL as KNIPSEL_CATALOGUS } from './saver/vector-snippet.js';
 import { schrijfHatchMeta } from './saver/hatch-meta.js';
 import { schrijfWandJoinMeta } from './saver/wand-join-meta.js';
@@ -2691,7 +2692,12 @@ async function _savePDFNu(saveAsPath, activeDoc) {
             // viewers — which can't read the OPS_* private keys — render the
             // actual symbol geometry instead of just the empty /Square box. The
             // raster reuses the exact on-screen draw path, so it looks the same.
-            try {
+            // Markset: US smart symbols get a vector appearance instead.
+            if (!writeVectorParametricAppearance({
+              ann: psAnn, annotDict, context, pdf: { PDFName },
+              rectW: Math.abs(psx2 - psx1), rectH: Math.abs(psy2 - psy1),
+              opacity: opacity != null ? opacity : 1, pageRot,
+            })) try {
               const { renderParametricSymbolToPng } = await import('../annotations/rendering.js');
               const png = renderParametricSymbolToPng(psAnn, 4);
               if (png && png.dataUrl) {
