@@ -4,6 +4,7 @@ import PrefColorPicker from './PrefColorPicker.jsx';
 import PrefComboBox from './PrefComboBox.jsx';
 import PrefSelect from './PrefSelect.jsx';
 import { FRACTION_DENOMINATORS } from '../../../../markset/us-units.js'; // Markset
+import ColorSchemePrefs from '../../../../markset/ColorSchemePrefs.jsx'; // Markset
 
 const SUB_TABS = [
   { id: 'general', key: 'annotations.subtabGeneral' },
@@ -123,6 +124,8 @@ export default function AnnotationsTab(props) {
           <Match when={subTab() === 'general'}>
             <fieldset class="pref-fieldset">
               <legend>{t('annotations.generalDefaults')}</legend>
+              {/* Markset: markup color schemes (blue, red, green, orange, black, your own) */}
+              <ColorSchemePrefs p={p} t={t} />
               <div class="pref-row">
                 <label>{t('annotations.defaultAnnotationColor')}</label>
                 <PrefColorPicker value={p.defaultAnnotationColor[0]} setValue={p.defaultAnnotationColor[1]} />

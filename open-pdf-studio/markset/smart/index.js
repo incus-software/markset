@@ -36,7 +36,7 @@ export function templatePreviewSvg(t, color = '#000') {
  * Palette entries for a bundled group: templates whose markset.group is
  * `group` ('starter' when unset; wiring runs are 'electrical').
  */
-export function smartPaletteEntries(reviewColor = '#dd0000', group = 'starter') {
+export function smartPaletteEntries(reviewColor = '#ff0000', group = 'starter') {
   return MARKSET_TEMPLATES.filter(t => (t.markset.group || 'starter') === group).map(t => ({
     id: `smart-${t.id}`,
     name: t.nameEn,
@@ -75,7 +75,7 @@ export function smartTwoPointSize(t, pageW, pageH, scale = 1) {
 /** Color overrides for a new annotation: review symbols take the review color. */
 export function smartColors(t, reviewColor) {
   if (!isMarkset(t) || t.markset.role !== 'review') return {};
-  const c = reviewColor || '#dd0000';
+  const c = reviewColor || '#ff0000';
   return { color: c, strokeColor: c };
 }
 

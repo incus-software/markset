@@ -250,4 +250,5 @@ markset/us-units-hooks.test.mjs
 markset/svg-to-pdf.test.mjs
 markset/library/library.test.mjs
 markset/smart/smart.test.mjs
+markset/color-schemes.test.mjs
 markset/vite-brand.test.mjs
