@@ -15,11 +15,16 @@ import { redrawAnnotations, redrawContinuous } from '../../../annotations/render
 import { recalculateAllMeasurements } from '../../../annotations/measurement.js';
 import { invalidateScaleRegionCache } from '../../../annotations/scale-region.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { US_SCALES } from '../../../../markset/us-units.js'; // Markset
 
 // Standard drawing scales for the dropdown (largest → smallest denominator).
 const PRESET_SCALES = [
   '1:200', '1:100', '1:50', '1:20', '1:10', '1:5', '1:2', '1:1',
 ];
+
+// Markset: US scales, shown by their US label and measured in feet.
+const US_PRESETS = US_SCALES.map(s => ({ value: `1:${s.ratio}`, label: s.label }));
+const isPreset = (s) => PRESET_SCALES.includes(s) || US_PRESETS.some(p => p.value === s);
 
 function redraw() {
   const doc = getActiveDocument();
@@ -48,7 +53,7 @@ export default function ScaleRegionDialog(props) {
   const [label, setLabel] = createSignal(initial.label || '');
   // True when the user picked "Aangepast…" — shows the free-text scale input.
   // A computed scale like "1:53.42" is not a preset, so it starts as custom.
-  const [customScale, setCustomScale] = createSignal(!PRESET_SCALES.includes(initialScale));
+  const [customScale, setCustomScale] = createSignal(!isPreset(initialScale)); // Markset: isPreset
 
   // Scale must match "<number>:<number>" with both parts > 0 (decimals
   // allowed — a measured scale can be e.g. "1:53.42"). Anything else
@@ -159,17 +164,19 @@ export default function ScaleRegionDialog(props) {
               input for non-standard scales (e.g. 1:75). Format is
               validated/normalized in handleApply(). */}
           <PrefSelect
-            value={() => (!customScale() && PRESET_SCALES.includes(scaleString())) ? scaleString() : '__custom__'}
+            value={() => (!customScale() && isPreset(scaleString())) ? scaleString() : '__custom__'}
             setValue={(v) => {
               if (v === '__custom__') {
                 setCustomScale(true);
               } else {
                 setCustomScale(false);
                 setScaleString(v);
+                if (US_PRESETS.some(p => p.value === v)) setUnits('ft'); // Markset
               }
             }}
             options={[
               ...PRESET_SCALES.map(s => ({ value: s, label: s })),
+              ...US_PRESETS, // Markset
               { value: '__custom__', label: t('scaleRegion.custom') || 'Aangepast…' },
             ]}
             style={{ width: '100%' }}

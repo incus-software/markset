@@ -211,6 +211,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Measurement global
   measureRounding: 'none', // 'none', '1', '5', '10'
   measureCtrlSnap: 10,
+  // Markset: US units (markset/us-units.js)
+  measureImperialFormat: 'feet-inch',
+  measureFractionDenominator: 16,
 
   // Measure Distance defaults
   measureDistStrokeColor: '#FF0000',

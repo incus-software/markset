@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { PAPER_SIZES } from './NewDocDialog.jsx';
+import { ANSI_SHEETS, ARCH_SHEETS, sheetOptionLabel } from '../../../../markset/us-units.js'; // Markset
 import { state, getActiveDocument } from '../../../core/state.js';
 import { insertBlankPages } from '../../../pdf/page-manager.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
@@ -123,6 +124,13 @@ export default function InsertPageDialog() {
               <option value="legal">Legal (8.5 x 14 in)</option>
               <option value="tabloid">Tabloid (11 x 17 in)</option>
               <option value="ledger">Ledger (17 x 11 in)</option>
+            </optgroup>
+            {/* Markset: US engineering and architectural sheets */}
+            <optgroup label="ANSI">
+              {Object.keys(ANSI_SHEETS).map(k => <option value={k}>{sheetOptionLabel(k)}</option>)}
+            </optgroup>
+            <optgroup label="ARCH">
+              {Object.keys(ARCH_SHEETS).map(k => <option value={k}>{sheetOptionLabel(k)}</option>)}
             </optgroup>
           </select>
         </div>

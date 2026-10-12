@@ -25,6 +25,7 @@ working notes for keeping the fork mergeable.
 | 2026-10-10 | Updater, "What's new", "Install previous version" and feedback now point to Markset services instead of upstream. Updater artifacts are off until Markset has its own signing key. |
 | 2026-10-10 | About dialog: added the fork notice (`markset/ForkNotice.jsx`); contact link goes to support@usemarkset.com. |
 | 2026-10-10 | Added NOTICE.md, this file, the dependency license report and a Windows CI build (`.github/workflows/markset-windows.yml`). |
+| 2026-10-10 | US units (`markset/us-units.js`): ft/in measurements display as feet-inch fractions (preference, default 1/16"); length fields accept `12'-6 3/8"`; architectural and engineering scale presets; title-block detection reads `1/4" = 1'-0"` as 1:48 in feet (it was read as 1:4); ANSI A-E and ARCH A-E1 sheets in New Document and Insert Page. Hooks are marked `Markset:` in measurement.js, maat-label.js, document-scale.js, loader.js, constants.ts, preferences.ts, the calibration/scale/viewport/scale-region/measured-length dialogs, NewDocDialog, InsertPageDialog and AnnotationsTab. |
 | 2026-10-10 | Fixed the brand overlay (`markset/vite-brand.mjs`): it skipped every file because the repository checkout is itself named "markset"; it now skips only `open-pdf-studio/markset/`. |
 
 ## Known follow-ups
@@ -36,4 +37,8 @@ working notes for keeping the fork mergeable.
 - [ ] Replace icons, splash and theme with the Markset design.
 - [ ] Set up support@usemarkset.com and the usemarkset.com feedback endpoint.
 - [ ] Confirm the license of the npm package `@crabnebula/tauri-plugin-drag`.
-- [ ] US units: feet-inch fractions, architectural scales, ARCH/ANSI sheet sizes.
+- [x] US units: feet-inch fractions, architectural scales, ARCH/ANSI sheet sizes (`markset/us-units.js`).
+- [ ] US units, part 2: places that still format ft/in as decimals on their own instead of through `formatMeasurement`: the properties panel scaled value (`propertiesStore.js`), Measurements panel totals, scale-bar tick labels, schedules/CSV and the snap-engine polar readout.
+- [ ] US units, part 2: ANSI/ARCH sizes in the print dialog (`print-pagina-instelling.js` must stay in sync with `src-tauri/src/print_formulieren.rs`) and in CAD import (`cad-import-logica.js`).
+- [ ] US units, part 2: a unit-system preference (metric/US) that picks the default measuring unit, sheet size and scale list for new users.
+- [ ] Translate the new US units strings (only `en` has them; other locales fall back to English).

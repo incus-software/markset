@@ -7,6 +7,7 @@ import { scanFrames, openFramesFolder } from '../../../pdf/frames.js';
 import { scanTitleBlocks, openTitleBlocksFolder, addTitleBlockFile, composeFrameWithTitleBlock }
   from '../../../pdf/titleblocks.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { ANSI_SHEETS, ARCH_SHEETS, sheetOptionLabel, US_SHEETS } from '../../../../markset/us-units.js'; // Markset
 
 // Preferred defaults when the dialog opens: OpenAEC Grootformaat frame,
 // A1, landscape (liggend). These only take effect when a matching frame
@@ -32,6 +33,7 @@ const PAPER_SIZES = {
   legal:   { width: 612,  height: 1008, label: 'Legal', widthMm: 216, heightMm: 356 },
   tabloid: { width: 792,  height: 1224, label: 'Tabloid', widthMm: 279, heightMm: 432 },
   ledger:  { width: 1224, height: 792,  label: 'Ledger', widthMm: 432, heightMm: 279 },
+  ...US_SHEETS, // Markset: ANSI A-E, ARCH A-E1
 };
 
 export { PAPER_SIZES };
@@ -378,6 +380,13 @@ export default function NewDocDialog() {
                 <option value="legal">Legal (8.5 x 14 in)</option>
                 <option value="tabloid">Tabloid (11 x 17 in)</option>
                 <option value="ledger">Ledger (17 x 11 in)</option>
+              </optgroup>
+              {/* Markset: US engineering and architectural sheets */}
+              <optgroup label="ANSI">
+                {Object.keys(ANSI_SHEETS).map(k => <option value={k}>{sheetOptionLabel(k)}</option>)}
+              </optgroup>
+              <optgroup label="ARCH">
+                {Object.keys(ARCH_SHEETS).map(k => <option value={k}>{sheetOptionLabel(k)}</option>)}
               </optgroup>
               <optgroup label={t('newDoc.other')}>
                 <option value="custom">{t('newDoc.customSize')}</option>

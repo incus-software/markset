@@ -159,6 +159,9 @@ export interface Preferences {
   // Measurement global
   measureRounding: string;
   measureCtrlSnap: number;
+  // Markset: US units — 'feet-inch' shows ft/in lengths as 12'-6 3/8"
+  measureImperialFormat: 'feet-inch' | 'decimal';
+  measureFractionDenominator: number;
 
   // Measure Distance defaults
   measureDistStrokeColor: string;

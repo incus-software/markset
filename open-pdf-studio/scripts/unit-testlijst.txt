@@ -245,4 +245,6 @@ js/pdf/wiel-scroll.test.mjs
 js/pdf/saver/text-markup-dict.test.mjs
 js/text/leesrichting.test.mjs
 # Markset
+markset/us-units.test.mjs
+markset/us-units-hooks.test.mjs
 markset/vite-brand.test.mjs

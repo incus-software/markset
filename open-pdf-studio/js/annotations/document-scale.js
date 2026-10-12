@@ -7,6 +7,8 @@
 // writing the scale to IT, gives wrong lengths and areas in both files
 // without any visible sign.
 
+import { findUsScale } from '../../markset/us-units.js'; // Markset
+
 // Patterns ordered from most specific (labelled) to least specific (bare 1:N).
 // The labelled pattern avoids false positives from dimensions like "2:3".
 const SCALE_PATTERNS = [
@@ -15,6 +17,10 @@ const SCALE_PATTERNS = [
 ];
 
 function matchScale(text) {
+  // Markset: US scales first. The bare pattern below reads 1/4" = 1'-0" as
+  // 1:4. A US result carries unit 'ft' so callers calibrate in feet.
+  const us = findUsScale(text);
+  if (us) return { ...us, unit: 'ft' };
   for (const pattern of SCALE_PATTERNS) {
     const match = text.match(pattern);
     if (match) {

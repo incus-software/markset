@@ -13,6 +13,7 @@ import { cloneAnnotation } from '../../../annotations/factory.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
 import { recalculateAllMeasurements } from '../../../annotations/measurement.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { US_SCALES, usScaleLabel, pointsPerFoot } from '../../../../markset/us-units.js'; // Markset
 
 const PRESET_SCALES = [
   { label: '1:10', ratio: 10 },
@@ -36,6 +37,10 @@ const PRESET_SCALES = [
   { label: '1:5000', ratio: 5000 },
 ];
 
+// Markset: US architectural/engineering presets ("us:48" is 1/4" = 1'-0").
+// They store the same "1:N" scaleRatio, calibrated in feet.
+const US_PRESET_OPTIONS = US_SCALES.map(s => ({ value: `us:${s.ratio}`, label: s.label }));
+
 function redraw() {
   const doc = getActiveDocument();
   if (doc?.viewMode === 'continuous') redrawContinuous();
@@ -53,7 +58,9 @@ export default function ViewportScaleDialog(props) {
   const data = props.data || {};
   const initialAnnotation = findAnnotation(data.annotationId);
   const initialSnapshot = initialAnnotation ? cloneAnnotation(initialAnnotation) : null;
-  const initialRatio = String(initialAnnotation?.scaleRatio || '').match(/^1:(\d+)$/)?.[1] || '100';
+  let initialRatio = String(initialAnnotation?.scaleRatio || '').match(/^1:(\d+)$/)?.[1] || '100';
+  // Markset: reopen a feet-calibrated US scale on its US preset.
+  if (['ft', 'in'].includes(initialAnnotation?.unit) && usScaleLabel(Number(initialRatio))) initialRatio = `us:${initialRatio}`;
   const [mode, setMode] = createSignal(data.isNew || initialAnnotation?.scaleRatio ? 'preset' : 'custom');
   const [presetRatio, setPresetRatio] = createSignal(initialRatio);
   const hasCustomScale = !!initialAnnotation && !initialAnnotation.scaleRatio && initialAnnotation.pixelsPerUnit > 0;
@@ -73,7 +80,12 @@ export default function ViewportScaleDialog(props) {
 
     let pixelsPerUnit, unit, scaleRatio = '';
 
-    if (mode() === 'preset') {
+    const usRatio = String(presetRatio()).startsWith('us:') ? Number(presetRatio().slice(3)) : 0; // Markset
+    if (mode() === 'preset' && usRatio > 0) {
+      pixelsPerUnit = pointsPerFoot(usRatio);
+      unit = 'ft';
+      scaleRatio = `1:${usRatio}`;
+    } else if (mode() === 'preset') {
       const ratio = parseInt(presetRatio());
       if (!ratio || ratio <= 0) return;
       pixelsPerUnit = 72 / (25.4 * ratio);
@@ -91,7 +103,7 @@ export default function ViewportScaleDialog(props) {
     ann.pixelsPerUnit = pixelsPerUnit;
     ann.unit = unit;
     ann.scaleRatio = scaleRatio;
-    ann.name = viewportName() || scaleRatio || 'Viewport';
+    ann.name = viewportName() || (mode() === 'preset' && usScaleLabel(usRatio)) || scaleRatio || 'Viewport'; // Markset: US label
     ann.modifiedAt = new Date().toISOString();
 
     recalculateAllMeasurements();
@@ -161,7 +173,7 @@ export default function ViewportScaleDialog(props) {
             <PrefSelect
               value={presetRatio}
               setValue={setPresetRatio}
-              options={PRESET_SCALES.map(s => ({ value: String(s.ratio), label: s.label }))}
+              options={[...PRESET_SCALES.map(s => ({ value: String(s.ratio), label: s.label })), ...US_PRESET_OPTIONS]}
               style={{ width: '100%' }}
             />
           </div>

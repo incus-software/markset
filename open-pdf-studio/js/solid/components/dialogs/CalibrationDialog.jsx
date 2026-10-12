@@ -12,11 +12,16 @@ import {
   beginUndoTransaction,
   endUndoTransaction,
 } from '../../../core/undo-manager.js';
+import { ARCHITECTURAL_SCALES, ENGINEERING_SCALES, US_SCALES, findUsScale, parseLengthAs } from '../../../../markset/us-units.js'; // Markset
 
 const SCALE_PRESETS = [
   '1:1', '1:2', '1:5', '1:10', '1:20', '1:25', '1:50',
   '1:100', '1:200', '1:250', '1:500', '1:1000'
 ];
+
+// Markset: US scales as "1:N" presets; picking one switches the unit to ft.
+const US_SCALE_PRESETS = US_SCALES.map(s => `1:${s.ratio}`);
+const isPreset = (r) => SCALE_PRESETS.includes(r) || US_SCALE_PRESETS.includes(r);
 
 /**
  * Auto-detect scale from the PDF title block (onderhoek).
@@ -53,6 +58,8 @@ async function detectScaleFromTitleBlock() {
     const vy = t[1] * tx + t[3] * ty + t[5];
 
     if (vx >= regionLeft && vy >= regionTop) {
+      const us = findUsScale(item.str); // Markset
+      if (us) { candidates.push({ denominator: us.ratio, unit: 'ft', text: item.str, x: vx, y: vy }); continue; }
       const match = item.str.match(scalePattern);
       if (match) {
         const denominator = parseFloat(match[1].replace(',', '.'));
@@ -67,6 +74,8 @@ async function detectScaleFromTitleBlock() {
   if (candidates.length === 0) {
     for (const item of textContent.items) {
       if (!item.str || item.str.trim().length === 0) continue;
+      const us = findUsScale(item.str); // Markset: specific enough without a label
+      if (us) { candidates.push({ denominator: us.ratio, unit: 'ft', text: item.str, x: 0, y: 0 }); continue; }
       // Look for explicit "schaal" / "scale" / "maßstab" / "échelle" labels
       const lowerStr = item.str.toLowerCase();
       const hasLabel = /(?:schaal|scale|ma[ßs]stab|[eé]chelle|escala)\s*/i.test(lowerStr);
@@ -85,7 +94,7 @@ async function detectScaleFromTitleBlock() {
   if (candidates.length === 0) return null;
 
   // Return the first match (closest to bottom-right typically)
-  return candidates[0].denominator;
+  return candidates[0]; // Markset: { denominator, unit? } instead of the bare denominator
 }
 
 export default function CalibrationDialog(props) {
@@ -124,8 +133,8 @@ export default function CalibrationDialog(props) {
       setRatioUnit(ms.unit || 'mm');
       if (ms.method === 'ratio' && ms.scaleRatio) {
         setMethod('ratio');
-        setScalePreset(SCALE_PRESETS.includes(ms.scaleRatio) ? ms.scaleRatio : 'custom');
-        if (!SCALE_PRESETS.includes(ms.scaleRatio)) {
+        setScalePreset(isPreset(ms.scaleRatio) ? ms.scaleRatio : 'custom');
+        if (!isPreset(ms.scaleRatio)) {
           const parts = ms.scaleRatio.split(':');
           setCustomScale(parseInt(parts[1]) || 100);
         }
@@ -159,10 +168,12 @@ export default function CalibrationDialog(props) {
     setDetecting(true);
     setDetectResult(null);
     try {
-      const denominator = await detectScaleFromTitleBlock();
+      const found = await detectScaleFromTitleBlock();
+      const denominator = found?.denominator; // Markset
       if (denominator) {
+        if (found.unit) setRatioUnit(found.unit); // Markset: US scales are in feet
         const ratio = `1:${denominator}`;
-        if (SCALE_PRESETS.includes(ratio)) {
+        if (isPreset(ratio)) {
           setScalePreset(ratio);
         } else {
           setScalePreset('custom');
@@ -183,7 +194,7 @@ export default function CalibrationDialog(props) {
     let scaleData = null;
 
     if (method() === 'reference') {
-      const d = parseFloat(distance());
+      const d = parseLengthAs(distance(), unit()); // Markset: also 12'-6 3/8"
       const p = parseFloat(pixels());
       if (d > 0 && p > 0) {
         scaleData = {
@@ -328,10 +339,9 @@ export default function CalibrationDialog(props) {
         <div class="calibration-row">
           <label class="calibration-label">{t('calibration.knownDistance')}</label>
           <input
-            type="number"
+            type="text"
+            inputmode="decimal"
             class="calibration-input"
-            min="0.001"
-            step="0.01"
             value={distance()}
             onInput={(e) => setDistance(e.target.value)}
           />
@@ -359,9 +369,19 @@ export default function CalibrationDialog(props) {
           <select
             class="calibration-select calibration-select-wide"
             value={scalePreset()}
-            onChange={(e) => setScalePreset(e.target.value)}
+            onChange={(e) => {
+              setScalePreset(e.target.value);
+              if (US_SCALE_PRESETS.includes(e.target.value)) setRatioUnit('ft'); // Markset
+            }}
           >
             {SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}
+            {/* Markset: US scales */}
+            <optgroup label={t('calibration.architecturalScales')}>
+              {ARCHITECTURAL_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
+            </optgroup>
+            <optgroup label={t('calibration.engineeringScales')}>
+              {ENGINEERING_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
+            </optgroup>
             <option value="custom">{t('calibration.customRatio')}</option>
           </select>
           <Show when={scalePreset() === 'custom'}>

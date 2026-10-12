@@ -580,10 +580,12 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
           const result = await detectScaleFromPdf(1, doc);
           if (isClosed() || doc.measureScale) return;
           if (result && result.ratio > 0) {
-            const pixelsPerUnit = 72 / (25.4 * result.ratio);
+            // Markset: a US title-block scale (1/4" = 1'-0") calibrates in feet.
+            const inFeet = result.unit === 'ft';
+            const pixelsPerUnit = inFeet ? (72 * 12) / result.ratio : 72 / (25.4 * result.ratio);
             doc.measureScale = {
               pixelsPerUnit,
-              unit: 'mm',
+              unit: inFeet ? 'ft' : 'mm',
               method: 'auto-detect',
               scaleRatio: `1:${result.ratio}`,
             };
