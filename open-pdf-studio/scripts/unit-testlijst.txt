@@ -257,4 +257,5 @@ markset/translations/translations.test.mjs
 markset/scale-tools.test.mjs
 markset/page-scale.test.mjs
 markset/text-defaults.test.mjs
+markset/pref-migrations.test.mjs
 markset/vite-brand.test.mjs
