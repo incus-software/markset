@@ -104,6 +104,7 @@ export default function CalibrationDialog(props) {
 
   // Method tab: 'reference' or 'ratio'
   const [method, setMethod] = createSignal('reference');
+  const usFirst = ['ft', 'in'].includes(unitDefaults().unit); // Markset: US scales first in the list
 
   // Method 1: Reference line
   const [distance, setDistance] = createSignal(1);
@@ -141,6 +142,10 @@ export default function CalibrationDialog(props) {
         }
       }
     }
+    // Markset: the caller picks the tab (Set Scale → ratio); a reference line
+    // just drawn with Calibrate always opens on the reference tab.
+    if (refPx && refPx > 0) setMethod('reference');
+    else if (props.data?.method === 'ratio' || props.data?.method === 'reference') setMethod(props.data.method);
 
     // Detect PDF page size
     try {
@@ -223,7 +228,8 @@ export default function CalibrationDialog(props) {
       } else if (u === 'in') {
         pixelsPerUnit = 72 / S;
       } else if (u === 'ft') {
-        pixelsPerUnit = 72 / (S * 12);
+        // Markset: 1 ft real = 12/S in on paper = 864/S pt (upstream had 72/(S*12), 144x too small)
+        pixelsPerUnit = (72 * 12) / S;
       } else {
         pixelsPerUnit = 72 / (S * 25.4); // fallback mm
       }
@@ -375,14 +381,15 @@ export default function CalibrationDialog(props) {
               if (US_SCALE_PRESETS.includes(e.target.value)) setRatioUnit('ft'); // Markset
             }}
           >
-            {SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}
-            {/* Markset: US scales */}
+            {/* Markset: US scales, listed first with US units; metric after them */}
+            {!usFirst && SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}
             <optgroup label={t('calibration.architecturalScales')}>
               {ARCHITECTURAL_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
             </optgroup>
             <optgroup label={t('calibration.engineeringScales')}>
               {ENGINEERING_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
             </optgroup>
+            {usFirst && <optgroup label="Metric">{SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}</optgroup>}
             <option value="custom">{t('calibration.customRatio')}</option>
           </select>
           <Show when={scalePreset() === 'custom'}>
