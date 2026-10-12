@@ -53,6 +53,36 @@ pub enum Papier {
     Letter,
     Legal,
     Tabloid,
+    // Markset: US engineering (ANSI C-E) and architectural (ARCH A-E1) sheets.
+    // ANSI A and B are Letter and Tabloid.
+    AnsiC,
+    AnsiD,
+    AnsiE,
+    ArchA,
+    ArchB,
+    ArchC,
+    ArchD,
+    ArchE1,
+    ArchE,
+}
+
+/// Markset: US sheets without a printer form, as (key, short side, long side)
+/// in inches. ARCH sizes have no `DMPAPER_*` code, so they go as a custom
+/// size, or under the code a plotter driver lists for that size.
+const US_VELLEN_IN: [(Papier, &str, f64, f64); 9] = [
+    (Papier::AnsiC, "ansi-c", 17.0, 22.0),
+    (Papier::AnsiD, "ansi-d", 22.0, 34.0),
+    (Papier::AnsiE, "ansi-e", 34.0, 44.0),
+    (Papier::ArchA, "arch-a", 9.0, 12.0),
+    (Papier::ArchB, "arch-b", 12.0, 18.0),
+    (Papier::ArchC, "arch-c", 18.0, 24.0),
+    (Papier::ArchD, "arch-d", 24.0, 36.0),
+    (Papier::ArchE1, "arch-e1", 30.0, 42.0),
+    (Papier::ArchE, "arch-e", 36.0, 48.0),
+];
+
+fn us_vel(papier: Papier) -> Option<&'static (Papier, &'static str, f64, f64)> {
+    US_VELLEN_IN.iter().find(|v| v.0 == papier)
 }
 
 impl Papier {
@@ -72,6 +102,7 @@ impl Papier {
             Some("letter") => Papier::Letter,
             Some("legal") => Papier::Legal,
             Some("tabloid") => Papier::Tabloid,
+            Some(k) => US_VELLEN_IN.iter().find(|v| v.1 == k).map_or(Papier::Printer, |v| v.0), // Markset
             _ => Papier::Printer,
         }
     }
@@ -101,6 +132,11 @@ pub fn dmpaper(papier: Papier) -> Option<i16> {
         Papier::Letter => Some(1),
         Papier::Legal => Some(5),
         Papier::Tabloid => Some(3),
+        // Markset: DMPAPER_CSHEET, DMPAPER_DSHEET, DMPAPER_ESHEET; ARCH has no code.
+        Papier::AnsiC => Some(24),
+        Papier::AnsiD => Some(25),
+        Papier::AnsiE => Some(26),
+        Papier::ArchA | Papier::ArchB | Papier::ArchC | Papier::ArchD | Papier::ArchE1 | Papier::ArchE => None,
     }
 }
 
@@ -122,6 +158,7 @@ impl Papier {
             Papier::Letter => "letter",
             Papier::Legal => "legal",
             Papier::Tabloid => "tabloid",
+            p => us_vel(p).map_or("printer", |v| v.1), // Markset
         }
     }
 
@@ -139,6 +176,12 @@ impl Papier {
     /// De maat die als eigen maat in de DEVMODE gaat (`dmPaperWidth`,
     /// `dmPaperLength`, in 0,1 mm, staand) voor een vel zonder vaste code.
     pub fn eigen_maat_tiende_mm(self) -> Option<(i16, i16)> {
+        // Markset: ARCH sheets (no code, no printer form) go by their own size.
+        if dmpaper(self).is_none() {
+            if let Some(&(_, _, k, l)) = us_vel(self) {
+                return Some(((k * 254.0).round() as i16, (l * 254.0).round() as i16));
+            }
+        }
         self.formulier().map(|f| {
             let (b, l) = f.maat_tiende_mm();
             (b as i16, l as i16)
@@ -160,12 +203,13 @@ impl Papier {
             Papier::Letter => Some((215.9, 279.4)),
             Papier::Legal => Some((215.9, 355.6)),
             Papier::Tabloid => Some((279.4, 431.8)),
+            p => us_vel(p).map(|&(_, _, k, l)| (k * 25.4, l * 25.4)), // Markset
         }
     }
 }
 
 /// Alle bekende vellen, voor het terugzoeken op maat.
-const BEKENDE_VELLEN: [Papier; 13] = [
+const BEKENDE_VELLEN: [Papier; 22] = [
     Papier::A0,
     Papier::A1,
     Papier::A0L,
@@ -179,6 +223,16 @@ const BEKENDE_VELLEN: [Papier; 13] = [
     Papier::Letter,
     Papier::Legal,
     Papier::Tabloid,
+    // Markset: US sheets
+    Papier::AnsiC,
+    Papier::AnsiD,
+    Papier::AnsiE,
+    Papier::ArchA,
+    Papier::ArchB,
+    Papier::ArchC,
+    Papier::ArchD,
+    Papier::ArchE1,
+    Papier::ArchE,
 ];
 
 /// Welk bekend vel hoort bij een DEVMODE-papiercode (`dmPaperSize`)?
@@ -198,6 +252,9 @@ pub fn papier_uit_dmpaper(code: i16) -> Option<Papier> {
         1 | 2 | 54 | 75 => Some(Papier::Letter), // LETTER, LETTERSMALL, _TRANSVERSE, _ROTATED
         5 => Some(Papier::Legal),
         3 | 4 => Some(Papier::Tabloid),          // TABLOID, LEDGER
+        24 => Some(Papier::AnsiC),               // Markset: CSHEET
+        25 => Some(Papier::AnsiD),               // Markset: DSHEET
+        26 => Some(Papier::AnsiE),               // Markset: ESHEET
         _ => None,
     }
 }
@@ -600,6 +657,11 @@ pub fn lp_media(papier: Papier) -> Option<String> {
             let f = papier.formulier()?;
             return Some(format!("Custom.{}x{}mm", f.breedte_mm, f.hoogte_mm));
         }
+        // Markset: US sheets as a custom size in inches (CUPS accepts "in").
+        p => {
+            let &(_, _, k, l) = us_vel(p)?;
+            return Some(format!("Custom.{k}x{l}in"));
+        }
     };
     Some(naam.to_string())
 }
@@ -770,6 +832,22 @@ mod tests {
             let (b, h) = p.staande_maat_mm().unwrap();
             assert!(b < h, "{p:?} staat niet staand");
         }
+    }
+
+    // Markset
+    #[test]
+    fn us_vellen() {
+        assert_eq!(Papier::uit_keuze(Some("arch-d")), Papier::ArchD);
+        assert_eq!(Papier::uit_keuze(Some("ansi-d")), Papier::AnsiD);
+        assert_eq!(Papier::ArchD.sleutel(), "arch-d");
+        assert_eq!(dmpaper(Papier::AnsiD), Some(25));
+        assert_eq!(dmpaper(Papier::ArchD), None);
+        assert_eq!(Papier::ArchD.eigen_maat_tiende_mm(), Some((6096, 9144)));
+        assert_eq!(Papier::ArchE.eigen_maat_tiende_mm(), Some((9144, 12192)));
+        assert_eq!(Papier::AnsiD.eigen_maat_tiende_mm(), None);
+        assert_eq!(papier_uit_maat_mm(914.4, 609.6), Some(Papier::ArchD));
+        assert_eq!(papier_uit_maat_mm(558.8, 863.6), Some(Papier::AnsiD));
+        assert_eq!(papier_uit_dmpaper(24), Some(Papier::AnsiC));
     }
 
     #[test]

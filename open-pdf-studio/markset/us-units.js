@@ -258,6 +258,30 @@ export const ARCH_SHEETS = Object.freeze({
 
 export const US_SHEETS = Object.freeze({ ...ANSI_SHEETS, ...ARCH_SHEETS });
 
+/**
+ * The US sheets in the shape of the print dialog's PAPIERFORMATEN (mm,
+ * portrait). ANSI A and B are left out: the print list already has them as
+ * Letter and Tabloid. Keys match the Papier keys in print_instelling.rs.
+ */
+export const US_PRINT_FORMATS = Object.freeze(Object.fromEntries(
+  Object.entries(US_SHEETS)
+    .filter(([key]) => key !== 'ansi-a' && key !== 'ansi-b')
+    .map(([key, s]) => [key, Object.freeze({
+      breedte: Math.round(s.widthIn * 254) / 10,
+      hoogte: Math.round(s.heightIn * 254) / 10,
+      label: s.label,
+      inches: `${s.widthIn} x ${s.heightIn} in`,
+    })]),
+));
+
+/**
+ * The same sheets for CAD import, in the shape and order of
+ * open-pdf-cad/src/import/paper.rs (ids like "ARCH-D"; never picked
+ * automatically, like Letter and Tabloid).
+ */
+export const US_CAD_FORMATS = Object.freeze(Object.entries(US_PRINT_FORMATS).map(([key, f]) =>
+  Object.freeze({ id: key.toUpperCase(), breedte: f.breedte, hoogte: f.hoogte, automatic: false })));
+
 /** Option label for a sheet: "ARCH D (24 x 36 in)". */
 export function sheetOptionLabel(key) {
   const s = US_SHEETS[key];

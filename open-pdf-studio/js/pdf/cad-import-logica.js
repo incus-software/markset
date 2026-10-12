@@ -1,6 +1,9 @@
 // Pure rekenregels achter het importvenster voor DWG en DXF (#400). Geen
 // imports uit de app, zodat de unit-tests ze onder node kunnen draaien.
 
+// Markset: us-units.js is dependency-free too.
+import { US_CAD_FORMATS } from '../../markset/us-units.js';
+
 /** Punten per millimeter (1 pt = 1/72 inch). */
 export const PT_PER_MM = 72 / 25.4;
 
@@ -25,6 +28,7 @@ export const PAPIERFORMATEN = Object.freeze([
   { id: 'A0', breedte: 841, hoogte: 1189 },
   { id: 'Letter', breedte: 215.9, hoogte: 279.4 },
   { id: 'Tabloid', breedte: 279.4, hoogte: 431.8 },
+  ...US_CAD_FORMATS, // Markset: same rows as open-pdf-cad/src/import/paper.rs
 ]);
 
 /** Standaardschalen als noemer N van 1:N (kleiner dan 1 is een vergroting). */
@@ -375,7 +379,7 @@ export function papierVoorstel(maat, inst) {
       }
     }
     for (const p of PAPIERFORMATEN) {
-      if (p.id === 'Letter' || p.id === 'Tabloid') continue;
+      if (p.id === 'Letter' || p.id === 'Tabloid' || p.automatic === false) continue; // Markset: US sheets too
       const orientaties = inst?.orientation === 'landscape' ? [true]
         : inst?.orientation === 'portrait' ? [false]
           : cw > ch ? [true, false] : [false, true];

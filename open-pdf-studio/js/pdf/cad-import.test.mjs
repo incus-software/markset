@@ -39,7 +39,8 @@ const laag = (name, extra = {}) => ({
 const paperRs = readFileSync(new URL("../../../open-pdf-cad/src/import/paper.rs", import.meta.url), "utf8");
 
 test("paper sizes are the same as in the converter", () => {
-  const rust = [...paperRs.matchAll(/PaperSize \{ id: "(\w+)", width_mm: ([\d.]+), height_mm: ([\d.]+)/g)]
+  // Markset: ids may contain a hyphen ("ARCH-D").
+  const rust = [...paperRs.matchAll(/PaperSize \{ id: "([\w-]+)", width_mm: ([\d.]+), height_mm: ([\d.]+)/g)]
     .map((m) => ({ id: m[1], breedte: Number(m[2]), hoogte: Number(m[3]) }));
   assert.ok(rust.length >= 10);
   assert.deepEqual(PAPIERFORMATEN.map((p) => ({ id: p.id, breedte: p.breedte, hoogte: p.hoogte })), rust);
