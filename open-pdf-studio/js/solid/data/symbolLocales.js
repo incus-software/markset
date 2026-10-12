@@ -7,12 +7,12 @@
 // categorieën zetten. YAGNI: voorlopig alleen AEC + NL.
 
 export const INDUSTRIES = [
-  { id: 'aec', name: 'AEC (Bouw)' },
+  { id: 'aec', name: 'AEC (Architecture & Construction)' }, // Markset: English
 ];
 
 export const COUNTRIES = [
   { id: 'us', name: 'United States', flag: '🇺🇸' }, // Markset
-  { id: 'nl', name: 'Nederland', flag: '🇳🇱' },
+  { id: 'nl', name: 'Netherlands', flag: '🇳🇱' }, // Markset: English
 ];
 
 // Standaardselectie bij een verse installatie.

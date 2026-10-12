@@ -1,0 +1,40 @@
+/* Markset: recent files on the start screen. */
+.markset-start-recent {
+  margin-top: 24px;
+  width: min(560px, 90%);
+  text-align: left;
+}
+.markset-start-recent h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--theme-text);
+}
+.markset-start-recent ul { list-style: none; margin: 0; padding: 0; }
+.markset-start-recent li + li { margin-top: 2px; }
+.markset-start-recent button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--theme-text);
+  text-align: left;
+  cursor: pointer;
+}
+.markset-start-recent button:hover,
+.markset-start-recent button:focus-visible {
+  background: var(--theme-hover, rgba(127, 127, 127, 0.15));
+  border-color: var(--theme-border);
+  outline: none;
+}
+.markset-recent-name { font-size: 13px; font-weight: 600; }
+.markset-recent-folder {
+  font-size: 11px;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

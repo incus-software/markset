@@ -17,12 +17,13 @@ export const LIBRARY_INDEX_URL = `${LIBRARY_RAW_BASE}index.json`;
 export const LIBRARY_CONTENTS_API = `https://api.github.com/repos/${LIBRARY_REPO}/contents/`;
 
 // De index noemt alleen sector-ids; nette NL-labels horen bij de app.
+// Markset: English labels (were Dutch).
 export const SECTOR_LABELS = {
-  aec: 'AEC (Bouw)',
-  electrical: 'Elektrotechniek',
-  process: 'Proces / P&ID',
-  mep: 'Installatietechniek (MEP)',
-  infra: 'Infra',
+  aec: 'AEC (Architecture & Construction)',
+  electrical: 'Electrical',
+  process: 'Process / P&ID',
+  mep: 'MEP',
+  infra: 'Infrastructure',
 };
 
 export function sectorLabel(id) {

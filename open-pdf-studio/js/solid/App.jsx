@@ -35,6 +35,7 @@ import { leftOrder, rightOrder } from './stores/paletteOrder.js';
 import { useTranslation } from '../i18n/useTranslation.js';
 import { isTauri } from '../core/platform.js';
 import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../core/sessie-herstel.js';
+import StartRecent from '../../markset/StartRecent.jsx'; // Markset
 import { For, ErrorBoundary, Show } from 'solid-js';
 
 function OrderedDockedPalettes(props) {
@@ -102,6 +103,8 @@ function DesktopApp() {
             </svg>
             <h2>{t('noDocuments')}</h2>
             <p>{t('noDocumentsHint')}</p>
+            {/* Markset: recent files right on the start screen */}
+            <StartRecent />
             {/* De webversie bewaart geen sessie. Dat zeggen is eerlijker dan
                 een voorkeur die daar nooit iets doet (#456). */}
             <Show when={meldLegeStart({ inTauri: isTauri() })}>

@@ -1,0 +1,14 @@
+/* Markset: symbol previews on white "paper" tiles in every theme.
+   Symbols are drawn for white paper; on the dark theme's gray tiles black
+   drawing symbols disappear and red review marks have too little contrast,
+   especially for color-blind users. The active (selected) tile keeps the
+   theme's own border highlight. */
+.sp-symbol-btn .sp-symbol-icon,
+.sp-settings-symbol {
+  background: #ffffff;
+  border-radius: 3px;
+}
+.sp-symbol-btn .sp-symbol-icon {
+  padding: 3px;
+  box-sizing: border-box;
+}

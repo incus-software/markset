@@ -77,8 +77,6 @@
     },
     "resources": {
       "icons/file-icon.ico": "file-icon.ico",
-      "resources/kaders": "kaders",
-      "resources/onderhoeken": "onderhoeken",
       "resources/tessdata": "tessdata",
       "resources/fonts": "fonts"
     },
