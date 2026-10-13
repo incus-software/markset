@@ -261,3 +261,4 @@ markset/pref-migrations.test.mjs
 markset/paste-shift.test.mjs
 markset/pdf-text-safety.test.mjs
 markset/vite-brand.test.mjs
+markset/compare/diff-classify.test.mjs

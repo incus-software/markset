@@ -4,6 +4,8 @@ import { closeDialog } from '../../stores/dialogStore.js';
 import { state } from '../../../core/state.js';
 import { startCompare } from '../../../compare/compare-store.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+// Markset: colour-blind-safe orange (old) / blue (new) instead of red / green.
+import { OLD_HEX, NEW_HEX } from '../../../../markset/compare/diff-classify.js';
 
 export default function CompareDialog() {
   const { t } = useTranslation('ribbon');
@@ -95,7 +97,7 @@ export default function CompareDialog() {
           <div class="cmp-doc-row">
             <div class="cmp-doc-col">
               <div class="cmp-doc-label cmp-old">
-                <span class="cmp-color-dot" style="background:#dc2626"></span>
+                <span class="cmp-color-dot" style={`background:${OLD_HEX}`}></span>
                 {t('compare.oldDoc') || 'Oud'}
               </div>
               <select
@@ -140,7 +142,7 @@ export default function CompareDialog() {
 
             <div class="cmp-doc-col">
               <div class="cmp-doc-label cmp-new">
-                <span class="cmp-color-dot" style="background:#16a34a"></span>
+                <span class="cmp-color-dot" style={`background:${NEW_HEX}`}></span>
                 {t('compare.newDoc') || 'Nieuw'}
               </div>
               <select
@@ -179,8 +181,8 @@ export default function CompareDialog() {
               />
               <div class="cmp-mode-icon">
                 <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke-width="2">
-                  <rect x="4" y="4" width="20" height="22" stroke="#dc2626"/>
-                  <rect x="8" y="6" width="20" height="22" stroke="#16a34a"/>
+                  <rect x="4" y="4" width="20" height="22" stroke={OLD_HEX}/>
+                  <rect x="8" y="6" width="20" height="22" stroke={NEW_HEX}/>
                 </svg>
               </div>
               <div class="cmp-mode-title">{t('compare.overlay') || 'Overlay'}</div>
@@ -209,8 +211,8 @@ export default function CompareDialog() {
           {/* Legend */}
           <Show when={mode() === 'overlay'}>
             <div class="cmp-legend">
-              <span class="cmp-legend-item"><span class="cmp-color-dot" style="background:#dc2626"></span>{t('compare.legendOld') || 'Alleen in oud'}</span>
-              <span class="cmp-legend-item"><span class="cmp-color-dot" style="background:#16a34a"></span>{t('compare.legendNew') || 'Alleen in nieuw'}</span>
+              <span class="cmp-legend-item"><span class="cmp-color-dot" style={`background:${OLD_HEX}`}></span>{t('compare.legendOld') || 'Alleen in oud'}</span>
+              <span class="cmp-legend-item"><span class="cmp-color-dot" style={`background:${NEW_HEX}`}></span>{t('compare.legendNew') || 'Alleen in nieuw'}</span>
               <span class="cmp-legend-item"><span class="cmp-color-dot" style="background:#222"></span>{t('compare.legendBoth') || 'Ongewijzigd'}</span>
             </div>
           </Show>
