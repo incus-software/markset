@@ -6,10 +6,12 @@
 import { createSignal } from 'solid-js';
 
 const SEAL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="6.5"/><path d="M6.5 15c1.5-3 2.5-3 3 0s1.5 3 3 0 2-3 3 0" stroke-linecap="round"/></svg>';
+const STAMP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="1.5"/><rect x="6" y="8.5" width="2.6" height="2.6"/><path d="M10.5 9.8h7"/><rect x="6" y="13.5" width="2.6" height="2.6"/><path d="M10.5 14.8h7"/></svg>';
 const SETUP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="10" r="6"/><circle cx="9" cy="10" r="3.6"/><path d="M14 17l3 3 4-6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 /** The Pro tools, in palette order, as shown before the plugin turns them on. */
 export const PRO_TOOL_PLACEHOLDERS = [
+  { id: 'review-stamp', label: 'Review stamp', icon: STAMP_ICON, description: 'Build your firm\'s shop drawing review stamp once, then check a box and fill in By and Date with a click.' },
   { id: 'seal', label: 'Seal', icon: SEAL_ICON, description: 'Place your seal at true size, with your signature and the date.' },
   { id: 'seal-setup', label: 'Seal setup', icon: SETUP_ICON, description: 'Set up your seal file or a state seal, and your signature.' },
 ];
