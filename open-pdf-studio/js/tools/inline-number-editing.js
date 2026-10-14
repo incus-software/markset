@@ -28,7 +28,7 @@ import { startStavenreeksInput } from './stavenreeks-editing.js';
 import { startParametricSymbolInput } from './parametric-symbol-editing.js';
 import { toLocalPoint } from '../symbols/editable-labels.js';
 import { getTemplate } from '../symbols/registry.js';
-import { stampHitAt } from '../../markset/stamp-builder/layout.js'; // Markset
+import { editHitAt } from '../../markset/smart/hooks.js'; // Markset
 import {
   showParametricLabelInput, updateAnnotProp, storeShowProperties,
 } from '../bridge.js';
@@ -148,12 +148,14 @@ function startSysteemrasterMaatInput(annotation) {
  * @returns {boolean} true = afgehandeld (aanroeper mag géén sleep starten).
  */
 export function tryStartInlineNumberEdit(annotation, x, y) {
-  // Markset: on a selected review stamp, a click on a fill-in line or a
-  // checkbox row edits it in place and does not start a move.
-  if (annotation?.type === 'parametricSymbol' && !annotation.locked
-      && getTemplate(annotation.symbolId)?.markset?.stamp) {
+  // Markset: on a selected smart symbol whose template says so (a review
+  // stamp's fill-in line or checkbox row), a click edits in place and does
+  // not start a move.
+  const hitTemplate = annotation?.type === 'parametricSymbol' && !annotation.locked
+    ? getTemplate(annotation.symbolId) : null;
+  if (hitTemplate?.markset?.editHitAt) {
     const p = toLocalPoint(annotation, x, y);
-    if (stampHitAt(annotation.params, annotation, p.x, p.y)) {
+    if (editHitAt(hitTemplate, annotation.params, annotation, p.x, p.y)) {
       storeShowProperties(annotation);
       startParametricSymbolInput(annotation, x, y);
       return true;

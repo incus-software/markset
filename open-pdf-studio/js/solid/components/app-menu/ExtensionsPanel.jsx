@@ -1,7 +1,7 @@
 import { createSignal, For, Show, onMount } from 'solid-js';
 import { closeAppMenu } from '../../stores/appMenuStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
-import { getLoadedPlugins, installPluginFromFile, loadInstalledPlugins, unloadPlugin, reinstallPlugin } from '../../../plugins/plugin-manager.js';
+import { getLoadedPlugins, installPluginFromFile, loadInstalledPlugins, unloadPlugin, reinstallPlugin, isPluginLoaded } from '../../../plugins/plugin-manager.js';
 import { isTauri } from '../../../core/platform.js';
 
 export default function ExtensionsPanel() {
@@ -33,6 +33,8 @@ export default function ExtensionsPanel() {
       }
 
       const manifest = await installPluginFromFile(result);
+      // Markset: a new copy of a running extension replaces it now, not after a restart
+      if (isPluginLoaded(manifest.id)) unloadPlugin(manifest.id);
       // Reload installed plugins so the new one activates
       await loadInstalledPlugins();
       refreshList();

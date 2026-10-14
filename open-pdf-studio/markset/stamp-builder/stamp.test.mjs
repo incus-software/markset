@@ -191,23 +191,34 @@ test('the template offers the fill-in lines to the inline editor', () => {
 });
 
 // --- One logo per PDF ------------------------------------------------------
-import { stampParamsForSave, readStampLogo, restoreStampParams, LOGO_REF } from './pdf-assets.js';
+import { smartParamsForSave, readSmartAssets, restoreSmartParams, ASSET_PREFIX } from '../smart/assets.js';
 
 test('logo stored once: shared stream, reference in params, read back on open', async () => {
   const pdf = await PDFDocument.create();
   const ann = (n) => ({ symbolId: STAMP_TEMPLATE_ID, params: { ...defaultStampDesign(), logo: LOGO, by: `JS${n}` } });
-  const a = stampParamsForSave(ann(1), pdf), b = stampParamsForSave(ann(2), pdf);
-  assert.equal(a.params.logo, LOGO_REF);
+  const a = smartParamsForSave(ann(1), pdf), b = smartParamsForSave(ann(2), pdf);
+  assert.equal(a.params.logo, ASSET_PREFIX + 'logo');
   assert.equal(a.params.by, 'JS1');
-  assert.ok(a.extra.OPS_MarksetLogo);
-  assert.equal(a.extra.OPS_MarksetLogo, b.extra.OPS_MarksetLogo); // same object, stored once
-  assert.equal(readStampLogo(pdf.context, a.extra.OPS_MarksetLogo, PDFName), LOGO);
-  assert.equal(restoreStampParams(a.params, LOGO).logo, LOGO);
-  assert.equal(restoreStampParams({ logo: LOGO }, undefined).logo, LOGO); // older files
+  const refOf = (s) => s.extra.OPS_MarksetAssets.get(PDFName.of('logo'));
+  assert.ok(refOf(a));
+  assert.equal(refOf(a), refOf(b)); // same object, stored once
+  const dict = pdf.context.obj({ OPS_MarksetAssets: a.extra.OPS_MarksetAssets });
+  const assets = readSmartAssets(dict, pdf.context, PDFName);
+  assert.equal(assets.logo, LOGO);
+  assert.equal(restoreSmartParams(a.params, assets).logo, LOGO);
+  assert.equal(restoreSmartParams({ logo: LOGO }, {}).logo, LOGO); // older files
   const other = { symbolId: 'us-room-tag', params: { name: 'X' } };
-  assert.deepEqual(stampParamsForSave(other, pdf), { params: other.params, extra: {} });
+  assert.deepEqual(smartParamsForSave(other, pdf), { params: other.params, extra: {} });
   const noLogo = { symbolId: STAMP_TEMPLATE_ID, params: { logo: '' } };
-  assert.deepEqual(stampParamsForSave(noLogo, pdf).extra, {});
+  assert.deepEqual(smartParamsForSave(noLogo, pdf).extra, {});
+});
+
+test('files from earlier test builds: the logo in OPS_MarksetLogo still loads', async () => {
+  const pdf = await PDFDocument.create();
+  const ref = pdf.context.register(pdf.context.stream(Buffer.from(PNG_1PX, 'base64'), { OPS_ImageType: 'png' }));
+  const dict = pdf.context.obj({ OPS_MarksetLogo: ref });
+  const assets = readSmartAssets(dict, pdf.context, PDFName);
+  assert.equal(restoreSmartParams({ logo: 'markset-asset:logo' }, assets).logo, LOGO);
 });
 
 test('20 stamps with a logo cost about as much as one', async () => {
@@ -228,7 +239,7 @@ test('20 stamps with a logo cost about as much as one', async () => {
       const params = { ...defaultStampDesign(), logo: pngLogo, by: `R${i}` };
       const { width, height } = stampLayout(params);
       const ann = { symbolId: STAMP_TEMPLATE_ID, params, width, height };
-      const s = stampParamsForSave(ann, pdf);
+      const s = smartParamsForSave(ann, pdf);
       const dict = pdf.context.obj({ Type: 'Annot', Subtype: 'Square', Rect: [0, 0, width, height], OPS_Params: JSON.stringify(s.params), ...s.extra });
       const images = await embedSmartImages(ann, pdf);
       writeVectorParametricAppearance({ ann, annotDict: dict, context: pdf.context, pdf: { PDFName }, rectW: width, rectH: height, images });

@@ -1,6 +1,7 @@
 import { PDFName, PDFArray } from 'pdf-lib';
 import { pdfNum, inflateBytes } from './pdf-helpers.js';
 import { findImageAnnotationSources, findImageForAnnotation } from './annotation-image-sources.mjs';
+import { hasAnnotationType } from '../../plugins/annotation-type-registry.js'; // Markset
 
 // Hybrid stamp image extraction. Tries to extract each stamp via pdf-lib's
 // XObject reader first (clean — never bakes in overlapping annotations),
@@ -166,7 +167,8 @@ export async function extractStampImages(pageNum, pdfDoc) {
 
   try {
     const context = pdfDoc.context;
-    for (const source of findImageAnnotationSources(pageNum, pdfDoc)) {
+    // Markset: also the pictures of plugin annotations whose plugin is missing
+    for (const source of findImageAnnotationSources(pageNum, pdfDoc, (type) => !hasAnnotationType(type))) {
       const dataUrl = await extractImageFromFormXObject(context, source.stream);
       if (dataUrl) {
         const key = source.annotationId

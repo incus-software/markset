@@ -3,13 +3,14 @@
 // sheet on placement, and writes their PDF appearance as vectors.
 //
 // Pure apart from the registry import, so it runs under `node --test`.
-import { registerTemplate, getTemplate } from '../../js/symbols/registry.js';
+import { registerTemplate, unregisterTemplate, getTemplate } from '../../js/symbols/registry.js';
 import { MARKSET_TEMPLATES } from './templates.js';
 import { cmdsToSvg } from './cmds-svg.js';
 import { svgToPdfAppearance } from '../svg-to-pdf.js';
 import { sheetSymbolHeight } from '../library/sizing.js';
 import { STAMP_TEMPLATE } from '../stamp-builder/template.js';
-import { stampLayout } from '../stamp-builder/layout.js';
+import { contentSize, templateColors } from './hooks.js';
+import { freezeCmds, frozenTemplate } from './assets.js';
 
 let registered = false;
 
@@ -21,8 +22,47 @@ export function registerMarksetTemplates() {
   registered = true;
 }
 
-const isMarkset = (t) => !!t?.markset && (MARKSET_TEMPLATES.includes(t) || t === STAMP_TEMPLATE);
-const defaults = (t) => Object.fromEntries(t.params.map(p => [p.key, p.default]));
+const defaults = (t) => Object.fromEntries((t.params || []).map(p => [p.key, p.default]));
+const pluginTemplates = new Set();
+
+/**
+ * A plugin's smart template (api.registerParametricTemplate): registered with
+ * the upstream registry and treated like a bundled Markset one (sizing,
+ * colours, vector appearance, frozen copy). Returns a function that removes it.
+ */
+export function registerPluginTemplate(t) {
+  if (!t?.id || typeof t.render !== 'function') throw new TypeError('A template needs an id and a render function');
+  const tpl = { category: 'US', params: [], ...t, markset: { ...(t.markset || {}) } };
+  if (!(tpl.defaultSize?.width > 0 && tpl.defaultSize?.height > 0)) {
+    tpl.defaultSize = contentSize(tpl, defaults(tpl)) || { width: 72, height: 72 };
+  }
+  registerTemplate(tpl);
+  pluginTemplates.add(tpl);
+  return () => {
+    pluginTemplates.delete(tpl);
+    if (getTemplate(tpl.id) === tpl) unregisterTemplate(tpl.id);
+  };
+}
+
+const isMarkset = (t) => !!t?.markset &&
+  (MARKSET_TEMPLATES.includes(t) || t === STAMP_TEMPLATE || pluginTemplates.has(t) || t.frozen === true);
+
+/** The template an annotation draws with: its own, or a stand-in for its frozen copy. */
+export function smartTemplateFor(ann) {
+  return getTemplate(ann?.symbolId) || frozenTemplate(ann);
+}
+
+/**
+ * OPS_Frozen for a Markset symbol: its commands relative to its box (see
+ * assets.js). A symbol whose template is missing keeps the copy it came with.
+ */
+export function frozenForSave(ann) {
+  const t = getTemplate(ann?.symbolId);
+  if (!t) return ann?.frozen || null;
+  if (!isMarkset(t) || !(ann.width > 0) || !(ann.height > 0)) return null;
+  const box = { x: 0, y: 0, width: Math.abs(ann.width), height: Math.abs(ann.height) };
+  try { return freezeCmds(renderTemplate(t, ann.params, box), box, ann.params || {}); } catch { return null; }
+}
 
 /** A template's commands for `params`, drawn into `box`. */
 export function renderTemplate(t, params, box) {
@@ -52,15 +92,14 @@ export function smartPaletteEntries(reviewColor = '#ff0000', group = 'starter') 
 /**
  * The placed box for a click at (x, y): the template's printed height on
  * this sheet, width from its default aspect, centred on the click. Null for
- * templates that are not Markset's (they keep upstream's sizing). A review
- * stamp is placed at its true printed size (its `widthIn`), whatever the sheet.
+ * templates that are not Markset's (they keep upstream's sizing). A template
+ * with a printed size (markset.contentSize, e.g. a review stamp) is placed at
+ * it, whatever the sheet.
  */
 export function smartPlacementBox(t, x, y, pageW, pageH, scale = 1, params = null) {
   if (!isMarkset(t)) return null;
-  if (t.markset.stamp) {
-    const { width, height } = stampLayout(params);
-    return { x: x - width / 2, y: y - height / 2, width, height };
-  }
+  const size = contentSize(t, { ...defaults(t), ...(params || {}) });
+  if (size) return { x: x - size.width / 2, y: y - size.height / 2, width: size.width, height: size.height };
   const h = sheetSymbolHeight(t.markset.paperHeightIn, pageW, pageH);
   if (!h) return null;
   const hh = h * (scale > 0 ? scale : 1);
@@ -80,12 +119,12 @@ export function smartTwoPointSize(t, pageW, pageH, scale = 1) {
   return { band: band * s, length: band * (t.markset.lengthIn / t.markset.bandHeightIn) };
 }
 
-/** Color overrides for a new annotation: review symbols take the review color, stamps their ink. */
+/** Color overrides for a new annotation: the template's own (a stamp's ink), else the review color for review symbols. */
 export function smartColors(t, reviewColor, params = null) {
-  if (isMarkset(t) && t.markset.stamp && /^#[0-9a-f]{6}$/i.test(params?.ink || '')) {
-    return { color: params.ink, strokeColor: params.ink };
-  }
-  if (!isMarkset(t) || t.markset.role !== 'review') return {};
+  if (!isMarkset(t)) return {};
+  const own = templateColors(t, params);
+  if (own) return own;
+  if (t.markset.role !== 'review') return {};
   const c = reviewColor || '#ff0000';
   return { color: c, strokeColor: c };
 }
@@ -101,7 +140,7 @@ const FONTS = { F1: 'Helvetica', F2: 'Helvetica-Bold' };
 const embedded = new WeakMap(); // pdf-lib document -> Map(image src -> embedded image ref)
 
 export async function embedSmartImages(ann, pdfDoc) {
-  const t = getTemplate(ann?.symbolId);
+  const t = smartTemplateFor(ann);
   if (!isMarkset(t) || !pdfDoc || !(ann.width > 0) || !(ann.height > 0)) return [];
   const box = { x: 0, y: 0, width: Math.abs(ann.width), height: Math.abs(ann.height) };
   let cache = embedded.get(pdfDoc);
@@ -133,7 +172,7 @@ export async function embedSmartImages(ann, pdfDoc) {
  * converters do not draw. `images` are from embedSmartImages().
  */
 export function writeVectorParametricAppearance({ ann, annotDict, context, pdf, rectW, rectH, opacity = 1, pageRot = 0, images = [] }) {
-  const t = getTemplate(ann?.symbolId);
+  const t = smartTemplateFor(ann);
   if (!isMarkset(t) || pageRot || !(ann.width > 0) || !(ann.height > 0)) return false;
   const box = { x: 0, y: 0, width: Math.abs(ann.width), height: Math.abs(ann.height) };
   const cmds = renderTemplate(t, ann.params, box);

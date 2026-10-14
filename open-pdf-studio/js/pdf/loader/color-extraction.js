@@ -8,7 +8,7 @@ import { decodePdfTextObject } from '../saver/pdf-text.js';
 import { readPluginPdfAnnotation } from '../../plugins/plugin-pdf.js';
 import { laagVanOc } from '../saver/annotatie-lagen.js';
 import { leesPlattegrondMeta } from './plattegrond-meta.js';
-import { readStampLogo } from '../../../markset/stamp-builder/pdf-assets.js'; // Markset
+import { readSmartAssets, parseFrozen } from '../../../markset/smart/assets.js'; // Markset
 import { leesLijnSleutels } from './maatlijn-uit-bestand.js';
 
 // Documenten waarvan de knipsel-bronpagina's al in de store staan: dat
@@ -517,11 +517,14 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         const p = leesPdfTekst(context, opsParamsRaw);
         if (p !== undefined) colors.opsParams = p;
       }
-      // Markset: a review stamp's logo, stored once per PDF (stamp-builder/pdf-assets.js)
-      const opsLogoRaw = annotDict.get(PDFName.of('OPS_MarksetLogo'));
-      if (opsLogoRaw) {
-        const logo = readStampLogo(context, opsLogoRaw, PDFName);
-        if (logo) colors.opsMarksetLogo = logo;
+      // Markset: a smart symbol's images, stored once per PDF, and its frozen
+      // draw commands (smart/assets.js)
+      const marksetAssets = readSmartAssets(annotDict, context, PDFName);
+      if (Object.keys(marksetAssets).length) colors.opsMarksetAssets = marksetAssets;
+      const opsFrozenRaw = annotDict.get(PDFName.of('OPS_Frozen'));
+      if (opsFrozenRaw) {
+        const frozen = parseFrozen(leesPdfTekst(context, opsFrozenRaw));
+        if (frozen) colors.opsFrozen = frozen;
       }
       const opsIfcRaw = annotDict.get(PDFName.of('OPS_IfcCategory'));
       if (opsIfcRaw) {
