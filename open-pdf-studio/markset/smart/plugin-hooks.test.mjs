@@ -107,6 +107,8 @@ test('plugin Toolpalette groups: add, update, remove; deactivating a plugin remo
   api.methods.registerParametricTemplate(CARD); // registering again replaces it
   api.methods.registerSymbolCategory({ id: 'test-group-2', name: 'Two', symbols: [] });
   assert.throws(() => api.methods.registerParametricTemplate({ ...CARD, id: 'us-room-tag' }), /already exists/);
+  const svg = api.methods.symbolPreviewSvg([{ kind: 'line', x1: 0, y1: 0, x2: 10, y2: 10 }], { x: 0, y: 0, width: 10, height: 10 }, { color: '#00f' });
+  assert.ok(svg.startsWith('<svg') && svg.includes('stroke="#00f"'));
   api.cleanup();
   assert.equal(getTemplate(CARD.id), null);
   assert.ok(getTemplate('us-room-tag')); // a bundled template is never removed
