@@ -25,12 +25,14 @@ import { extractPageGeometry } from '../tools/pdf-snap-extractor.js';
 import { schaalOpPunt } from '../annotations/schaal-op-punt.js';
 import { getScaleFromRegion } from '../annotations/scale-region.js';
 import { createRoot, createEffect } from 'solid-js';
+import { registerProTool as _registerProTool, unregisterProTool as _unregisterProTool } from '../../markset/pro-group/pro-tools.js'; // Markset
 
 export function createPluginApi(pluginId) {
   const registeredTypes = [];
   const registeredPalettes = [];
   const registeredPanels = [];
   const registeredSelectionListeners = []; // [{typeName, fn}]
+  const registeredProTools = []; // Markset
   const documentListeners = new Map();
   let disposeDocumentEvents = null;
 
@@ -79,6 +81,7 @@ export function createPluginApi(pluginId) {
       annotationBatch: true,
       pageAnalysis: true,
       pluginDocumentEvents: true,
+      proTools: true, // Markset: api.registerProTool(...)
     },
 
     // --- Annotation type registration ---
@@ -284,12 +287,27 @@ export function createPluginApi(pluginId) {
       redrawAnnotations();
     },
 
+    // Markset: turn on a tool in the Toolpalette's "Markset Pro" group.
+    // item = { id, label?, icon?, description?, tool? (tool name to activate) | onClick? }
+    registerProTool(item) {
+      _registerProTool(item);
+      registeredProTools.push(item.id);
+    },
+
+    unregisterProTool(id) {
+      _unregisterProTool(id);
+      const idx = registeredProTools.indexOf(id);
+      if (idx >= 0) registeredProTools.splice(idx, 1);
+    },
+
     // --- Cleanup (called by plugin-manager on deactivate) ---
     _cleanup() {
       registeredTypes.forEach(t => unregisterAnnotationType(t));
       registeredPalettes.forEach(id => unregisterToolPalette(id));
       registeredPanels.forEach(t => _unregisterPropertyPanel(t));
       registeredSelectionListeners.forEach(({ typeName, fn }) => _unregisterSelectionListener(typeName, fn));
+      registeredProTools.forEach(id => _unregisterProTool(id)); // Markset
+      registeredProTools.length = 0;
       // Restore native panel visibility on plugin-deactivate so the host UI returns to default.
       setNativePanelHidden(false);
       // Reset tool-group sub-tool selections so a fresh activate starts clean.
