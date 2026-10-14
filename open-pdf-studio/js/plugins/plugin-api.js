@@ -25,6 +25,7 @@ import { extractPageGeometry } from '../tools/pdf-snap-extractor.js';
 import { schaalOpPunt } from '../annotations/schaal-op-punt.js';
 import { getScaleFromRegion } from '../annotations/scale-region.js';
 import { createRoot, createEffect } from 'solid-js';
+import { renderPdfBytes } from '../../markset/plugin-render-pdf.js'; // Markset
 
 export function createPluginApi(pluginId) {
   const registeredTypes = [];
@@ -79,6 +80,7 @@ export function createPluginApi(pluginId) {
       annotationBatch: true,
       pageAnalysis: true,
       pluginDocumentEvents: true,
+      renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
     },
 
     // --- Annotation type registration ---
@@ -282,6 +284,12 @@ export function createPluginApi(pluginId) {
 
     redrawAnnotations() {
       redrawAnnotations();
+    },
+
+    // Markset: render a page of a PDF the plugin was given as bytes (e.g. a
+    // file the user picked) to a transparent canvas, with the app's pdf.js.
+    renderPdf(bytes, options = {}) {
+      return renderPdfBytes(bytes, options);
     },
 
     // --- Cleanup (called by plugin-manager on deactivate) ---
