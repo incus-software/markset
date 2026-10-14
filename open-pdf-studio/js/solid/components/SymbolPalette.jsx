@@ -27,7 +27,6 @@ import { ifcCategoryForSymbol } from '../data/ifcCategoryMap.js';
 import { nenIfcForSymbolId } from '../data/nenIfcMap.js';
 import { SYMBOL_STAMP_DEFAULT_SIZE } from '../../annotations/stamp-defaults.js';
 import { setPendingSymbolId, setPendingSymbolWithParams } from '../stores/parametricSymbolStore.js';
-import { MY_STAMPS_GROUP } from '../../../markset/stamp-builder/store.js'; // Markset
 import ProToolGroup from '../../../markset/pro-group/ProToolGroup.jsx'; // Markset
 import { symboolSchaal, setSymboolSchaal } from '../../symbols/symbol-scale-store.js';
 import { marksetSymbolSvg, marksetSymbolOverrides } from '../../../markset/library/index.js'; // Markset
@@ -280,15 +279,6 @@ function SymbolContent() {
                       innerHTML={`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><line x1="6" y1="1.5" x2="6" y2="10.5"/><line x1="1.5" y1="6" x2="10.5" y2="6"/></svg>`}
                     />
                   </Show>
-                  {/* Markset: build a new review stamp */}
-                  <Show when={cat.id === MY_STAMPS_GROUP}>
-                    <button
-                      class="sp-settings-btn"
-                      title="New stamp..."
-                      onClick={(e) => { e.stopPropagation(); openDialog('markset-stamp-builder'); }}
-                      innerHTML={`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><line x1="6" y1="1.5" x2="6" y2="10.5"/><line x1="1.5" y1="6" x2="10.5" y2="6"/></svg>`}
-                    />
-                  </Show>
                   <span class="sp-cat-count">{cat.symbols.length}</span>
                 </div>
                 <Show when={isCategoryExpanded(cat.id)}>
@@ -299,11 +289,10 @@ function SymbolContent() {
                           class={`sp-symbol-btn${state.toolOverrides?.stampSvg === sym.svg ? ' active' : ''}${isCatalogusFamilie(sym) ? ' sp-symbol-named' : ''}`}
                           title={sym.name}
                           onClick={() => selectSymbol(sym)}
-                          onContextMenu={(e) => { // Markset: edit a saved review stamp, or a plugin group's symbol
-                            if (cat.onEdit) { e.preventDefault(); cat.onEdit(sym); return; }
-                            if (!sym.markset?.stampId) return;
+                          onContextMenu={(e) => { // Markset: edit a plugin group's symbol
+                            if (!cat.onEdit) return;
                             e.preventDefault();
-                            openDialog('markset-stamp-builder', { stampId: sym.markset.stampId });
+                            cat.onEdit(sym);
                           }}
                         >
                           <span class="sp-symbol-icon" innerHTML={colorizeSvg(sym.svg, cat.color)} />
