@@ -13,10 +13,14 @@
 //       Starts placing that symbol with those params (the next click places it).
 //   api.saveBinaryFile(defaultName, bytes, filters?) -> path | null
 //       Asks where to save and writes the bytes; null when cancelled.
+//   api.symbolPreviewSvg(cmds, box, { color, lineWidth }?) -> svg | null
+//       Draw commands (as a template's render returns them) as an SVG string,
+//       for palette entries and previews; drawn by the app (smart/cmds-svg.js).
 //
 // Everything a plugin registers is removed when it is deactivated.
 import { getTemplate } from '../js/symbols/registry.js';
 import { registerPluginTemplate } from './smart/index.js';
+import { cmdsToSvg } from './smart/cmds-svg.js';
 import { registerSymbolCategory as addCategory, unregisterSymbolCategory } from './smart/plugin-categories.js';
 
 export function createSmartSymbolApi() {
@@ -50,6 +54,9 @@ export function createSmartSymbolApi() {
         }
         await writeBinaryFile(path, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
         return path;
+      },
+      symbolPreviewSvg(cmds, box, opts) {
+        return cmdsToSvg(cmds, box, opts);
       },
       registerSymbolCategory(descriptor) {
         const handle = addCategory(descriptor);
