@@ -293,6 +293,8 @@ export function createPluginApi(pluginId) {
     // file the user picked) to a transparent canvas, with the app's pdf.js.
     renderPdf(bytes, options = {}) {
       return renderPdfBytes(bytes, options);
+    },
+
     // Markset: turn on a tool in the Toolpalette's "Markset Pro" group.
     // item = { id, label?, icon?, description?, tool? (tool name to activate) | onClick? }
     registerProTool(item) {
