@@ -3,7 +3,8 @@ import { DRAFTING_RULE_TYPES, effectiveDraftingLineWidth } from '../../annotatio
 import { createStore } from 'solid-js/store';
 import { state, getActiveDocument } from '../../core/state.js';
 import { imperialOr } from '../../../markset/us-units.js'; // Markset
-import { fitStampToDesign } from '../../../markset/stamp-builder/layout.js'; // Markset
+import { fitToContent } from '../../../markset/smart/hooks.js'; // Markset
+import { getTemplate as getSmartTemplate } from '../../symbols/registry.js'; // Markset
 import { formatPageSizeIn } from '../../../markset/us-units.js'; // Markset
 import {
   recordPropertyChange,
@@ -159,6 +160,7 @@ const [annotProps, setAnnotProps] = createStore({
   srLegLength: 24,
   srLabelSide: 'end',
   symbolId: '',
+  symbolFrozen: false, // Markset
   params: {},
   // Gevelelement: het geselecteerde onderdeel (stijl/paneel) of null.
   gevelSub: null,
@@ -424,6 +426,7 @@ export function storeShowProperties(annotation) {
     srFontSize: annotation.fontSize ?? STAVENREEKS_DEFAULTS.fontSize,
     srLabelSide: annotation.labelSide || 'end',
     symbolId: annotation.symbolId || '',
+    symbolFrozen: !!annotation.frozen, // Markset: drawn from its saved copy (template missing)
     // Een ruimtetag toont naam, nummer en oppervlakte van zijn ruimte.
     params: annotation.params
       ? { ...(tagWeergaveParams(annotation, getActiveDocument()?.annotations) || annotation.params) }
@@ -1718,7 +1721,7 @@ function applyAnnotProp(key, value) {
         // Keep geometry synchronous: recordPropertyChange captures newState in
         // a microtask, so endpoints/bbox must be final before this stack ends.
         applyTemplateRealSize(currentAnnotation, 'center');
-        fitStampToDesign(currentAnnotation); // Markset: a review stamp's height follows its content
+        fitToContent(currentAnnotation, getSmartTemplate(currentAnnotation.symbolId)); // Markset: e.g. a review stamp's height follows its content
       }
       break;
     }

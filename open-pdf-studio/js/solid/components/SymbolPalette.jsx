@@ -271,6 +271,15 @@ function SymbolContent() {
                       innerHTML={`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="10" height="10"/><line x1="4.3" y1="1" x2="4.3" y2="11"/><line x1="7.6" y1="1" x2="7.6" y2="11"/><line x1="1" y1="4.3" x2="11" y2="4.3"/><line x1="1" y1="7.6" x2="11" y2="7.6"/></svg>`}
                     />
                   </Show>
+                  {/* Markset: a plugin group's "+" */}
+                  <Show when={cat.onAdd}>
+                    <button
+                      class="sp-settings-btn"
+                      title={cat.addTitle}
+                      onClick={(e) => { e.stopPropagation(); cat.onAdd(); }}
+                      innerHTML={`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><line x1="6" y1="1.5" x2="6" y2="10.5"/><line x1="1.5" y1="6" x2="10.5" y2="6"/></svg>`}
+                    />
+                  </Show>
                   {/* Markset: build a new review stamp */}
                   <Show when={cat.id === MY_STAMPS_GROUP}>
                     <button
@@ -290,7 +299,8 @@ function SymbolContent() {
                           class={`sp-symbol-btn${state.toolOverrides?.stampSvg === sym.svg ? ' active' : ''}${isCatalogusFamilie(sym) ? ' sp-symbol-named' : ''}`}
                           title={sym.name}
                           onClick={() => selectSymbol(sym)}
-                          onContextMenu={(e) => { // Markset: edit a saved review stamp
+                          onContextMenu={(e) => { // Markset: edit a saved review stamp, or a plugin group's symbol
+                            if (cat.onEdit) { e.preventDefault(); cat.onEdit(sym); return; }
                             if (!sym.markset?.stampId) return;
                             e.preventDefault();
                             openDialog('markset-stamp-builder', { stampId: sym.markset.stampId });

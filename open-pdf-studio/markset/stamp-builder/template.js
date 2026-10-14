@@ -5,9 +5,10 @@
 // On the sheet: double-click a fill-in line (Project no., Submittal no., By,
 // Date) to type on it, through upstream's inline label editor
 // (editableLabels); double-click a checkbox row to check it
-// (parametric-symbol-editing.js hook, stampCheckboxAt).
+// (the generic `markset.toggleAt` callback, see smart/hooks.js).
 import {
   STAMP_TEMPLATE_ID, defaultStampDesign, PLACEMENT_DEFAULTS, stampLayout, stampCommands, stampRegions,
+  stampCheckboxAt, toggledChecked, stampHitAt,
 } from './layout.js';
 
 const KIND = (v) => (typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'string');
@@ -20,7 +21,20 @@ export const STAMP_TEMPLATE = {
   id: STAMP_TEMPLATE_ID,
   name: 'Submittal Review Stamp', nameEn: 'Submittal Review Stamp', category: 'US',
   defaultSize: { width: def.width, height: def.height },
-  markset: { role: 'stamp', stamp: true, group: 'stamps' },
+  markset: {
+    role: 'stamp', stamp: true, group: 'stamps',
+    /** True printed size: placed at it, and the height follows the content. */
+    contentSize: (p) => { const { width, height } = stampLayout(p); return { width, height }; },
+    /** The stamp's ink colours the whole stamp. */
+    colors: (p) => (/^#[0-9a-f]{6}$/i.test(p?.ink || '') ? { color: p.ink, strokeColor: p.ink } : null),
+    /** A click on a checkbox row checks it. */
+    toggleAt(p, box, x, y) {
+      const row = stampCheckboxAt(p, box, x, y);
+      return row >= 0 ? { params: { ...(p || {}), checked: toggledChecked(p, row) }, key: `row${row}` } : null;
+    },
+    /** A click on a fill-in line or a checkbox row edits in place instead of moving. */
+    editHitAt: (p, box, x, y) => !!stampHitAt(p, box, x, y),
+  },
   params: Object.entries(DEFAULTS).map(([key, value]) => ({
     key, label: LABELS[key] || key, labelEn: LABELS[key] || key, type: KIND(value), default: value,
   })),

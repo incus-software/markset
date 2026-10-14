@@ -8,6 +8,7 @@
 import { registerAnnotationType, unregisterAnnotationType } from './annotation-type-registry.js';
 import { registerToolPalette, unregisterToolPalette } from './palette-registry.js';
 import { registerPropertyPanel as _registerPropertyPanel, unregisterPropertyPanel as _unregisterPropertyPanel } from './property-panel-registry.js';
+import { createSmartSymbolApi } from '../../markset/plugin-smart-api.js'; // Markset
 import {
   registerSelectionListener as _registerSelectionListener,
   unregisterSelectionListener as _unregisterSelectionListener,
@@ -34,6 +35,7 @@ export function createPluginApi(pluginId) {
   const registeredPanels = [];
   const registeredSelectionListeners = []; // [{typeName, fn}]
   const registeredProTools = []; // Markset
+  const smartSymbolApi = createSmartSymbolApi(); // Markset: templates and Toolpalette groups
   const documentListeners = new Map();
   let disposeDocumentEvents = null;
 
@@ -84,7 +86,11 @@ export function createPluginApi(pluginId) {
       pluginDocumentEvents: true,
       renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
       proTools: true, // Markset: api.registerProTool(...)
+      smartSymbols: true, // Markset: registerParametricTemplate, registerSymbolCategory
     },
+
+    // --- Markset: smart symbols (markset/plugin-smart-api.js) ---
+    ...smartSymbolApi.methods,
 
     // --- Annotation type registration ---
     registerAnnotationType(typeName, handler) {
@@ -316,6 +322,7 @@ export function createPluginApi(pluginId) {
       registeredSelectionListeners.forEach(({ typeName, fn }) => _unregisterSelectionListener(typeName, fn));
       registeredProTools.forEach(id => _unregisterProTool(id)); // Markset
       registeredProTools.length = 0;
+      smartSymbolApi.cleanup(); // Markset
       // Restore native panel visibility on plugin-deactivate so the host UI returns to default.
       setNativePanelHidden(false);
       // Reset tool-group sub-tool selections so a fresh activate starts clean.

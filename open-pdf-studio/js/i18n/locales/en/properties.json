@@ -628,6 +628,7 @@
     "symbolLabel": "Symbol",
     "typeLabel": "Type",
     "unknownSymbol": "Unknown symbol",
+    "addonSymbol": "Made with an add-on that is not installed. It is shown as it was saved; install the add-on to edit it.",
     "listNew": "New",
     "listAdd": "Add",
     "listRemove": "Remove",
