@@ -1,9 +1,10 @@
 // Markset: a smart template's own Properties section (markset.propertiesPanel,
 // see hooks.js), mounted as plain DOM so a plugin can draw it without Solid.
 //
-// The renderer gets { params, setParam, onParamsChange }: params() reads the
-// live params, setParam(key, value) writes one, onParamsChange(fn) calls fn
-// with the new params after any change (undo, the sheet, another field).
+// The renderer gets { params, setParam, setParams, onParamsChange }: params()
+// reads the live params, setParam(key, value) writes one, setParams(obj)
+// replaces them all in one undo step, onParamsChange(fn) calls fn with the
+// new params after any change (undo, the sheet, another field).
 import { onMount, onCleanup, createEffect, on } from 'solid-js';
 
 export default function TemplatePanel(props) {
@@ -15,6 +16,7 @@ export default function TemplatePanel(props) {
       cleanup = props.render(el, {
         params: () => props.params(),
         setParam: (key, value) => props.setParam(key, value),
+        setParams: (next) => props.setParams?.(next),
         onParamsChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
       });
     } catch (e) {

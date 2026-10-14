@@ -8,7 +8,6 @@ import { MARKSET_TEMPLATES } from './templates.js';
 import { cmdsToSvg } from './cmds-svg.js';
 import { svgToPdfAppearance } from '../svg-to-pdf.js';
 import { sheetSymbolHeight } from '../library/sizing.js';
-import { STAMP_TEMPLATE } from '../stamp-builder/template.js';
 import { contentSize, templateColors } from './hooks.js';
 import { freezeCmds, frozenTemplate } from './assets.js';
 
@@ -18,7 +17,6 @@ let registered = false;
 export function registerMarksetTemplates() {
   if (registered) return;
   for (const t of MARKSET_TEMPLATES) registerTemplate(t);
-  registerTemplate(STAMP_TEMPLATE);
   registered = true;
 }
 
@@ -45,7 +43,7 @@ export function registerPluginTemplate(t) {
 }
 
 const isMarkset = (t) => !!t?.markset &&
-  (MARKSET_TEMPLATES.includes(t) || t === STAMP_TEMPLATE || pluginTemplates.has(t) || t.frozen === true);
+  (MARKSET_TEMPLATES.includes(t) || pluginTemplates.has(t) || t.frozen === true);
 
 /** The template an annotation draws with: its own, or a stand-in for its frozen copy. */
 export function smartTemplateFor(ann) {

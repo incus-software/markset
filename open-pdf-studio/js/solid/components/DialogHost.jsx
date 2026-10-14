@@ -55,10 +55,8 @@ import TekeninstellingenDialog from './dialogs/TekeninstellingenDialog.jsx';
 import SysteemtypenDialog from './dialogs/SysteemtypenDialog.jsx';
 import SysteemPaneelComponentDialog from './dialogs/SysteemPaneelComponentDialog.jsx';
 import PrintProgressToast from './PrintProgressToast.jsx';
-import StampBuilderDialog from '../../../markset/stamp-builder/StampBuilderDialog.jsx'; // Markset
 
 const DIALOG_MAP = {
-  'markset-stamp-builder': StampBuilderDialog, // Markset
   'doc-properties': DocPropertiesDialog,
   'preferences': PreferencesDialog,
   'new-doc': NewDocDialog,
