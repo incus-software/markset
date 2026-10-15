@@ -251,6 +251,7 @@ markset/svg-to-pdf.test.mjs
 markset/library/library.test.mjs
 markset/smart/smart.test.mjs
 markset/smart/plugin-hooks.test.mjs
+markset/plugin-review-api.test.mjs
 markset/color-schemes.test.mjs
 markset/recent.test.mjs
 markset/translations/translations.test.mjs

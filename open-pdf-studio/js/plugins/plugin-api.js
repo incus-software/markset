@@ -9,6 +9,7 @@ import { registerAnnotationType, unregisterAnnotationType } from './annotation-t
 import { registerToolPalette, unregisterToolPalette } from './palette-registry.js';
 import { registerPropertyPanel as _registerPropertyPanel, unregisterPropertyPanel as _unregisterPropertyPanel } from './property-panel-registry.js';
 import { createSmartSymbolApi } from '../../markset/plugin-smart-api.js'; // Markset
+import { createReviewApi } from '../../markset/plugin-review-api.js'; // Markset
 import {
   registerSelectionListener as _registerSelectionListener,
   unregisterSelectionListener as _unregisterSelectionListener,
@@ -35,6 +36,7 @@ export function createPluginApi(pluginId) {
   const registeredPanels = [];
   const registeredSelectionListeners = []; // [{typeName, fn}]
   const smartSymbolApi = createSmartSymbolApi(); // Markset: templates and Toolpalette groups
+  const reviewApi = createReviewApi({ getActiveDocument }); // Markset: review tools
   const registeredProTools = []; // Markset
   const documentListeners = new Map();
   let disposeDocumentEvents = null;
@@ -86,12 +88,16 @@ export function createPluginApi(pluginId) {
       pluginDocumentEvents: true,
       smartSymbols: true, // Markset: registerParametricTemplate, registerSymbolCategory
       filePaths: true, // Markset: pickFilePath, readFileAt, writeFileAt
+      reviewTools: true, // Markset: showAnnotation, getSelectedAnnotations, setToolStyle, openDocument
       proTools: true, // Markset: api.registerProTool(...)
       renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
     },
 
     // --- Markset: smart symbols (markset/plugin-smart-api.js) ---
     ...smartSymbolApi.methods,
+
+    // --- Markset: review tools (markset/plugin-review-api.js) ---
+    ...reviewApi,
 
     // --- Annotation type registration ---
     registerAnnotationType(typeName, handler) {
@@ -216,7 +222,7 @@ export function createPluginApi(pluginId) {
     getDocumentInfo() {
       const doc = getActiveDocument();
       return doc ? { id: doc.id, pageCount: doc.numPages || doc.pdfDoc?.numPages || 0, currentPage: doc.currentPage,
-        name: doc.fileName || null } : null;
+        name: doc.fileName || null, path: doc.filePath || null /* Markset */ } : null;
     },
 
     getPageInfo(pageNum, options = {}) {
@@ -238,7 +244,8 @@ export function createPluginApi(pluginId) {
       const doc = getActiveDocument();
       return readPageContentForDocument(doc, pageNum, {
         ...options, rotation: getPageRotation(pageNum), isCurrent: candidate => getActiveDocument() === candidate,
-        extractVectors: (page, request) => extractPageGeometry(page, request),
+        // Markset: { vectors: false } reads only the text (a sheet number, say).
+        extractVectors: options.vectors === false ? null : (page, request) => extractPageGeometry(page, request),
       });
     },
 
