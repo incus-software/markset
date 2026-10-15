@@ -26,6 +26,8 @@ import { extractPageGeometry } from '../tools/pdf-snap-extractor.js';
 import { schaalOpPunt } from '../annotations/schaal-op-punt.js';
 import { getScaleFromRegion } from '../annotations/scale-region.js';
 import { createRoot, createEffect } from 'solid-js';
+import { registerProTool as _registerProTool, unregisterProTool as _unregisterProTool } from '../../markset/pro-group/pro-tools.js'; // Markset
+import { renderPdfBytes } from '../../markset/plugin-render-pdf.js'; // Markset
 
 export function createPluginApi(pluginId) {
   const registeredTypes = [];
@@ -33,6 +35,7 @@ export function createPluginApi(pluginId) {
   const registeredPanels = [];
   const registeredSelectionListeners = []; // [{typeName, fn}]
   const smartSymbolApi = createSmartSymbolApi(); // Markset: templates and Toolpalette groups
+  const registeredProTools = []; // Markset
   const documentListeners = new Map();
   let disposeDocumentEvents = null;
 
@@ -83,6 +86,8 @@ export function createPluginApi(pluginId) {
       pluginDocumentEvents: true,
       smartSymbols: true, // Markset: registerParametricTemplate, registerSymbolCategory
       filePaths: true, // Markset: pickFilePath, readFileAt, writeFileAt
+      proTools: true, // Markset: api.registerProTool(...)
+      renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
     },
 
     // --- Markset: smart symbols (markset/plugin-smart-api.js) ---
@@ -291,6 +296,25 @@ export function createPluginApi(pluginId) {
       redrawAnnotations();
     },
 
+    // Markset: turn on a tool in the Toolpalette's "Markset Pro" group.
+    // item = { id, label?, icon?, description?, tool? (tool name to activate) | onClick? }
+    registerProTool(item) {
+      _registerProTool(item);
+      registeredProTools.push(item.id);
+    },
+
+    unregisterProTool(id) {
+      _unregisterProTool(id);
+      const idx = registeredProTools.indexOf(id);
+      if (idx >= 0) registeredProTools.splice(idx, 1);
+    },
+
+    // Markset: render a page of a PDF the plugin was given as bytes (e.g. a
+    // file the user picked) to a transparent canvas, with the app's pdf.js.
+    renderPdf(bytes, options = {}) {
+      return renderPdfBytes(bytes, options);
+    },
+
     // --- Cleanup (called by plugin-manager on deactivate) ---
     _cleanup() {
       registeredTypes.forEach(t => unregisterAnnotationType(t));
@@ -298,6 +322,8 @@ export function createPluginApi(pluginId) {
       registeredPanels.forEach(t => _unregisterPropertyPanel(t));
       registeredSelectionListeners.forEach(({ typeName, fn }) => _unregisterSelectionListener(typeName, fn));
       smartSymbolApi.cleanup(); // Markset
+      registeredProTools.forEach(id => _unregisterProTool(id)); // Markset
+      registeredProTools.length = 0;
       // Restore native panel visibility on plugin-deactivate so the host UI returns to default.
       setNativePanelHidden(false);
       // Reset tool-group sub-tool selections so a fresh activate starts clean.

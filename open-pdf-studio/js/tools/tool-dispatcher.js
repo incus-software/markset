@@ -415,7 +415,11 @@ function _handlePointerMoveNu(e) {
   } else {
     // Plugin tool fallback: drag/polyline-mode preview
     const typeHandler = getAnnotationType(state.currentTool);
-    if (typeHandler?.drawMode === 'polyline') {
+    if (typeHandler?.drawMode === 'click') {
+      // Markset: click tools show their preview under the cursor.
+      const clickTool = getTool('_plugin_click');
+      if (clickTool && clickTool.onPointerMove) clickTool.onPointerMove(ctx, e);
+    } else if (typeHandler?.drawMode === 'polyline') {
       const polyTool = getTool('polyline');
       if (polyTool && polyTool.onPointerMove) polyTool.onPointerMove(ctx, e);
     } else if (typeHandler) {

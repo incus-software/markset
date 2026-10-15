@@ -1,0 +1,18 @@
+/* Markset: fields in the Properties panel shrink to the panel's width.
+   Upstream lets them grow (flex: 1) but not shrink below their natural
+   width, so a select with a long option ("Not Required, Returned Without
+   Action") or a long read-only value pushed the panel into a horizontal
+   scroll bar. */
+.property-group input[type="text"],
+.property-group input[type="number"],
+.property-group textarea,
+.property-group select {
+  min-width: 0;
+}
+.property-group > div,
+.property-group > span {
+  min-width: 0;
+}
+.property-group select {
+  text-overflow: ellipsis;
+}

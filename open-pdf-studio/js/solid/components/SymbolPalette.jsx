@@ -27,6 +27,7 @@ import { ifcCategoryForSymbol } from '../data/ifcCategoryMap.js';
 import { nenIfcForSymbolId } from '../data/nenIfcMap.js';
 import { SYMBOL_STAMP_DEFAULT_SIZE } from '../../annotations/stamp-defaults.js';
 import { setPendingSymbolId, setPendingSymbolWithParams } from '../stores/parametricSymbolStore.js';
+import ProToolGroup from '../../../markset/pro-group/ProToolGroup.jsx'; // Markset
 import { symboolSchaal, setSymboolSchaal } from '../../symbols/symbol-scale-store.js';
 import { marksetSymbolSvg, marksetSymbolOverrides } from '../../../markset/library/index.js'; // Markset
 import { SCHAAL_STAPPEN, schaalLabel } from '../../symbols/symbol-scale.js';
@@ -240,6 +241,7 @@ function SymbolContent() {
 
       {/* Categories */}
       <div class="sp-categories">
+        <ProToolGroup /> {/* Markset: Pro tools, greyed out without the Pro plugin */}
         <Show when={filteredCategories().length > 0} fallback={<div class="sp-empty">No symbols found</div>}>
           <For each={filteredCategories()}>
             {(cat) => (
