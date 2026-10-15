@@ -1,0 +1,48 @@
+// Markset: plugin API calls for smart symbols (feature flag `smartSymbols`).
+//
+//   api.registerParametricTemplate(template) -> remove()
+//       A parametric template drawn by the core: { id, name, nameEn?, params:
+//       [{key, label, type, default}], render(params, box) -> commands,
+//       defaultSize?, editableLabels?, markset?: { contentSize, colors,
+//       toggleAt, editHitAt, propertiesPanel } } (see smart/hooks.js). Saved
+//       symbols keep a frozen copy, so copies of Markset without the plugin
+//       still show them.
+//   api.registerSymbolCategory(descriptor) -> { update(partial), remove() }
+//       A Toolpalette group (see smart/plugin-categories.js).
+//
+// Everything a plugin registers is removed when it is deactivated.
+import { getTemplate } from '../js/symbols/registry.js';
+import { registerPluginTemplate } from './smart/index.js';
+import { registerSymbolCategory as addCategory, unregisterSymbolCategory } from './smart/plugin-categories.js';
+
+export function createSmartSymbolApi() {
+  const removers = new Map(); // template id -> remove()
+  const categoryIds = new Set();
+
+  return {
+    methods: {
+      registerParametricTemplate(template) {
+        const id = template?.id;
+        if (removers.has(id)) removers.get(id)();
+        else if (id && getTemplate(id)) throw new Error(`A symbol template "${id}" already exists`);
+        const remove = registerPluginTemplate(template);
+        removers.set(id, remove);
+        return () => { if (removers.get(id) === remove) { remove(); removers.delete(id); } };
+      },
+      registerSymbolCategory(descriptor) {
+        const handle = addCategory(descriptor);
+        categoryIds.add(descriptor.id);
+        return {
+          update: handle.update,
+          remove() { handle.remove(); categoryIds.delete(descriptor.id); },
+        };
+      },
+    },
+    cleanup() {
+      for (const remove of removers.values()) remove();
+      removers.clear();
+      for (const id of categoryIds) unregisterSymbolCategory(id);
+      categoryIds.clear();
+    },
+  };
+}

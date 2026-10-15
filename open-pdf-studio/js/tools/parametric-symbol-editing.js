@@ -3,14 +3,14 @@ import { annotationCanvas } from '../ui/dom-elements.js';
 import { paginaNaarClient } from '../pdf/weergave-ruimte.js';
 import { getTemplate } from '../symbols/registry.js';
 import { findEditableLabel, toLocalPoint } from '../symbols/editable-labels.js';
-import { stampCheckboxAt, toggledChecked } from '../../markset/stamp-builder/layout.js'; // Markset
+import { toggleAt } from '../../markset/smart/hooks.js'; // Markset
 import {
   showParametricLabelInput, hideParametricLabelInput,
   parametricLabelInputActive, updateAnnotProp, validateSymbolParams,
 } from '../bridge.js';
 
 let editingAnnotation = null;
-let lastStampToggle = { annotation: null, row: -1, at: 0 }; // Markset
+let lastToggle = { annotation: null, key: '', at: 0 }; // Markset
 
 function activeCanvas(annotation) {
   const documentState = getActiveDocument();
@@ -61,15 +61,17 @@ function stillAlive(annotation) {
 export function startParametricSymbolInput(annotation, x, y) {
   if (!annotation || annotation.type !== 'parametricSymbol' || annotation.locked) return;
   // Markset: clicking a selected review stamp's checkbox row checks it (again: unchecks).
-  if (getTemplate(annotation.symbolId)?.markset?.stamp) {
+  // Markset: a template's markset.toggleAt (a stamp's checkbox row) changes it in place.
+  const toggleTemplate = getTemplate(annotation.symbolId);
+  if (toggleTemplate?.markset?.toggleAt) {
     const p = toLocalPoint(annotation, x, y);
-    const row = stampCheckboxAt(annotation.params, annotation, p.x, p.y);
-    if (row >= 0) {
+    const hit = toggleAt(toggleTemplate, annotation.params, annotation, p.x, p.y);
+    if (hit) {
       // A click and the double-click right after it arrive as two calls: toggle once.
       const now = Date.now();
-      if (lastStampToggle.annotation === annotation && lastStampToggle.row === row && now - lastStampToggle.at < 500) return;
-      lastStampToggle = { annotation, row, at: now };
-      updateAnnotProp('params', { ...(annotation.params || {}), checked: toggledChecked(annotation.params, row) });
+      if (lastToggle.annotation === annotation && lastToggle.key === hit.key && now - lastToggle.at < 500) return;
+      lastToggle = { annotation, key: hit.key, at: now };
+      updateAnnotProp('params', hit.params);
       return;
     }
   }

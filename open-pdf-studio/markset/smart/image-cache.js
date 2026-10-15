@@ -1,5 +1,5 @@
 // Markset: decoded images for smart symbol `image` commands (a review stamp's
-// logo). The canvas renderer draws synchronously, so getMarksetImage() gives
+// logo, a seal's signature). The canvas renderer draws synchronously, so getMarksetImage() gives
 // the image once it has loaded and starts loading it otherwise; when it
 // arrives, the registered redraw runs.
 const cache = new Map(); // src → HTMLImageElement | null (loading or failed)

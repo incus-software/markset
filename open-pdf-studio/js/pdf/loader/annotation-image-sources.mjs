@@ -1,4 +1,5 @@
 import { PDFName } from 'pdf-lib';
+import { readPluginPdfAnnotation } from '../../plugins/plugin-pdf.js';
 
 function nameOf(value) {
   return value ? String(value) : '';
@@ -34,7 +35,12 @@ export function annotationIdOf(value) {
   return match[2] === '0' ? `${match[1]}R` : `${match[1]}R${match[2]}`;
 }
 
-export function findImageAnnotationSources(pageNum, pdfDoc) {
+/**
+ * @param {(type: string) => boolean} [needsPluginImage]  Markset: true for a
+ *   plugin annotation type whose PNG appearance should be read, because its
+ *   plugin is not installed (kind 'plugin-image').
+ */
+export function findImageAnnotationSources(pageNum, pdfDoc, needsPluginImage = null) {
   const page = pdfDoc.getPages()[pageNum - 1];
   if (!page) return [];
 
@@ -53,7 +59,9 @@ export function findImageAnnotationSources(pageNum, pdfDoc) {
     const intent = nameOf(annotation.get(PDFName.of('IT')));
     const isStamp = subtype === '/Stamp';
     const isSquareImage = subtype === '/Square' && intent === '/SquareImage';
-    if (!isStamp && !isSquareImage) continue;
+    const plugin = subtype === '/Square' && needsPluginImage ? readPluginPdfAnnotation(annotation, context) : null;
+    const isPluginImage = !!plugin && needsPluginImage(plugin.type);
+    if (!isStamp && !isSquareImage && !isPluginImage) continue;
 
     const key = rectKey(context, annotation);
     if (!key) continue;
@@ -64,7 +72,7 @@ export function findImageAnnotationSources(pageNum, pdfDoc) {
 
     sources.push({
       annotationId: annotationIdOf(annotationRaw),
-      kind: isSquareImage ? 'square-image' : 'stamp',
+      kind: isSquareImage ? 'square-image' : isPluginImage ? 'plugin-image' : 'stamp',
       rectKey: key,
       stream,
     });
