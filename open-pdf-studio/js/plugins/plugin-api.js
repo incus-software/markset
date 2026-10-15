@@ -87,6 +87,7 @@ export function createPluginApi(pluginId) {
       renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
       proTools: true, // Markset: api.registerProTool(...)
       smartSymbols: true, // Markset: registerParametricTemplate, registerSymbolCategory
+      filePaths: true, // Markset: pickFilePath, readFileAt, writeFileAt
     },
 
     // --- Markset: smart symbols (markset/plugin-smart-api.js) ---

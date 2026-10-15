@@ -90,7 +90,7 @@ test('without its template a symbol draws its frozen copy, and saving keeps that
   assert.equal(smartTemplateFor({ symbolId: 'nothing' }), null);
 });
 
-test('plugin Toolpalette groups: add, update, remove; deactivating a plugin removes its things', () => {
+test('plugin Toolpalette groups: add, update, remove; deactivating a plugin removes its things', async () => {
   const g = registerSymbolCategory({ id: 'test-group', name: 'Mine', symbols: [{ id: 'a', name: 'A', svg: '<svg/>' }, { id: 'bad' }], onAdd: () => {} });
   let cat = pluginCategories().find(c => c.id === 'test-group');
   assert.equal(cat.symbols.length, 1); // an entry without a picture is left out
@@ -109,6 +109,9 @@ test('plugin Toolpalette groups: add, update, remove; deactivating a plugin remo
   assert.throws(() => api.methods.registerParametricTemplate({ ...CARD, id: 'us-room-tag' }), /already exists/);
   const svg = api.methods.symbolPreviewSvg([{ kind: 'line', x1: 0, y1: 0, x2: 10, y2: 10 }], { x: 0, y: 0, width: 10, height: 10 }, { color: '#00f' });
   assert.ok(svg.startsWith('<svg') && svg.includes('stroke="#00f"'));
+  // File paths: nothing to read without a path, and no write without one.
+  assert.equal(await api.methods.readFileAt(''), null);
+  await assert.rejects(api.methods.writeFileAt('', new Uint8Array(1)), /no path/);
   api.cleanup();
   assert.equal(getTemplate(CARD.id), null);
   assert.ok(getTemplate('us-room-tag')); // a bundled template is never removed
