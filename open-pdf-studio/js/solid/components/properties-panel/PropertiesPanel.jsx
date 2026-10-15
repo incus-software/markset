@@ -27,6 +27,7 @@ import StavenreeksSection from './StavenreeksSection.jsx';
 import WallSection from './WallSection.jsx';
 import BetonbalkSection from './BetonbalkSection.jsx';
 import SysteemrasterSection from './SysteemrasterSection.jsx';
+import '../../../../markset/properties-fit.css'; // Markset: fields shrink to the panel
 
 // "Meet op tekening" for an EXISTING scale region: temporary 2-click
 // distance pick → small "real length" dialog → the region's scale is

@@ -38,7 +38,8 @@ import { kiesTekstvakTekst, runsZonderInspringing } from './tekstvak-tekst.js';
 import { inzetUitDsMarge, tolerantieVoorDsInzet } from '../../annotations/rendering/textbox-layout.js';
 import { caretPropsFromPdf, textEditPropsFromPdf } from './correction-load.js';
 import { isSafeSymbolSvg } from '../../solid/data/symbolLibraryOnline.js'; // Markset
-import { restoreStampParams } from '../../../markset/stamp-builder/pdf-assets.js'; // Markset
+import { restoreSmartParams } from '../../../markset/smart/assets.js'; // Markset
+import { hasAnnotationType } from '../../plugins/annotation-type-registry.js'; // Markset
 
 /**
  * Zet een PDF-annotatie om naar het model van de app.
@@ -101,7 +102,15 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
   // colors). Zie extra-sleutel.js voor het zoeken op de rauwe /Rect.
   let extraColors = extraVoorAnnotatie(annotColorMap, annot) || {};
   if (extraColors.pluginAnnotation) {
-    return createAnnotation({ ...extraColors.pluginAnnotation, page: pageNum });
+    const pluginAnn = createAnnotation({ ...extraColors.pluginAnnotation, page: pageNum });
+    // Markset: without its plugin, show the picture the plugin saved with it
+    // (read-only; the saver keeps the original annotation in the file).
+    delete pluginAnn.pluginFallback;
+    if (!hasAnnotationType(pluginAnn.type)) {
+      const entry = findImageEntryForAnnotation(stampImageMap, annot, 'plugin-image');
+      if (entry?.dataUrl) pluginAnn.pluginFallback = { src: entry.dataUrl, ...convertRect(rect) };
+    }
+    return pluginAnn;
   }
 
   // Echte maat van een gedraaide vorm waarvan /Rect de assen-uitgelijnde
@@ -240,7 +249,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
         const symbolId = extraColors.opsSymbolId || '';
         let params = {};
         try { if (extraColors.opsParams) params = JSON.parse(extraColors.opsParams); } catch (_) {}
-        params = restoreStampParams(params, extraColors.opsMarksetLogo); // Markset: shared stamp logo
+        params = restoreSmartParams(params, extraColors.opsMarksetAssets); // Markset: images stored once per PDF
         const symbol = createAnnotation({
           ...baseProps,
           type: 'parametricSymbol',
@@ -255,6 +264,8 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
           strokeColor: colorArrayToHex(annot.color, '#000000'),
           lineWidth: annot.borderStyle?.width || 1,
           rotation: extraColors.rotation || 0,
+          // Markset: what it drew when saved, for when its template is missing
+          ...(extraColors.opsFrozen ? { frozen: extraColors.opsFrozen } : {}),
         });
         if (extraColors.opsTwoPoint?.length === 4) {
           const [startX, startY] = convertPoint(

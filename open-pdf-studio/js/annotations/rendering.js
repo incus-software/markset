@@ -1,6 +1,7 @@
 import { state, getActiveDocument, getPageRotation, imageCache } from '../core/state.js';
 import { imperialOr } from '../../markset/us-units.js'; // Markset
-import { getMarksetImage, registerMarksetImageRedraw } from '../../markset/stamp-builder/image-cache.js'; // Markset
+import { getMarksetImage, registerMarksetImageRedraw } from '../../markset/smart/image-cache.js'; // Markset
+import { frozenTemplate } from '../../markset/smart/assets.js'; // Markset
 import { annotationCanvas, annotationCtx, textHighlightCanvas, textHighlightCtx } from '../ui/dom-elements.js';
 import { updateStatusAnnotations } from '../ui/chrome/status-bar.js';
 import { updateAnnotationsList } from '../ui/panels/annotations-list.js';
@@ -1601,7 +1602,9 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
 
     case 'parametricSymbol': {
       // Parametric symbol — driven by a template + params
-      const template = getTemplate(annotation.symbolId);
+      // Markset: a symbol whose template is missing (an add-on that is not
+      // installed) draws the copy it was saved with.
+      const template = getTemplate(annotation.symbolId) || frozenTemplate(annotation);
       if (!template) {
         // Unknown symbol: draw a placeholder bbox
         ctx.save();
@@ -2584,6 +2587,11 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       const typeHandler = getAnnotationType(annotation.type);
       if (typeHandler && typeHandler.render) {
         typeHandler.render(ctx, annotation);
+      } else if (annotation.pluginFallback) {
+        // Markset: a plugin's annotation without its plugin: the picture it saved.
+        const fb = annotation.pluginFallback;
+        const img = getMarksetImage(fb.src);
+        if (img) ctx.drawImage(img, fb.x, fb.y, fb.width, fb.height);
       }
       break;
     }

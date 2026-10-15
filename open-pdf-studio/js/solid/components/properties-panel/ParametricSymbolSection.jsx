@@ -7,7 +7,8 @@ import CollapsibleSection from './CollapsibleSection.jsx';
 import { getTemplate } from '../../../symbols/registry.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import ParamListEditor from './ParamListEditor.jsx';
-import StampProps from '../../../../markset/stamp-builder/StampProps.jsx'; // Markset
+import TemplatePanel from '../../../../markset/smart/TemplatePanel.jsx'; // Markset
+import { propertiesPanel } from '../../../../markset/smart/hooks.js'; // Markset
 import { stramienSlotStatus, schakelStramienSlot } from '../../../annotations/stramien-slot.js';
 
 function paramValue(key, fallback) {
@@ -79,7 +80,10 @@ export default function ParametricSymbolSection() {
               <div class="property-group">
                 <label>{t('parametricSymbol.symbolLabel')}</label>
                 <input type="text" readonly value={annotProps.symbolId || '?'} />
-                <small style="color:#a00">{t('parametricSymbol.unknownSymbol')}</small>
+                {/* Markset: a symbol from an add-on that is not installed is drawn as saved */}
+                <Show when={annotProps.symbolFrozen} fallback={<small style="color:#a00">{t('parametricSymbol.unknownSymbol')}</small>}>
+                  <small>{t('parametricSymbol.addonSymbol')}</small>
+                </Show>
               </div>
             </CollapsibleSection>
           );
@@ -90,11 +94,13 @@ export default function ParametricSymbolSection() {
               <label>{t('parametricSymbol.typeLabel')}</label>
               <input type="text" readonly value={template.name + (template.nameEn ? ` / ${template.nameEn}` : '')} />
             </div>
-            {/* Markset: a review stamp has its own section instead of one field per param */}
-            <Show when={template.markset?.stamp}>
-              <StampProps params={() => annotProps.params || {}} setParam={setParam} />
+            {/* Markset: a template with its own propertiesPanel (a plugin's review
+                stamp) has its own section instead of one field per param */}
+            <Show when={propertiesPanel(template)}>
+              <TemplatePanel render={propertiesPanel(template)} params={() => annotProps.params || {}}
+                setParam={setParam} setParams={(next) => updateAnnotProp('params', JSON.parse(JSON.stringify(next || {})))} />
             </Show>
-            <For each={template.markset?.stamp ? [] : template.params.filter(p => !p.hidden)}>{(p) => (
+            <For each={propertiesPanel(template) ? [] : template.params.filter(p => !p.hidden)}>{(p) => (
               <Show when={p.type !== 'list'} fallback={
                 // Lijst-parameter (onderdelen van een aanrecht): kop plus een
                 // eigen bewerker over de volle breedte.

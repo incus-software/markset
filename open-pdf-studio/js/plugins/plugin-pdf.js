@@ -40,7 +40,9 @@ export async function createPluginPdfAnnotation(pdfDoc, annotation, rect, pngByt
   if (![...rect].every(Number.isFinite) || rect[2] <= rect[0] || rect[3] <= rect[1]) {
     throw new RangeError('Plugin annotation requires a positive PDF rectangle');
   }
-  const data = JSON.stringify(annotation);
+  // Markset: pluginFallback is the picture shown while the plugin was missing; never saved.
+  const { pluginFallback, ...stored } = annotation;
+  const data = JSON.stringify(stored);
   if (!data || data.length > MAX_METADATA_LENGTH) throw new RangeError('Plugin annotation metadata is too large');
   const context = pdfDoc.context;
   const dict = context.obj({
