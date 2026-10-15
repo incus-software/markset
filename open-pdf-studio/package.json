@@ -1,6 +1,6 @@
 {
   "name": "markset",
-  "version": "2026.41.0",
+  "version": "0.1.0",
   "description": "Markset: PDF markup and measuring for architects and expert witnesses (fork of Open PDF Studio)",
   "scripts": {
     "prepare:native-runtime": "node scripts/native-runtime.mjs",

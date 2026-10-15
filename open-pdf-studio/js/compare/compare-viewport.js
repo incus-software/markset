@@ -15,6 +15,9 @@ import { getCachedPdfBytes } from '../pdf/loader.js';
 import { drawHighlights } from './overlay-renderer.js';
 import { detectChanges } from './change-detector.js';
 import { setChanges, setCompareDetecting } from './compare-store.js';
+// Markset: difference-based change detection, size check and orange/blue overlay.
+import { markChangedPixels, pageSizeMismatch, tintInk, OLD_TINT_CSS, NEW_TINT_CSS } from '../../markset/compare/diff-classify.js';
+import { setCompareSizeMismatch } from '../../markset/compare/size-warning.js';
 
 // Cap detection resolution to keep CPU bounded on huge pages.
 const DETECTION_MAX_DIM = 1600;
@@ -160,6 +163,15 @@ export async function renderCompareOverlay(canvasOld, canvasNew, opts, canvasHig
   // every zoom step, which was the dominant cost.
   await _renderPageToCanvas(newPath, newPage, scale, canvasNew);
 
+  // Markset: a true overlay. NEW is tinted blue; when the caller passes an
+  // OLD canvas it gets the old sheet, aligned like change detection and tinted
+  // orange, for the view to stack with mix-blend-mode: multiply.
+  if (canvasOld) {
+    await _renderAlignedOld(canvasOld, canvasNew, opts);
+    tintInk(canvasOld, OLD_TINT_CSS);
+    tintInk(canvasNew, NEW_TINT_CSS);
+  }
+
   // Size the highlights canvas to match NEW; the actual rectangles are drawn
   // separately by paintHighlights() once changes are detected.
   if (canvasHighlights) {
@@ -175,6 +187,28 @@ export async function renderCompareOverlay(canvasOld, canvasNew, opts, canvasHig
   if (!skipDetection) scheduleChangeDetection(opts);
 
   return { width: canvasNew.width, height: canvasNew.height };
+}
+
+// Markset: render the OLD page into a canvas the size of NEW, applying the
+// alignment offset (dx/dy in display px at this scale, rotation in degrees).
+async function _renderAlignedOld(canvasOld, canvasNew, opts) {
+  const { oldPath, oldPage, scale = 1.5, offset = {} } = opts;
+  const raw = document.createElement('canvas');
+  await _renderPageToCanvas(oldPath, oldPage, scale, raw);
+  canvasOld.width = canvasNew.width;
+  canvasOld.height = canvasNew.height;
+  const ctx = canvasOld.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvasOld.width, canvasOld.height);
+  ctx.save();
+  ctx.translate(offset.dx || 0, offset.dy || 0);
+  if (offset.rotation) {
+    ctx.translate(canvasOld.width / 2, canvasOld.height / 2);
+    ctx.rotate((offset.rotation * Math.PI) / 180);
+    ctx.translate(-canvasOld.width / 2, -canvasOld.height / 2);
+  }
+  ctx.drawImage(raw, 0, 0);
+  ctx.restore();
 }
 
 /**
@@ -208,6 +242,7 @@ export function scheduleChangeDetection(opts) {
     _changesCache.delete(key);
     _changesCache.set(key, cached);
     setChanges(cached);
+    setCompareSizeMismatch(cached.sizeMismatch); // Markset
     setCompareDetecting(false);
     return;
   }
@@ -223,6 +258,7 @@ export function scheduleChangeDetection(opts) {
         _changesCache.delete(_changesCache.keys().next().value);
       }
       setChanges(result);
+      setCompareSizeMismatch(result.sizeMismatch); // Markset
       setCompareDetecting(false);
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -256,6 +292,14 @@ async function runChangeDetection(opts) {
   const newDoc = await _getDoc(newPath);
   const np = await newDoc.getPage(Math.max(1, Math.min(newDoc.numPages, newPage)));
   const baseVp = np.getViewport({ scale: 1 });
+  // Markset: warn when the two sheets are different sizes (re-plotted sets).
+  let sizeMismatch = null;
+  try {
+    const oldDoc = await _getDoc(oldPath);
+    const op = await oldDoc.getPage(Math.max(1, Math.min(oldDoc.numPages, oldPage)));
+    const oldVp = op.getViewport({ scale: 1 });
+    sizeMismatch = pageSizeMismatch(oldVp, baseVp);
+  } catch { sizeMismatch = null; }
   const longest = Math.max(baseVp.width, baseVp.height);
   const detectScale = Math.min(1.5, DETECTION_MAX_DIM / longest);
 
@@ -304,7 +348,11 @@ async function runChangeDetection(opts) {
   const oldData = aCtx.getImageData(0, 0, cOldAligned.width, cOldAligned.height);
   const newData = newEntry.data;
 
-  const changes = detectChanges(oldData, newData);
+  // Markset: classify by darkness difference so grey linework and text count.
+  const marked = markChangedPixels(oldData, newData);
+  const changes = marked ? detectChanges(marked[0], marked[1]) : detectChanges(oldData, newData);
   // Tag the detection scale so the UI can map bbox px back to display px.
-  return changes.map(c => ({ ...c, detectScale }));
+  const out = changes.map(c => ({ ...c, detectScale }));
+  out.sizeMismatch = sizeMismatch; // Markset
+  return out;
 }
