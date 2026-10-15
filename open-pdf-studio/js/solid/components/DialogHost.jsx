@@ -55,11 +55,9 @@ import TekeninstellingenDialog from './dialogs/TekeninstellingenDialog.jsx';
 import SysteemtypenDialog from './dialogs/SysteemtypenDialog.jsx';
 import SysteemPaneelComponentDialog from './dialogs/SysteemPaneelComponentDialog.jsx';
 import PrintProgressToast from './PrintProgressToast.jsx';
-import StampBuilderDialog from '../../../markset/stamp-builder/StampBuilderDialog.jsx'; // Markset
 import PlaceOnPagesDialog from '../../../markset/place-on-pages/PlaceOnPagesDialog.jsx'; // Markset
 
 const DIALOG_MAP = {
-  'markset-stamp-builder': StampBuilderDialog, // Markset
   'markset-place-on-pages': PlaceOnPagesDialog, // Markset
   'doc-properties': DocPropertiesDialog,
   'preferences': PreferencesDialog,

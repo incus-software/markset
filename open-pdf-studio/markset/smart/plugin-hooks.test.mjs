@@ -7,10 +7,9 @@ import {
   smartTemplateFor, writeVectorParametricAppearance,
 } from './index.js';
 import { freezeCmds, thawCmds, parseFrozen, frozenTemplate, ASSET_PREFIX } from './assets.js';
-import { toggleAt, editHitAt, fitToContent, contentSize, propertiesPanel } from './hooks.js';
+import { toggleAt, editHitAt, fitToContent, propertiesPanel } from './hooks.js';
 import { registerSymbolCategory, pluginCategories } from './plugin-categories.js';
 import { createSmartSymbolApi } from '../plugin-smart-api.js';
-import { STAMP_TEMPLATE_ID, stampLayout, stampRegions } from '../stamp-builder/layout.js';
 import { findImageAnnotationSources } from '../../js/pdf/loader/annotation-image-sources.mjs';
 import { createPluginPdfAnnotation } from '../../js/plugins/plugin-pdf.js';
 
@@ -65,6 +64,10 @@ test('a plugin template is sized, coloured and drawn like a bundled one, and can
   assert.equal(toggleAt(t, ann.params, ann, 100, 40), null);
   assert.equal(editHitAt(t, ann.params, ann, 100, 5), true);
   assert.equal(typeof propertiesPanel(t), 'function');
+  const grown = { ...ann, params: { title: 'Long title' }, width: 288, height: 10, y: 100 };
+  fitToContent(grown, t); // keeps the width, height from the content, around the centre
+  assert.equal(grown.height, 192);
+  assert.equal(grown.y, 100 + 5 - 96);
   remove();
   assert.equal(getTemplate(CARD.id), null);
 });
@@ -87,22 +90,6 @@ test('without its template a symbol draws its frozen copy, and saving keeps that
   assert.equal(smartTemplateFor({ symbolId: 'nothing' }), null);
 });
 
-test('the review stamp uses the generic callbacks', () => {
-  const t = getTemplate(STAMP_TEMPLATE_ID);
-  const l = stampLayout({});
-  const box = { x: 0, y: 0, width: l.width, height: l.height };
-  const row = stampRegions({}, box).boxes[1].rect;
-  const hit = toggleAt(t, {}, box, row.x + 2, row.y + row.height / 2);
-  assert.equal(hit.params.checked, 1);
-  assert.equal(hit.key, 'row1');
-  assert.equal(editHitAt(t, {}, box, row.x + 2, row.y + row.height / 2), true);
-  assert.deepEqual(contentSize(t, {}), { width: l.width, height: l.height });
-  const ann = { type: 'parametricSymbol', symbolId: STAMP_TEMPLATE_ID, params: {}, x: 0, y: 0, width: l.width * 2, height: 10 };
-  fitToContent(ann, t);
-  assert.ok(Math.abs(ann.height - l.height * 2) < 0.01);
-  assert.deepEqual(smartColors(t, '#f00', { ink: '#0000ff' }), { color: '#0000ff', strokeColor: '#0000ff' });
-});
-
 test('plugin Toolpalette groups: add, update, remove; deactivating a plugin removes its things', () => {
   const g = registerSymbolCategory({ id: 'test-group', name: 'Mine', symbols: [{ id: 'a', name: 'A', svg: '<svg/>' }, { id: 'bad' }], onAdd: () => {} });
   let cat = pluginCategories().find(c => c.id === 'test-group');
@@ -119,10 +106,12 @@ test('plugin Toolpalette groups: add, update, remove; deactivating a plugin remo
   api.methods.registerParametricTemplate(CARD);
   api.methods.registerParametricTemplate(CARD); // registering again replaces it
   api.methods.registerSymbolCategory({ id: 'test-group-2', name: 'Two', symbols: [] });
-  assert.throws(() => api.methods.registerParametricTemplate({ ...CARD, id: STAMP_TEMPLATE_ID }), /already exists/);
+  assert.throws(() => api.methods.registerParametricTemplate({ ...CARD, id: 'us-room-tag' }), /already exists/);
+  const svg = api.methods.symbolPreviewSvg([{ kind: 'line', x1: 0, y1: 0, x2: 10, y2: 10 }], { x: 0, y: 0, width: 10, height: 10 }, { color: '#00f' });
+  assert.ok(svg.startsWith('<svg') && svg.includes('stroke="#00f"'));
   api.cleanup();
   assert.equal(getTemplate(CARD.id), null);
-  assert.ok(getTemplate(STAMP_TEMPLATE_ID)); // a bundled template is never removed
+  assert.ok(getTemplate('us-room-tag')); // a bundled template is never removed
   assert.equal(pluginCategories().some(c => c.id === 'test-group-2'), false);
 });
 

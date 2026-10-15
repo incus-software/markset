@@ -4,7 +4,6 @@ import { NEN1414_CATEGORIES } from '../data/nen1414Library.js';
 import { NL_CATEGORIES } from '../data/nlSymbolLibrary.js';
 import { INB_CATEGORIES } from '../data/inbSymbolLibrary.js';
 import { MARKSET_CATEGORIES } from '../../../markset/library/index.js'; // Markset
-import { myStampsCategories } from '../../../markset/stamp-builder/store.js'; // Markset
 import { pluginCategories } from '../../../markset/smart/plugin-categories.js'; // Markset
 import { matchesLocale, DEFAULT_INDUSTRY, DEFAULT_COUNTRY } from '../data/symbolLocales.js';
 import { state } from '../../core/state.js';
@@ -113,7 +112,6 @@ const allCategories = createMemo(() => {
   }));
   return [
     ...MARKSET_CATEGORIES, // Markset: bundled US Starter Library first
-    ...myStampsCategories(), // Markset: the user's review stamps
     ...pluginCategories(), // Markset: groups added by plugins
     ...NL_CATEGORIES,
     ...INB_CATEGORIES,
