@@ -16,3 +16,13 @@
   padding: 1px 3px; border: 1px solid currentColor; border-radius: 2px;
   color: var(--theme-text-secondary, #666);
 }
+
+/* Two columns: the Pro tools are many and their names are short, so a full
+   row each (the palette's named tiles) made the group very long. */
+.mpg-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mpg-grid .sp-symbol-btn.sp-symbol-named.mpg-tool { grid-column: auto; padding: 4px 2px; }
+.mpg-grid .sp-symbol-btn.sp-symbol-named .sp-symbol-icon { height: 30px; }
+.mpg-tool .sp-symbol-name {
+  white-space: normal; overflow-wrap: anywhere; min-height: 2.4em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
