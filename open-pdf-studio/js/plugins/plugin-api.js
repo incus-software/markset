@@ -26,6 +26,7 @@ import { schaalOpPunt } from '../annotations/schaal-op-punt.js';
 import { getScaleFromRegion } from '../annotations/scale-region.js';
 import { createRoot, createEffect } from 'solid-js';
 import { registerProTool as _registerProTool, unregisterProTool as _unregisterProTool } from '../../markset/pro-group/pro-tools.js'; // Markset
+import { renderPdfBytes } from '../../markset/plugin-render-pdf.js'; // Markset
 
 export function createPluginApi(pluginId) {
   const registeredTypes = [];
@@ -82,6 +83,7 @@ export function createPluginApi(pluginId) {
       pageAnalysis: true,
       pluginDocumentEvents: true,
       proTools: true, // Markset: api.registerProTool(...)
+      renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
     },
 
     // --- Annotation type registration ---
@@ -298,6 +300,12 @@ export function createPluginApi(pluginId) {
       _unregisterProTool(id);
       const idx = registeredProTools.indexOf(id);
       if (idx >= 0) registeredProTools.splice(idx, 1);
+    },
+
+    // Markset: render a page of a PDF the plugin was given as bytes (e.g. a
+    // file the user picked) to a transparent canvas, with the app's pdf.js.
+    renderPdf(bytes, options = {}) {
+      return renderPdfBytes(bytes, options);
     },
 
     // --- Cleanup (called by plugin-manager on deactivate) ---

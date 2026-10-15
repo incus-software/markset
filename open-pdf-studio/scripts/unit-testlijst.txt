@@ -260,5 +260,8 @@ markset/text-defaults.test.mjs
 markset/pref-migrations.test.mjs
 markset/paste-shift.test.mjs
 markset/pro-group/pro-tools.test.mjs
+markset/plugin-render-pdf.test.mjs
+markset/place-on-pages/placement.test.mjs
 markset/pdf-text-safety.test.mjs
 markset/vite-brand.test.mjs
+markset/compare/diff-classify.test.mjs
