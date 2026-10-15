@@ -19,10 +19,14 @@ test('Pro tools are listed greyed out until the plugin turns them on', () => {
 });
 
 test('plugins can add tools beyond the placeholders, and must give an action', () => {
-  registerProTool({ id: 'submittal-log', label: 'Submittal log', onClick() {} });
-  assert.ok(proTools().some((t) => t.id === 'submittal-log' && t.enabled));
+  registerProTool({ id: 'future-tool', label: 'Future tool', onClick() {} });
+  assert.ok(proTools().some((t) => t.id === 'future-tool' && t.enabled));
+  unregisterProTool('future-tool');
+  assert.ok(!proTools().some((t) => t.id === 'future-tool'));
+  // A listed tool goes back to greyed out, not away.
+  registerProTool({ id: 'submittal-log', onClick() {} });
   unregisterProTool('submittal-log');
-  assert.ok(!proTools().some((t) => t.id === 'submittal-log'));
+  assert.ok(proTools().some((t) => t.id === 'submittal-log' && !t.enabled));
   assert.throws(() => registerProTool({ id: 'x' }), /tool or onClick/);
   assert.throws(() => registerProTool({ tool: 'y' }), /id is required/);
 });
