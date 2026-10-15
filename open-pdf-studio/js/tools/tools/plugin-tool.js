@@ -1,4 +1,36 @@
 import { getActiveDocument } from '../../core/state.js';
+import { annotationCtx } from '../../ui/dom-elements.js';
+import { applyToolTransform } from '../tool-transform.js';
+
+// Markset: hover preview for click-mode plugin tools. A click tool places on
+// a single click, so the user never saw where it would land; now the tool's
+// own `preview(ctx, x, y, x, y, state, e)` is drawn under the cursor.
+let hoverShown = false;
+let hoverFrame = 0;
+let leaveCanvas = null;
+
+function pageState(state, pageNum) {
+  const doc = getActiveDocument();
+  const currentPage = pageNum || doc?.currentPage || 1;
+  const dims = doc?.pageDims?.[currentPage];
+  if (!dims) return null;
+  return {
+    ...state,
+    docScale: doc?.scale || 1,
+    devicePixelRatio: window.devicePixelRatio || 1,
+    pageWidth: dims.widthPt,
+    pageHeight: dims.heightPt,
+    currentPage,
+  };
+}
+
+/** Remove the hover preview (pointer left the page, tool changed, or placed). */
+export function clearPluginHover(redraw) {
+  if (hoverFrame) { cancelAnimationFrame(hoverFrame); hoverFrame = 0; }
+  if (!hoverShown) return;
+  hoverShown = false;
+  redraw?.();
+}
 
 /**
  * Plugin tool — wraps annotation-type-registry handlers
@@ -8,12 +40,43 @@ export const pluginClickTool = {
   name: 'plugin-click',
   cursor: 'crosshair',
 
+  onPointerMove(ctx, e) {
+    const { x, y, state } = ctx;
+    const tool = state.currentTool;
+    const typeHandler = ctx.getAnnotationType(tool);
+    if (!typeHandler?.preview || e?.buttons) return;
+    if (ctx.canvas && leaveCanvas !== ctx.canvas) {
+      leaveCanvas = ctx.canvas;
+      ctx.canvas.addEventListener('pointerleave', () => clearPluginHover(ctx.redraw));
+    }
+    const hoverState = pageState(state, ctx.pageNum);
+    if (!hoverState) return;
+    // One preview per frame: pointer moves come faster than the page redraws.
+    if (hoverFrame) cancelAnimationFrame(hoverFrame);
+    hoverFrame = requestAnimationFrame(() => {
+      hoverFrame = 0;
+      if (state.currentTool !== tool) return;
+      ctx.redraw();
+      annotationCtx.save();
+      try {
+        applyToolTransform(annotationCtx);
+        typeHandler.preview(annotationCtx, x, y, x, y, hoverState, e);
+        hoverShown = true;
+      } catch (err) {
+        console.warn('[plugin-tool] preview failed:', err?.message || err);
+      } finally {
+        annotationCtx.restore();
+      }
+    });
+  },
+
   onPointerDown(ctx, e) {
     if (e && e.button === 2) return;
     const { x, y, state } = ctx;
     const doc = getActiveDocument();
     const typeHandler = ctx.getAnnotationType(state.currentTool);
     if (!typeHandler || !typeHandler.create) return;
+    clearPluginHover();
     // Enrich state with the current page dimensions in PDF points so plugin
     // handlers don't need to derive them from canvas geometry (which mixes
     // DPR + zoom). doc.pageDims is populated by createBlankPDF and renderPage

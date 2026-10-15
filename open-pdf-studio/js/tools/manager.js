@@ -11,6 +11,7 @@ import { findHandleAt } from '../annotations/handles.js';
 import { viewportNaarPagina } from '../pdf/weergave-rotatie.js';
 import { weergaveNaarPagina } from '../pdf/weergave-ruimte.js';
 import { cancelParametricSymbolInput } from './parametric-symbol-editing.js';
+import { clearPluginHover } from './tools/plugin-tool.js';
 import { applyOverlayPointerEvents } from '../pdf/link-layer.js';
 import {
   doorvalVoorSelectie, staatBovenTekst, klikDoelSoort, heftKlikSelectieOp,
@@ -285,6 +286,8 @@ export function setTool(tool) {
       const ctx = { state, redraw, redrawAnnotations, redrawContinuous };
       currentToolObj.onDeactivate(ctx);
     }
+    // Markset: a click-mode plugin tool's hover preview goes with the tool.
+    clearPluginHover(() => { if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous(); else redrawAnnotations(); });
   }
 
   // Openstaande inline invoer hoort niet te blijven zweven wanneer de
