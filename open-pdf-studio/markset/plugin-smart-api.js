@@ -13,6 +13,13 @@
 //       Starts placing that symbol with those params (the next click places it).
 //   api.saveBinaryFile(defaultName, bytes, filters?) -> path | null
 //       Asks where to save and writes the bytes; null when cancelled.
+//   api.pickFilePath(extensions?) -> path | null           (flag filePaths)
+//       Asks for an existing file and returns its path, so the plugin can
+//       read it again later (e.g. a shared file on an office drive).
+//   api.readFileAt(path) -> Uint8Array | null              (flag filePaths)
+//       The file's bytes, or null when it is missing or cannot be read.
+//   api.writeFileAt(path, bytes) -> true                   (flag filePaths)
+//       Writes the bytes in place (staged, so a failed write keeps the old file).
 //   api.symbolPreviewSvg(cmds, box, { color, lineWidth }?) -> svg | null
 //       Draw commands (as a template's render returns them) as an SVG string,
 //       for palette entries and previews; drawn by the app (smart/cmds-svg.js).
@@ -54,6 +61,32 @@ export function createSmartSymbolApi() {
         }
         await writeBinaryFile(path, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
         return path;
+      },
+      async pickFilePath(extensions) {
+        const { openFileDialog } = await import('../js/core/platform.js');
+        const picked = await openFileDialog(Array.isArray(extensions) && extensions.length ? extensions : undefined);
+        const path = Array.isArray(picked) ? picked[0] : picked;
+        return path ? String(path) : null;
+      },
+      async readFileAt(path) {
+        if (!path) return null;
+        const { isTauri, readBinaryFile } = await import('../js/core/platform.js');
+        try {
+          if (isTauri()) await window.__TAURI__.core.invoke('allow_fs_scope', { path: String(path) });
+          const bytes = await readBinaryFile(String(path));
+          return bytes ? new Uint8Array(bytes) : null;
+        } catch {
+          return null;
+        }
+      },
+      async writeFileAt(path, bytes) {
+        if (!path) throw new Error('writeFileAt: no path');
+        const { isTauri, writeBinaryFileAtomic } = await import('../js/core/platform.js');
+        if (isTauri()) {
+          try { await window.__TAURI__.core.invoke('allow_fs_scope', { path: String(path) }); } catch { /* scope may already allow it */ }
+        }
+        await writeBinaryFileAtomic(String(path), bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+        return true;
       },
       symbolPreviewSvg(cmds, box, opts) {
         return cmdsToSvg(cmds, box, opts);

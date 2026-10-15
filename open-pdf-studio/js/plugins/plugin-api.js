@@ -85,6 +85,7 @@ export function createPluginApi(pluginId) {
       pageAnalysis: true,
       pluginDocumentEvents: true,
       smartSymbols: true, // Markset: registerParametricTemplate, registerSymbolCategory
+      filePaths: true, // Markset: pickFilePath, readFileAt, writeFileAt
       proTools: true, // Markset: api.registerProTool(...)
       renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
     },
