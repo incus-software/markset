@@ -82,6 +82,7 @@ export function createPluginApi(pluginId) {
       pageAnalysis: true,
       pluginDocumentEvents: true,
       smartSymbols: true, // Markset: registerParametricTemplate, registerSymbolCategory
+      filePaths: true, // Markset: pickFilePath, readFileAt, writeFileAt
     },
 
     // --- Markset: smart symbols (markset/plugin-smart-api.js) ---
