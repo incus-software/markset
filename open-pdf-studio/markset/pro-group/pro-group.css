@@ -1,0 +1,18 @@
+/* Markset: "Markset Pro" group in the Toolpalette */
+.mpg-header { gap: 6px; }
+.mpg-badge {
+  margin-left: auto;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 1px 5px; border-radius: 2px;
+  color: #ffffff; background: #0000ff;
+}
+.mpg-tool { position: relative; }
+.mpg-tool .sp-symbol-icon svg { width: 26px; height: 26px; }
+.mpg-locked { cursor: pointer; }
+.mpg-locked .sp-symbol-icon, .mpg-locked .sp-symbol-name { opacity: 0.4; }
+.mpg-lock {
+  position: absolute; top: 2px; right: 2px;
+  font-size: 8px; font-weight: 700; line-height: 1;
+  padding: 1px 3px; border: 1px solid currentColor; border-radius: 2px;
+  color: var(--theme-text-secondary, #666);
+}
