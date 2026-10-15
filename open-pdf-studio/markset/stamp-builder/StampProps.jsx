@@ -1,11 +1,11 @@
 // Markset: Properties panel section for a placed review stamp: which box is
 // checked, the fill-in lines, and "Edit design" (opens the Stamp Builder on
-// this stamp). Typing By / Date is part of the open-source app; filling them
-// in automatically is not.
+// this stamp).
 import { For, Show } from 'solid-js';
 import { updateAnnotProp } from '../../js/solid/stores/propertiesStore.js';
 import { openDialog } from '../../js/solid/stores/dialogStore.js';
 import { actionList, defaultStampDesign, PLACEMENT_DEFAULTS } from './layout.js';
+import '../properties-fit.css';
 
 /** Today as MM/DD/YYYY. */
 export function todayUs(d = new Date()) {
@@ -27,7 +27,7 @@ export default function StampProps(props) {
   const field = (key, label, extra) => (
     <div class="property-group">
       <label>{label}</label>
-      <div style="display:flex;gap:4px">
+      <div style="display:flex;gap:4px;flex:1;min-width:0">
         <input type="text" style="flex:1;min-width:0" value={p()[key] || ''} onInput={(e) => set(key, e.target.value)} />
         {extra}
       </div>
