@@ -13,9 +13,12 @@
 // deprecated no-op fallback to preserve the public API for any external
 // callers, but it is no longer used internally.
 
+import { OLD_TINT_CSS as MARKSET_OLD_TINT, NEW_TINT_CSS as MARKSET_NEW_TINT, HIGHLIGHT_COLORS as MARKSET_HIGHLIGHT_COLORS } from '../../markset/compare/diff-classify.js';
+
 // Tint colors (as CSS rgb strings).
-export const OLD_TINT = 'rgb(220, 38, 38)';   // red-600
-export const NEW_TINT = 'rgb(22, 163, 74)';   // green-600
+// Markset: colour-blind-safe orange (old) / blue (new) instead of red / green.
+export const OLD_TINT = MARKSET_OLD_TINT;
+export const NEW_TINT = MARKSET_NEW_TINT;
 
 /**
  * Apply a solid-color tint to all non-white pixels of a canvas while keeping
@@ -52,11 +55,8 @@ export function composeOverlay(_oldData, _newData) {
 export const INK_THRESHOLD = 600;
 
 // Per-change-type fill/stroke colors for translucent highlights.
-export const HIGHLIGHT_COLORS = {
-  added:    { fill: 'rgba(22, 163, 74, 0.28)',  stroke: 'rgba(22, 163, 74, 0.95)'  },
-  removed:  { fill: 'rgba(220, 38, 38, 0.28)',  stroke: 'rgba(220, 38, 38, 0.95)'  },
-  modified: { fill: 'rgba(202, 138, 4, 0.28)',  stroke: 'rgba(202, 138, 4, 0.95)'  },
-};
+// Markset: orange / blue / dashed grey (see markset/compare/diff-classify.js).
+export const HIGHLIGHT_COLORS = MARKSET_HIGHLIGHT_COLORS;
 
 /**
  * Draw translucent rectangles for each visible change on an overlay canvas.
@@ -100,7 +100,9 @@ export function drawHighlights(canvas, changes, opts = {}) {
     if (showContour) {
       ctx.strokeStyle = colors.stroke;
       ctx.lineWidth = 2;
+      ctx.setLineDash(colors.dash || []); // Markset: dashed = modified
       ctx.strokeRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
+      ctx.setLineDash([]);
     }
   }
 

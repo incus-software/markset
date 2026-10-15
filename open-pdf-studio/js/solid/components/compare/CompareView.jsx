@@ -54,6 +54,9 @@ import { diffWords } from '../../../compare/text-diff.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { state } from '../../../core/state.js';
 import { diffAnnotationsForPair } from '../../../compare/compare-annotations.js';
+// Markset: colour-blind-safe compare colours and the sheet-size warning.
+import { changeTypeColor, OLD_HEX, NEW_HEX } from '../../../../markset/compare/diff-classify.js';
+import { compareSizeMismatch } from '../../../../markset/compare/size-warning.js';
 
 // Verticale scheidingslijn tussen toolbar-groepen — Windows/Visual-Studio-stijl.
 function Sep() {
@@ -67,6 +70,7 @@ export default function CompareView() {
   let oldHiCanvasRef;   // side-by-side: diff overlay on OLD page
   let newHiCanvasRef;   // side-by-side: diff overlay on NEW page
   let overlayNewCanvasRef;
+  let overlayOldCanvasRef; // Markset: old sheet, stacked on NEW with multiply
   let overlayHighlightCanvasRef;
   let bodyRef;
   let overlayWrapRef;
@@ -396,7 +400,7 @@ export default function CompareView() {
       if (compareMode() === 'overlay') {
         if (overlayNewCanvasRef && overlayHighlightCanvasRef) {
           await renderCompareOverlay(
-            null,
+            overlayOldCanvasRef || null, // Markset: true overlay
             overlayNewCanvasRef,
             opts,
             overlayHighlightCanvasRef,
@@ -564,11 +568,13 @@ export default function CompareView() {
     clearTextCompareCache();
   });
 
-  // Tekstvergelijking: draait één keer per documentpaar zodra de gebruiker de
-  // Tekst-tab opent (lazy — extractie van alle pagina's is niet gratis).
+  // Tekstvergelijking: draait één keer per documentpaar. Markset: meteen bij de
+  // start (niet pas bij het openen van de Tekst-tab), zodat het aantal
+  // tekstwijzigingen zichtbaar is — de beeldvergelijking mist kleine
+  // tekstwijzigingen zoals een aangepaste maat.
   let _textRunSeq = 0;
   createEffect(() => {
-    if (comparePanelTab() !== 'text' || !compareActive()) return;
+    if (!compareActive()) return; // Markset: eager, see above
     if (compareTextChanges() !== null || compareTextComparing()) return;
     const oldP = compareOldPath();
     const newP = compareNewPath();
@@ -824,6 +830,18 @@ export default function CompareView() {
             />
           </Show>
 
+          {/* Markset: sheets of different sizes make the comparison unreliable. */}
+          <Show when={compareSizeMismatch()}>
+            {(m) => (
+              <span
+                role="status"
+                title={t('compare.sizeMismatchHint') || 'Use Align (dx/dy) to line the sheets up, or compare sheets plotted at the same size.'}
+                style="margin-left:8px; padding:2px 8px; border:1px solid #8a6d00; background:#fff7d6; color:#3d3000; font-size:11px; white-space:nowrap;"
+              >
+                ⚠ {(t('compare.sizeMismatch') || 'Sheet sizes differ: {{old}} vs {{new}}').replace('{{old}}', m().old).replace('{{new}}', m().new)}
+              </span>
+            )}
+          </Show>
           <span style="flex:1;"></span>
           <button
             onClick={exitCompare}
@@ -855,9 +873,12 @@ export default function CompareView() {
                     style={`position:relative; background:#ffffff; box-shadow:0 0 0 1px #444; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
                   >
                     <canvas ref={overlayNewCanvasRef} style="display:block;"></canvas>
-                    {/* OLD page is rasterized for change detection only via
-                        an offscreen canvas in compare-viewport.js — no DOM
-                        element required. */}
+                    {/* Markset: the OLD sheet (orange) multiplies over NEW (blue), so
+                        unchanged linework reads dark and changes keep their colour. */}
+                    <canvas
+                      ref={overlayOldCanvasRef}
+                      style="position:absolute; left:0; top:0; pointer-events:none; mix-blend-mode:multiply;"
+                    ></canvas>
                     <canvas
                       ref={overlayHighlightCanvasRef}
                       style="position:absolute; left:0; top:0; pointer-events:none;"
@@ -956,7 +977,7 @@ function ChangeListPanel(props) {
     return props.t(k) || (type === 'added' ? 'Toegevoegd' : type === 'removed' ? 'Verwijderd' : 'Gewijzigd');
   };
   const typeIcon = (type) => type === 'added' ? '+' : type === 'removed' ? '−' : 'Δ';
-  const typeColor = (type) => type === 'added' ? '#16a34a' : type === 'removed' ? '#dc2626' : '#ca8a04';
+  const typeColor = changeTypeColor; // Markset: orange / blue / grey
 
   // Per-type collapse state (default: expanded).
   const [collapsed, setCollapsed] = createSignal({ added: false, removed: false, modified: false });
@@ -1103,7 +1124,7 @@ function ChangeListPanel(props) {
 // soort en de tekst oud → nieuw; klik springt naar het betreffende
 // pagina-paar. Bij 'modified' worden de gewijzigde woorden geaccentueerd.
 function TextDiffList(props) {
-  const typeColor = (type) => type === 'added' ? '#16a34a' : type === 'removed' ? '#dc2626' : '#ca8a04';
+  const typeColor = changeTypeColor; // Markset: orange / blue / grey
   const typeIcon = (type) => type === 'added' ? '+' : type === 'removed' ? '−' : 'Δ';
   const typeLabel = (type) => props.t(
     type === 'added' ? 'compare.added' : type === 'removed' ? 'compare.removed' : 'compare.modified'
@@ -1163,9 +1184,9 @@ function TextDiffList(props) {
                     <span style="margin-left:auto; color:#666; font-size:11px;">{pageLabel(c)}</span>
                   </div>
                   <Show when={c.oldText}>
-                    <div style={`${textStyle} color:#991b1b;`}>
+                    <div style={`${textStyle} color:#8a3a00;`}>
                       <Show when={words()} fallback={c.oldText}>
-                        {renderParts(words().oldParts, '#dc2626')}
+                        {renderParts(words().oldParts, OLD_HEX)}
                       </Show>
                     </div>
                   </Show>
@@ -1173,9 +1194,9 @@ function TextDiffList(props) {
                     <div style="color:#888; font-size:10px; line-height:1; padding:1px 0;">↓</div>
                   </Show>
                   <Show when={c.newText}>
-                    <div style={`${textStyle} color:#14532d;`}>
+                    <div style={`${textStyle} color:#003a75;`}>
                       <Show when={words()} fallback={c.newText}>
-                        {renderParts(words().newParts, '#16a34a')}
+                        {renderParts(words().newParts, NEW_HEX)}
                       </Show>
                     </div>
                   </Show>
