@@ -1,0 +1,13 @@
+/* Markset: Place on Pages dialog */
+.mpp-body { display: grid; gap: 10px; width: 440px; max-width: 100%; font-size: 13px; }
+.mpp-intro, .mpp-hint, .mpp-summary { margin: 0; line-height: 1.45; }
+.mpp-hint { color: var(--text-secondary, #666); font-size: 12px; }
+.mpp-summary { padding: 8px 10px; border: 1px solid var(--border-color, #c8c8c8); background: var(--bg-secondary, #f6f6f6); }
+.mpp-group { border: 1px solid var(--border-color, #c8c8c8); padding: 6px 10px 10px; margin: 0; display: grid; gap: 6px; }
+.mpp-group legend { padding: 0 4px; }
+.mpp-choice { display: flex; align-items: center; gap: 6px; }
+.mpp-list { flex: 1; min-width: 0; padding: 3px 6px; }
+.mpp-list[aria-invalid="true"] { outline: 2px dashed currentColor; outline-offset: 1px; }
+.mpp-row { display: grid; gap: 4px; }
+.mpp-row select { padding: 3px 4px; }
+.mpp-footer { display: flex; justify-content: flex-end; gap: 8px; }

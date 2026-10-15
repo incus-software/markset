@@ -504,6 +504,15 @@ function AnnotationMenuContent() {
       <MenuItem icon={copyIcon} label={tCommon('copy')} shortcut="Ctrl+C" onClick={() => copyAnnotation(ann())} />
       <MenuItem icon={pasteIcon} label={tCommon('paste')} shortcut="Ctrl+V" onClick={() => pasteFromClipboard()} />
       <MenuItem icon={pasteIcon} label={tCommon('pasteInPlace')} shortcut="Ctrl+Shift+V" onClick={() => pasteAnnotationsInPlace()} />
+      {/* Markset: copy a stamp, seal or any markup to other pages, same spot on each sheet. */}
+      <MenuItem icon={duplicateIcon} label="Place on Pages..." onClick={() => {
+        const a = ann();
+        if (!a) return;
+        Promise.all([import('../stores/dialogStore.js'), import('../../../markset/place-on-pages/place.js')]).then(([d, p]) => {
+          const sources = p.placementSources(getActiveDocument(), a);
+          d.openDialog('markset-place-on-pages', { annotationIds: sources.map((s) => s.id) });
+        });
+      }} />
 
       <Separator />
 
