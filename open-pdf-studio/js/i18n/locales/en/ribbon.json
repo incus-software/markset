@@ -269,7 +269,7 @@
     "legendOld": "Only in old",
     "legendNew": "Only in new",
     "legendBoth": "Unchanged",
-    "legend": "Red = only in old. Green = only in new. Black = unchanged.",
+    "legend": "Orange = only in old. Blue = only in new. Dark = unchanged.",
     "zoom": "Zoom",
     "fit": "Fit",
     "reset": "100%",
@@ -285,7 +285,9 @@
     "modified": "Modified",
     "noChanges": "No changes",
     "textTab": "Text",
-    "noTextChanges": "No text differences"
+    "noTextChanges": "No text differences",
+    "sizeMismatch": "Sheet sizes differ: {{old}} vs {{new}}",
+    "sizeMismatchHint": "Changes may be misreported. Use Align (dx/dy) to line the sheets up, or compare sheets plotted at the same size."
   },
   "organize": {
     "pages": "Pages",
