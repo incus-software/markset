@@ -139,7 +139,8 @@ function zonderNieuw(context, dict) {
   return kopie.toString();
 }
 
-const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+// Markset: /M is written as a PDF date (D:YYYYMMDDHHmmSSZ); ISO strings are not valid PDF dates.
+const ISO = /^D:\d{14}Z$/;
 const getallen = (dict, k) => dict.lookup(PDFName.of(k)).asArray().map((v) => v.asNumber());
 const rond = (v) => Math.round(v * 1e3) / 1e3 || 0;
 
@@ -188,7 +189,7 @@ test('een markering uit de app: alles als in de oude tak, behalve de quadvolgord
     addLoadedMarkupKeys(nieuw, ann);
     assert.equal(isTextEditStrike(ann), false, ann.type);
     assert.equal(zonderNieuw(ctx, nieuw), zonderNieuw(ctx, oud), ann.type);
-    assert.match(nieuw.lookup(PDFName.of('M')).asString(), ISO, '/M blijft een ISO-tijd');
+    assert.match(nieuw.lookup(PDFName.of('M')).asString(), ISO, '/M is a PDF date (Markset)');
     // Dezelfde hoekpunten per regel; alleen de volgorde volgt de tekst.
     const qOud = getallen(oud, 'QuadPoints');
     const qNieuw = getallen(nieuw, 'QuadPoints');

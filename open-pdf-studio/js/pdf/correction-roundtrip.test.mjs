@@ -328,7 +328,7 @@ test('de oude doorhaling zonder /IT houdt /Contents en de /M-afhandeling; quads 
       oud.quads.forEach((v, k) => assert.ok(Math.abs(v - verwacht[k]) <= 1e-3, `pagina ${i + 1}: quad ${k} ${v} vs ${verwacht[k]}`));
       assert.equal(oud.dict.get(PDFName.of('OPS_TextDir')), undefined, `pagina ${i + 1}: geen /OPS_TextDir, de lader blijft zoals hij was`);
       assert.equal(oud.contents, OPBOUW.oud.opmerking);
-      assert.match(oud.m, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, '/M blijft een ISO-tijd zoals voorheen');
+      assert.match(oud.m, /^D:\d{14}Z$/, '/M is a PDF date (Markset: ISO dates are not valid PDF dates)');
       assert.equal(oud.nm, undefined);
       assert.equal(oud.subj, undefined);
       assert.equal(oud.it, undefined, 'blijft een gewone doorhaling');

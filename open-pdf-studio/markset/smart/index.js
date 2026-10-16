@@ -51,6 +51,16 @@ export function smartTemplateFor(ann) {
 }
 
 /**
+ * The /Subj for a saved symbol: its template name ("Exhibit Stamp"), which the
+ * comment lists of other PDF apps show instead of a bare "Rectangle".
+ */
+export function smartSubject(ann) {
+  const t = getTemplate(ann?.symbolId);
+  const name = t?.nameEn || t?.name || ann?.frozen?.name || '';
+  return typeof name === 'string' ? name.slice(0, 80) : '';
+}
+
+/**
  * OPS_Frozen for a Markset symbol: its commands relative to its box (see
  * assets.js). A symbol whose template is missing keeps the copy it came with.
  */
@@ -171,16 +181,24 @@ export async function embedSmartImages(ann, pdfDoc) {
  */
 export function writeVectorParametricAppearance({ ann, annotDict, context, pdf, rectW, rectH, opacity = 1, pageRot = 0, images = [] }) {
   const t = smartTemplateFor(ann);
-  if (!isMarkset(t) || pageRot || !(ann.width > 0) || !(ann.height > 0)) return false;
-  const box = { x: 0, y: 0, width: Math.abs(ann.width), height: Math.abs(ann.height) };
+  // On a page shown rotated (/Rotate), `ann` arrives remapped to the unrotated
+  // page: on 90 and 270 its width and height are swapped. Two-point symbols
+  // keep the raster path there.
+  const rot = (((Number(pageRot) || 0) % 360) + 360) % 360;
+  const twoPoint = [ann.startX, ann.startY, ann.endX, ann.endY].every(Number.isFinite);
+  if (!isMarkset(t) || rot % 90 || (rot && twoPoint) || !(ann.width > 0) || !(ann.height > 0)) return false;
+  const sideways = rot === 90 || rot === 270;
+  const box = { x: 0, y: 0, width: Math.abs(sideways ? ann.height : ann.width), height: Math.abs(sideways ? ann.width : ann.height) };
   const cmds = renderTemplate(t, ann.params, box);
   const svg = cmdsToSvg(cmds.filter(c => c?.kind !== 'image'), box, { color: ann.strokeColor || '#000000' });
   const ap = svg && svgToPdfAppearance(svg, box.width, box.height);
   if (!ap) return false;
 
   // Screen rotation is clockwise with y down; in PDF space (y up) that is
-  // the negative angle.
-  const rad = (-(ann.rotation || 0) * Math.PI) / 180;
+  // the negative angle. A page shown rotated by `rot` clockwise turns its
+  // content with it, so the symbol is drawn turned back by `rot` (counter-
+  // clockwise) and reads upright on screen, as in Markset.
+  const rad = ((rot - (ann.rotation || 0)) * Math.PI) / 180;
   const c = Math.round(Math.cos(rad) * 1e6) / 1e6, s = Math.round(Math.sin(rad) * 1e6) / 1e6;
   const r = (v) => Math.round(v * 1e4) / 1e4;
   const place = `1 0 0 1 ${r(rectW / 2)} ${r(rectH / 2)} cm\n${c} ${s} ${-s} ${c} 0 0 cm\n1 0 0 1 ${r(-box.width / 2)} ${r(-box.height / 2)} cm\n`;

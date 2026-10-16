@@ -161,7 +161,13 @@ test('vector appearance: rotated into the envelope; PNG kept for others', async 
   assert.match(content, /1 0 0 1 18 36 cm\n0 -1 1 0 0 0 cm\n1 0 0 1 -36 -18 cm/);
   assert.match(content, /\(OFFICE\) Tj/);
   assert.equal(writeVectorParametricAppearance({ ann: { ...ann, symbolId: 'peilmaat' }, annotDict: ctx.obj({}), context: ctx, pdf: { PDFName }, rectW: 36, rectH: 72 }), false);
-  assert.equal(writeVectorParametricAppearance({ ann, annotDict: ctx.obj({}), context: ctx, pdf: { PDFName }, rectW: 36, rectH: 72, pageRot: 90 }), false);
+  // A page shown rotated 90: the saver hands the box over swapped (36 x 72) and
+  // the drawing is turned back by the page's quarter turn, which here cancels
+  // the symbol's own quarter turn, so it reads upright on screen as in Markset.
+  const onRotated = ctx.obj({});
+  assert.equal(writeVectorParametricAppearance({ ann: { ...ann, width: 36, height: 72 }, annotDict: onRotated, context: ctx, pdf: { PDFName }, rectW: 36, rectH: 72, pageRot: 90 }), true);
+  const turned = Buffer.from(ctx.lookup(ctx.lookup(onRotated.get(PDFName.of('AP'))).get(PDFName.of('N'))).getContents()).toString('latin1');
+  assert.match(turned, /1 0 0 1 18 36 cm\n1 -?0 -?0 1 0 0 cm\n1 0 0 1 -36 -18 cm/);
 });
 
 test('plan door: real size from feet and inches, swing and hand', () => {
