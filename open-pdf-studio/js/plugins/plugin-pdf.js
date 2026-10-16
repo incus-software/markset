@@ -3,6 +3,9 @@ import { pdfTextString, decodePdfTextObject } from '../pdf/saver/pdf-text.js';
 
 const MAX_METADATA_LENGTH = 2_000_000;
 
+// Markset: a markup's ISO time as a Date (now when missing or unreadable).
+const pdfDateOf = (iso) => { const d = iso ? new Date(iso) : new Date(); return Number.isNaN(d.getTime()) ? new Date() : d; };
+
 /** Rasterize the plugin's normal renderer for a PDF /AP image. */
 export function renderPluginAnnotationPng(annotation, handler, pageRotation = 0, createCanvas = () => document.createElement('canvas')) {
   if (typeof handler?.render !== 'function') throw new Error('Persistent plugin annotation needs a render handler');
@@ -50,6 +53,10 @@ export async function createPluginPdfAnnotation(pdfDoc, annotation, rect, pngByt
     F: annotation.printable === false ? 0 : 4,
     NM: pdfTextString(annotation.id),
     Contents: pdfTextString(annotation.subject || ''),
+    // Markset: author and date, as every other markup has, so comment lists in
+    // other PDF apps show who placed it and when.
+    T: pdfTextString(annotation.author || ''),
+    M: PDFString.fromDate(pdfDateOf(annotation.modifiedAt || annotation.createdAt)),
     OPS_Subtype: PDFString.of('plugin'),
     OPS_PluginData: pdfTextString(data),
   });

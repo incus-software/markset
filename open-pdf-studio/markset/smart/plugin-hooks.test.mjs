@@ -131,3 +131,29 @@ test("a plugin annotation's picture is read only when its plugin is missing", as
   assert.equal(found.length, 1);
   assert.equal(found[0].kind, 'plugin-image');
 });
+
+test('on a page shown rotated, a symbol is drawn turned back so it reads upright; it is named in other apps', async () => {
+  const { writeVectorParametricAppearance, smartSubject, registerPluginTemplate } = await import('./index.js');
+  const remove = registerPluginTemplate({ ...CARD, id: 'test-rotated-card' });
+  try {
+    const pdf = await PDFDocument.create();
+    const context = pdf.context;
+    const draw = (pageRot, ann) => {
+      const annotDict = context.obj({});
+      const ok = writeVectorParametricAppearance({ ann, annotDict, context, pdf: { PDFName }, rectW: ann.width, rectH: ann.height, pageRot });
+      const stream = ok && context.lookup(context.lookup(annotDict.get(PDFName.of('AP'))).get(PDFName.of('N')));
+      return ok ? Buffer.from(stream.getContents()).toString('latin1') : null;
+    };
+    // Upright page: no turn. The symbol is 144 wide, 72 high.
+    assert.match(draw(0, { symbolId: 'test-rotated-card', width: 144, height: 72, params: { title: 'A' } }), /1 0 0 1 72 36 cm\n1 0 -?0 1 0 0 cm\n1 0 0 1 -72 -36 cm/);
+    // Page /Rotate 90: the saver hands over the box with width and height swapped (72 x 144);
+    // the symbol keeps its 144 x 72 shape and is turned a quarter counter-clockwise.
+    const turned = draw(90, { symbolId: 'test-rotated-card', width: 72, height: 144, params: { title: 'A' } });
+    assert.match(turned, /1 0 0 1 36 72 cm\n0 1 -1 0 0 0 cm\n1 0 0 1 -72 -36 cm/);
+    assert.match(draw(180, { symbolId: 'test-rotated-card', width: 144, height: 72, params: { title: 'A' } }), /-1 -?0 -?0 -1 0 0 cm/);
+    // Two-point symbols on rotated pages keep the picture path.
+    assert.equal(draw(90, { symbolId: 'test-rotated-card', width: 72, height: 144, params: {}, startX: 0, startY: 0, endX: 1, endY: 1 }), null);
+    assert.equal(smartSubject({ symbolId: 'test-rotated-card' }), 'Card');
+    assert.equal(smartSubject({ symbolId: 'no-such-template' }), '');
+  } finally { remove(); }
+});

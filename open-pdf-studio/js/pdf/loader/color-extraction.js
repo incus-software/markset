@@ -512,6 +512,8 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         const s = leesPdfTekst(context, opsSymRaw);
         if (s !== undefined) colors.opsSymbolId = s;
       }
+      // Markset: /Contents written as the symbol's name for other apps, not a comment.
+      if (annotDict.get(PDFName.of('OPS_AutoContents'))) colors.opsAutoContents = true;
       // Markset: the SVG of a vector symbol stamp (markset/stamp-vector.js)
       const opsStampSvgRaw = annotDict.get(PDFName.of('OPS_StampSvg'));
       if (opsStampSvgRaw) {

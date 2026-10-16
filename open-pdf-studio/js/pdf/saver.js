@@ -12,7 +12,7 @@ import { PDFDocument, PDFString, PDFHexString, PDFName, PDFArray, PDFStream, deg
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } from 'pdf-lib';
 import { kopNaarLE, koppenSleutel } from './lijnkoppen.js';
 import { writeVectorStampAppearance } from '../../markset/stamp-vector.js'; // Markset
-import { writeVectorParametricAppearance, embedSmartImages, frozenForSave } from '../../markset/smart/index.js'; // Markset
+import { writeVectorParametricAppearance, embedSmartImages, frozenForSave, smartSubject } from '../../markset/smart/index.js'; // Markset
 import { smartParamsForSave } from '../../markset/smart/assets.js'; // Markset
 import { writePageCalibrations } from '../../markset/page-scale-pdf.js'; // Markset
 import { setAnnotIdentity } from '../../markset/annot-identity.js'; // Markset
@@ -2661,6 +2661,7 @@ async function _savePDFNu(saveAsPath, activeDoc, { bytesOnly = false } = {}) {
             const strokeColorArr = ann.strokeColor ? hexToColorArray(ann.strokeColor) : colorArr;
             const smartSave = smartParamsForSave(ann, pdfDocLib); // Markset: one copy of each image per PDF
             const smartFrozen = frozenForSave(ann); // Markset: what it draws, for copies without its template
+            const smartSubj = smartSubject(ann); // Markset: "Exhibit Stamp" in other apps' comment lists
             const psDict = {
               Type: 'Annot',
               Subtype: 'Square',
@@ -2668,9 +2669,14 @@ async function _savePDFNu(saveAsPath, activeDoc, { bytesOnly = false } = {}) {
               C: strokeColorArr,
               CA: opacity,
               T: pdfTextString(ann.author || 'User'),
-              Contents: pdfTextString(ann.subject || ''),
+              // Markset: with no comment of its own, the symbol's name, which Acrobat's
+              // comment list shows instead of a bare 'Rectangle'; flagged so it is not
+              // read back as a comment.
+              Contents: pdfTextString(ann.subject || smartSubj || ''),
+              ...(!ann.subject && smartSubj ? { OPS_AutoContents: true } : {}),
               M: PDFString.fromDate(new Date()),
               F: computeAnnotFlags(ann),
+              ...(smartSubj ? { Subj: pdfTextString(smartSubj) } : {}), // Markset
               OPS_Subtype: PDFString.of('parametricSymbol'),
               OPS_SymbolId: pdfTextString(ann.symbolId || ''),
               OPS_Params: pdfTextString(JSON.stringify(ann.params || {})),
@@ -2718,13 +2724,23 @@ async function _savePDFNu(saveAsPath, activeDoc, { bytesOnly = false } = {}) {
                 const rectH = Math.abs(psy2 - psy1);
                 const alpha = opacity != null ? opacity : 1;
                 const resources = { XObject: context.obj({ Img: embeddedImage.ref }) };
+                // Markset: the picture is the symbol as seen on screen. On a page
+                // shown rotated (/Rotate) it is turned back by the page's rotation,
+                // so it reads upright there instead of lying on its side.
+                const imgRot = ((pageRot % 360) + 360) % 360;
+                let place = `${rectW} 0 0 ${rectH} 0 0 cm\n`;
+                if (imgRot === 90 || imgRot === 180 || imgRot === 270) {
+                  const vw = imgRot === 180 ? rectW : rectH, vh = imgRot === 180 ? rectH : rectW;
+                  const c = [1, 0, -1, 0][imgRot / 90], s = [0, 1, 0, -1][imgRot / 90];
+                  place = `1 0 0 1 ${rectW / 2} ${rectH / 2} cm\n${c} ${s} ${-s} ${c} 0 0 cm\n${vw} 0 0 ${vh} ${-vw / 2} ${-vh / 2} cm\n`;
+                }
                 let apContent;
                 if (alpha < 1) {
                   const gsRef = context.register(context.obj({ Type: 'ExtGState', ca: alpha, CA: alpha }));
                   resources.ExtGState = context.obj({ GS0: gsRef });
-                  apContent = `q\n/GS0 gs\n${rectW} 0 0 ${rectH} 0 0 cm\n/Img Do\nQ\n`;
+                  apContent = `q\n/GS0 gs\n${place}/Img Do\nQ\n`;
                 } else {
-                  apContent = `q\n${rectW} 0 0 ${rectH} 0 0 cm\n/Img Do\nQ\n`;
+                  apContent = `q\n${place}/Img Do\nQ\n`;
                 }
                 const apStream = context.stream(apContent, {
                   Type: 'XObject', Subtype: 'Form', BBox: [0, 0, rectW, rectH],

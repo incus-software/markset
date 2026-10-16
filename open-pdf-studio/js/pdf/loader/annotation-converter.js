@@ -269,6 +269,8 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
           rotation: extraColors.rotation || 0,
           // Markset: what it drew when saved, for when its template is missing
           ...(extraColors.opsFrozen ? { frozen: extraColors.opsFrozen } : {}),
+          // Markset: the name saved as /Contents for other apps is not a comment.
+          ...(extraColors.opsAutoContents ? { subject: '' } : {}),
         });
         if (extraColors.opsTwoPoint?.length === 4) {
           const [startX, startY] = convertPoint(
