@@ -130,7 +130,7 @@ export function maatlijnAnnotatie({ ann, context, convertX, convertY, opacity, b
     CA: opacity,
     T: pdfTextString(ann.author || 'User'),
     Contents: pdfTextString(ann.measureText || ''),
-    M: PDFString.of(new Date().toISOString()),
+    M: PDFString.fromDate(new Date()),
     IT: PDFName.of('LineDimension'),
     OPS_Subtype: PDFString.of('measureDistance'),
     LE: [PDFName.of(mapDimHead(ann.startHead)), PDFName.of(mapDimHead(ann.endHead))],

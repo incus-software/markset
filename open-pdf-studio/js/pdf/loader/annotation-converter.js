@@ -144,7 +144,10 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
     locked: !!(annot.annotationFlags & 128),      // Bit 8: Locked
     printable: !!(annot.annotationFlags & 4),       // Bit 3: Print
     readOnly: !!(annot.annotationFlags & 64),       // Bit 7: ReadOnly
-    marked: false
+    marked: false,
+    // Markset: the markup's /NM, written back on save so other PDF apps
+    // see the same markup across versions (markset/annot-identity.js).
+    ...(extraColors.nm ? { pdfNm: extraColors.nm } : {}),
   };
 
   switch (annot.subtype) {

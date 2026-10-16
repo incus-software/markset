@@ -21,7 +21,8 @@ export function clampRenderScale(widthPt, heightPt, scale) {
 export async function renderPdfBytes(bytes, { page = 1, scale = 4 } = {}) {
   if (!bytes || !(bytes.byteLength > 0)) throw new TypeError('renderPdf needs the PDF bytes');
   const pdfjsLib = await import('pdfjs-dist');
-  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes).slice() }).promise;
+  const task = pdfjsLib.getDocument({ data: new Uint8Array(bytes).slice() });
+  const doc = await task.promise;
   try {
     if (!Number.isInteger(page) || page < 1 || page > doc.numPages) throw new RangeError('Invalid page');
     const pdfPage = await doc.getPage(page);
@@ -33,6 +34,9 @@ export async function renderPdfBytes(bytes, { page = 1, scale = 4 } = {}) {
     await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport, background: 'rgba(0,0,0,0)' }).promise;
     return { canvas, widthPt: base.width, heightPt: base.height, pageCount: doc.numPages };
   } finally {
-    doc.destroy();
+    // Free the document and its worker through the loading task, as the app
+    // itself does (page-manager.js): the app's pdf.js has no destroy() on the
+    // document, so calling it threw and hid a page that rendered fine.
+    try { await (doc.loadingTask || task).destroy(); } catch { /* already closed */ }
   }
 }

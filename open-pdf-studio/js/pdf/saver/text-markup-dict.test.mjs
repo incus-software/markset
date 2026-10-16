@@ -313,7 +313,7 @@ test('soort, kleur, doorzichtigheid, /T, /Contents, /M, /F en /NM blijven zoals 
       assert.equal(d.get(PDFName.of('CA')).asNumber(), ann.opacity, `${label}: /CA`);
       assert.equal(ctx.lookup(d.get(PDFName.of('T'))).decodeText(), ann.author || 'User', `${label}: /T`);
       assert.equal(ctx.lookup(d.get(PDFName.of('Contents'))).decodeText(), ann.subject || '', `${label}: /Contents`);
-      assert.match(ctx.lookup(d.get(PDFName.of('M'))).decodeText(), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, `${label}: /M`);
+      assert.match(ctx.lookup(d.get(PDFName.of('M'))).decodeText(), /^D:\d{14}Z$/, `${label}: /M (Markset: a PDF date)`);
       assert.equal(d.get(PDFName.of('F')).asNumber(), (ann.printable === false ? 0 : 4) | (ann.locked ? 128 : 0), `${label}: /F`);
       assert.equal(ctx.lookup(d.get(PDFName.of('NM'))).decodeText(), ann.nm, `${label}: /NM`);
       for (const k of ['IT', 'Subj', 'IRT', 'RT', 'OPS_MarkedText', 'CreationDate']) {

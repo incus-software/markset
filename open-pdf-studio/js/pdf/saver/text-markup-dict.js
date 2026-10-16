@@ -108,7 +108,7 @@ export function buildTextMarkupDict(context, ann, map, { opacity, pageRot = 0, r
     CA: opacity,
     T: pdfTextString(ann.author || 'User'),
     Contents: pdfTextString(ann.subject || ''),
-    M: PDFString.of(new Date().toISOString()),
+    M: PDFString.fromDate(new Date()),
     F: computeAnnotFlags(ann)
   });
   // Leesrichting in de ONGEDRAAIDE pagina, zoals bij de correcties; niet bij

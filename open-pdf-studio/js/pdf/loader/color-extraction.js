@@ -344,6 +344,12 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         if (rv !== null) colors.rotation = rv;
       }
 
+      // Markset: every markup's /NM, so a save writes the same name back and
+      // other PDF apps see the same markup across versions
+      // (annotation-converter.js `pdfNm`, markset/annot-identity.js).
+      const nmEigen = leesTekstString(context, annotDict.get(PDFName.of('NM')));
+      if (nmEigen) colors.nm = nmEigen;
+
       // /OPS_LineHeads: exacte lijnkoppen die /LE niet kent (lijnkoppen.js).
       const opsKoppenRaw = annotDict.get(PDFName.of('OPS_LineHeads'));
       if (opsKoppenRaw) {
