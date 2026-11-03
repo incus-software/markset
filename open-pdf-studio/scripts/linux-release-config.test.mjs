@@ -236,7 +236,8 @@ test('desktop entries use the installed icon name and the window class (#774)', 
   assert.notEqual(base.app?.enableGTKAppId, true);
 
   const flatpakId = 'org.openaec.OpenPdfStudio';
-  assert.equal(flatpakId.toLowerCase(), base.identifier.toLowerCase());
+  // Markset: the app id is Markset's; the (unshipped) Flatpak files keep upstream's.
+  assert.equal(base.identifier, 'com.usemarkset.app');
   const manifest = await leesLf(new URL(`flatpak/${flatpakId}.yml`, repoRoot));
   assert.match(manifest, new RegExp(`^app-id: ${flatpakId.replace(/\./g, '\\.')}$`, 'm'));
   const flatpak = desktopEntry(

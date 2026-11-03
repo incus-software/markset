@@ -33,7 +33,7 @@
       "additionalProperties": false,
       "properties": {
         "scale": {
-          "maximum": 32,
+          "maximum": 32.0,
           "minimum": 0.05,
           "type": "number"
         }
