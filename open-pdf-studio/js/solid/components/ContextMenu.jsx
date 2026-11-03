@@ -1,4 +1,5 @@
-import { createEffect, onMount, onCleanup, Show, Switch, Match, For } from 'solid-js';
+import { canEditAreaVertex, applyAreaVertexEdit } from '../../tools/area-vertex-editing.js';
+import { createEffect, createMemo, onMount, onCleanup, Show, Switch, Match, For } from 'solid-js';
 import { showConfirm } from '../../ui/chrome/confirm-dialog.js';
 import {
   visible, menuType, position, targetAnnotation, multiSelectCount, targetPage, hideMenu, vertexContext
@@ -23,6 +24,7 @@ import { selecteerRuimteVanTag } from '../../plattegrond/ruimte-selectie.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { copyAnnotation, copyAnnotations, pasteFromClipboard, pasteAnnotationsInPlace, duplicateAnnotation } from '../../annotations/clipboard.js';
 import { cloneAnnotation } from '../../annotations/factory.js';
+import { verwijderVeelhoekHoekpunt, voegVeelhoekHoekpuntIn, VEELHOEK_MIN_PUNTEN } from '../../annotations/veelhoek-punten.js';
 import { commitAnnotationMutation, deleteAnnotationsWithUndo } from '../../annotations/mutations.js';
 import { expandCorrectionGroups } from '../../annotations/corrections/model.js';
 import { recordModify, recordBulkModify } from '../../core/undo-manager.js';
@@ -31,6 +33,8 @@ import { startTextEditing } from '../../tools/text-editing.js';
 import { openStickyPopup, closeStickyPopup } from '../stores/stickyNotePopupStore.js';
 import { createTextMarkupAnnotation, createCalloutFromSelection } from '../../text/text-markup.js';
 import { setAsDefaultStyle, applyDefaultStyle } from '../../core/preferences.js';
+import { canSaveToToolSet, saveAnnotationToToolSet } from '../stores/toolSetsStore.js';
+import { toolSetsIcon as toolSetsMenuIcon } from '../data/contextMenuIcons.js';
 import { setTool } from '../../tools/manager.js';
 import { alignAnnotations } from '../../annotations/smart-guides.js';
 import {
@@ -53,6 +57,9 @@ import { layersVersion, moveAnnotationsToAnnotationLayer } from '../stores/annot
 import { layerRows, layerOf } from '../../annotations/annotatie-lagen.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
 import i18next from '../../i18n/config.js';
+import { tree as bookmarkTree, selectedIds as bookmarkSelectedIds, toolbarDisabled as bookmarkToolbarDisabled } from '../stores/panels/bookmarksStore.js';
+import { inspringDoel, kanUitspringen } from '../../ui/panels/bladwijzer-boom.js';
+import { BLADWIJZER_KLEUREN, kleurLabelSleutel, stijlVanSelectie } from '../../ui/panels/bladwijzer-stijl.js';
 import { gevelPreset } from '../../gevelelement/herkenning.js';
 import { paneelTypenVoor, typeNaam } from '../../gevelelement/catalogus.js';
 import { indeling, veldBij, voegStijlToe, verwijderStijl, wisselPaneel } from '../../gevelelement/indeling.js';
@@ -63,6 +70,8 @@ import {
   revealInFileManagerLabelKey,
   canRevealInFileManager,
 } from '../../core/file-manager-reveal.js';
+import { sneltoetsVoor } from '../stores/keybindingStore.js';
+import { menuPlaatsing, submenuPlaatsing } from './submenu-plaatsing.js';
 
 function redraw() {
   if (getActiveDocument()?.viewMode === 'continuous') {
@@ -101,9 +110,40 @@ function Separator() {
   return <div class="context-menu-separator" />;
 }
 
+const MENU_MARGE = 4;
+
+// Place a submenu next to its item, inside the window (#883). Submenus are
+// position: fixed so that a scrolling main menu (overflow-y: auto) does not
+// clip them; their spot is computed from the item's box.
+function plaatsSubmenuVan(item) {
+  const inhoud = item.querySelector(':scope > .context-menu-submenu-content');
+  if (!inhoud) return;
+  inhoud.style.maxHeight = '';
+  const maat = inhoud.getBoundingClientRect();
+  if (!maat.width && !maat.height) return;
+  const stijl = getComputedStyle(inhoud);
+  const inzet = (parseFloat(stijl.borderTopWidth) || 0) + (parseFloat(stijl.paddingTop) || 0);
+  const voorkeurLinks = getComputedStyle(item).direction === 'rtl';
+  const { left, top, maxHoogte, naarLinks } = submenuPlaatsing(
+    { width: maat.width, height: maat.height }, item.getBoundingClientRect(),
+    window.innerWidth, window.innerHeight, { marge: MENU_MARGE, inzet, voorkeurLinks });
+  inhoud.classList.toggle('naar-links', naarLinks);
+  inhoud.classList.toggle('scrollt', maxHoogte != null);
+  inhoud.style.top = `${top}px`;
+  inhoud.style.maxHeight = maxHoogte != null ? `${maxHoogte}px` : '';
+  inhoud.style.left = `${left}px`;
+  // The scrollbar makes it wider: stay inside the window with that width too.
+  const teVer = inhoud.getBoundingClientRect().right - (window.innerWidth - MENU_MARGE);
+  if (teVer > 0) inhoud.style.left = `${Math.max(MENU_MARGE, left - teVer)}px`;
+}
+
+function plaatsSubmenu(e) {
+  plaatsSubmenuVan(e.currentTarget);
+}
+
 function Submenu(props) {
   return (
-    <div class={`context-menu-item context-menu-submenu${props.disabled ? ' disabled' : ''}`}>
+    <div class={`context-menu-item context-menu-submenu${props.disabled ? ' disabled' : ''}`} onMouseEnter={plaatsSubmenu}>
       <span class="context-menu-icon" innerHTML={props.icon || ''} />
       <span class="context-menu-label">{props.label}</span>
       <span class="context-menu-arrow">{'\u25B6'}</span>
@@ -192,8 +232,50 @@ function AnnotationMenuContent() {
     const v = vertexContext();
     const a = ann();
     if (!v || !a || a.id !== v.annotationId) return null;
+    if (v.kind === 'areaVertex' || v.kind === 'areaEdge') {
+      return <>
+        <MenuItem icon={v.kind === 'areaVertex' ? deleteIcon : undefined}
+          label={t(v.kind === 'areaVertex' ? 'contextMenu.deleteVertex' : 'contextMenu.insertVertex')}
+          disabled={!canEditAreaVertex(a, v)} onClick={() => {
+            if (applyAreaVertexEdit(a, v)) { redraw(); showProperties(a); }
+            hideMenu();
+          }} />
+        <Separator />
+      </>;
+    }
     // Wand-context draagt alleen het klikpunt (zie wandEind hieronder).
     if (v.kind === 'wand') return null;
+    // Veelhoek (#622): rechtsklik op een hoekpunt haalt het weg (er blijven
+    // er minstens drie), op een zijde komt er een hoekpunt bij, op de plek
+    // van de klik.
+    if (v.kind === 'veelhoekHoek' || v.kind === 'veelhoekZijde') {
+      const pasToe = (nieuw) => {
+        if (nieuw) {
+          const before = cloneAnnotation(a);
+          Object.assign(a, nieuw);
+          a.modifiedAt = new Date().toISOString();
+          recordModify(a.id, before, cloneAnnotation(a));
+          redraw();
+          showProperties(a);
+        }
+        hideMenu();
+      };
+      return (
+        <>
+          <Show when={v.kind === 'veelhoekHoek'}>
+            <MenuItem icon={deleteIcon} label={t('contextMenu.deleteVertex') || 'Delete vertex'}
+              disabled={isLocked() || !((a.points?.length || 0) > VEELHOEK_MIN_PUNTEN)}
+              onClick={() => pasToe(verwijderVeelhoekHoekpunt(a, v.nodeIndex))} />
+          </Show>
+          <Show when={v.kind === 'veelhoekZijde'}>
+            <MenuItem label={t('contextMenu.insertVertex') || 'Insert vertex here'}
+              disabled={isLocked()}
+              onClick={() => pasToe(voegVeelhoekHoekpuntIn(a, v.edgeIndex, v.punt))} />
+          </Show>
+          <Separator />
+        </>
+      );
+    }
     // Systeem-paneel (rechtsklik op een cel van een systeemraster/-plafond):
     // paneeltype direct wisselen — het ASSORTIMENT komt als data van het
     // systeemtype (typeDef.paneelTypen) — of het paneel vervangen door een
@@ -490,7 +572,7 @@ function AnnotationMenuContent() {
         <Separator />
       </Show>
 
-      <MenuItem icon={cutIcon} label={tCommon('cut')} shortcut="Ctrl+X" disabled={isPaarVergrendeld()} onClick={() => {
+      <MenuItem icon={cutIcon} label={tCommon('cut')} shortcut={sneltoetsVoor('edit.cut')} disabled={isPaarVergrendeld()} onClick={() => {
         const a = ann();
         const doc = getActiveDocument();
         // Een vervanging (#508) wordt in haar geheel geknipt.
@@ -501,9 +583,9 @@ function AnnotationMenuContent() {
         hideProperties();
         redraw();
       }} />
-      <MenuItem icon={copyIcon} label={tCommon('copy')} shortcut="Ctrl+C" onClick={() => copyAnnotation(ann())} />
-      <MenuItem icon={pasteIcon} label={tCommon('paste')} shortcut="Ctrl+V" onClick={() => pasteFromClipboard()} />
-      <MenuItem icon={pasteIcon} label={tCommon('pasteInPlace')} shortcut="Ctrl+Shift+V" onClick={() => pasteAnnotationsInPlace()} />
+      <MenuItem icon={copyIcon} label={tCommon('copy')} shortcut={sneltoetsVoor('edit.copy')} onClick={() => copyAnnotation(ann())} />
+      <MenuItem icon={pasteIcon} label={tCommon('paste')} shortcut={sneltoetsVoor('edit.paste')} onClick={() => pasteFromClipboard()} />
+      <MenuItem icon={pasteIcon} label={tCommon('pasteInPlace')} shortcut={sneltoetsVoor('edit.pasteInPlace')} onClick={() => pasteAnnotationsInPlace()} />
       {/* Markset: copy a stamp, seal or any markup to other pages, same spot on each sheet. */}
       <MenuItem icon={duplicateIcon} label="Place on Pages..." onClick={() => {
         const a = ann();
@@ -530,7 +612,7 @@ function AnnotationMenuContent() {
         <Separator />
       </Show>
 
-      <MenuItem icon={deleteIcon} label={tCommon('delete')} shortcut="Delete" disabled={isPaarVergrendeld()} onClick={async () => {
+      <MenuItem icon={deleteIcon} label={tCommon('delete')} shortcut={sneltoetsVoor('edit.delete')} disabled={isPaarVergrendeld()} onClick={async () => {
         const a = ann();
         const confirmed = await showConfirm({
           title: t('deleteAnnotation.title'),
@@ -784,6 +866,14 @@ function AnnotationMenuContent() {
         <Separator />
       </Show>
 
+      {/* Tool Sets (#311): everything except the drawn geometry becomes a reusable item. */}
+      <Show when={canSaveToToolSet(ann())}>
+        <MenuItem icon={toolSetsMenuIcon} label={t('annotation.saveToToolSet')} onClick={() => {
+          const a = ann();
+          if (a) saveAnnotationToToolSet(a);
+        }} />
+      </Show>
+
       <Submenu icon={styleToolsIcon} label={t('annotation.styleTools')}>
         <MenuItem label={t('annotation.setAsDefaultStyle')} onClick={() => setAsDefaultStyle(ann())} />
         <MenuItem label={t('annotation.applyDefaultStyle')} onClick={() => {
@@ -927,7 +1017,7 @@ function PageMenuContent() {
 
       <Separator />
 
-      <MenuItem icon={imageIcon} label={t('page.addImage')} onClick={() => setTool('image')} />
+      <MenuItem icon={imageIcon} label={t('page.addImage')} onClick={() => import('../../annotations/image-drop.js').then((m) => m.kiesEnPlaatsAfbeelding())} />
       <MenuItem icon={qrCodeIcon} label={t('page.addQrCode')} onClick={() => setTool('qrCode')} />
 
       <Separator />
@@ -941,8 +1031,8 @@ function PageMenuContent() {
 
       <MenuItem icon={pageCutIcon} label={tCommon('cut')} shortcut="Ctrl+X" disabled={true} />
       <MenuItem icon={pageCopyIcon} label={tCommon('copy')} shortcut="Ctrl+C" disabled={true} />
-      <MenuItem icon={pagePasteIcon} label={tCommon('paste')} shortcut="Ctrl+V" onClick={() => pasteFromClipboard()} />
-      <MenuItem icon={pagePasteIcon} label={tCommon('pasteInPlace')} shortcut="Ctrl+Shift+V" onClick={() => pasteAnnotationsInPlace()} />
+      <MenuItem icon={pagePasteIcon} label={tCommon('paste')} shortcut={sneltoetsVoor('edit.paste')} onClick={() => pasteFromClipboard()} />
+      <MenuItem icon={pagePasteIcon} label={tCommon('pasteInPlace')} shortcut={sneltoetsVoor('edit.pasteInPlace')} onClick={() => pasteAnnotationsInPlace()} />
 
       <Separator />
 
@@ -981,10 +1071,10 @@ function PageMenuContent() {
 
       <Separator />
 
-      <MenuItem icon={printIcon} label={t('page.printMenu')} shortcut="Ctrl+P" onClick={() => {
+      <MenuItem icon={printIcon} label={t('page.printMenu')} shortcut={sneltoetsVoor('file.print')} onClick={() => {
         import('../stores/dialogStore.js').then(m => m.openDialog('print'));
       }} />
-      <MenuItem icon={findIcon} label={t('page.findMenu')} shortcut="Ctrl+F" onClick={() => {
+      <MenuItem icon={findIcon} label={t('page.findMenu')} shortcut={sneltoetsVoor('search.find')} onClick={() => {
         const findBar = document.getElementById('find-bar');
         const findInput = document.getElementById('find-input');
         if (findBar) { findBar.style.display = 'flex'; if (findInput) findInput.focus(); }
@@ -1018,24 +1108,96 @@ function PageMenuContent() {
   );
 }
 
+// Een gekleurd vierkantje als menu-icoon; zonder kleur (Standaard) een leeg vak.
+function kleurIcoon(hex) {
+  return hex
+    ? `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="${hex}" stroke="#808080"/></svg>`
+    : '<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="#808080"/></svg>';
+}
+
+// Eigen kleur (#689): de kleurkiezer van het systeem. Synchroon in de klik
+// openen, anders staat de webview hem niet toe.
+function kiesEigenBladwijzerKleur(huidig) {
+  const invoer = document.createElement('input');
+  invoer.type = 'color';
+  invoer.value = huidig || '#000000';
+  invoer.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0;';
+  document.body.appendChild(invoer);
+  const opruimen = () => invoer.remove();
+  invoer.addEventListener('change', () => {
+    const waarde = invoer.value;
+    opruimen();
+    import('../../ui/panels/bookmarks.js').then(m => m.setBookmarkStyle({ color: waarde }));
+  }, { once: true });
+  invoer.addEventListener('blur', () => setTimeout(opruimen, 0), { once: true });
+  invoer.click();
+}
+
 function BookmarkMenuContent() {
   const { t } = useTranslation('context');
+  const { t: td } = useTranslation('dialogs');
+  const { t: tp } = useTranslation('properties');
+  // Kleur, stijl en verplaatsen werken op de hele selectie (#689, #690); uit
+  // zonder selectie of in PDF/A. Bewerken en subbladwijzer: precies één.
+  const uit = () => bookmarkToolbarDisabled();
+  const stijlUit = () => uit().style;
+  const lijst = () => { bookmarkTree(); return getActiveDocument()?.bookmarks || []; };
+  const aantal = () => bookmarkSelectedIds().length;
+  // Vinkjes uit het model; de boom verandert na elke stijlwijziging mee.
+  const stijl = () => stijlVanSelectie(lijst(), bookmarkSelectedIds());
+  const zet = (wijziging) => import('../../ui/panels/bookmarks.js').then(m => m.setBookmarkStyle(wijziging));
 
   return (
     <>
       <MenuItem label={t('bookmark.addBookmark')} onClick={() => {
         import('../../ui/panels/bookmarks.js').then(m => m.addBookmark());
       }} />
-      <MenuItem label={t('bookmark.addChildBookmark')} onClick={() => {
+      <MenuItem label={t('bookmark.addChildBookmark')} disabled={uit().addChild} onClick={() => {
         import('../../ui/panels/bookmarks.js').then(m => m.addChildBookmark());
       }} />
       <Separator />
-      <MenuItem label={t('bookmark.editBookmark')} onClick={() => {
+      <MenuItem label={t('bookmark.editBookmark')} disabled={uit().edit} onClick={() => {
         import('../../ui/panels/bookmarks.js').then(m => m.editBookmark());
       }} />
-      <MenuItem label={t('bookmark.deleteBookmark')} onClick={() => {
-        import('../../ui/panels/bookmarks.js').then(m => m.deleteBookmark());
+      <MenuItem label={aantal() > 1 ? t('bookmark.deleteBookmarks', { count: aantal() }) : t('bookmark.deleteBookmark')}
+        disabled={uit().delete} onClick={() => {
+          import('../../ui/panels/bookmarks.js').then(m => m.deleteBookmark());
+        }} />
+      <Separator />
+      <MenuItem label={t('bookmark.nestUnderNew')} disabled={stijlUit()} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.nestBookmarksUnderNew());
       }} />
+      <MenuItem label={t('bookmark.indent')} disabled={stijlUit() || inspringDoel(lijst(), bookmarkSelectedIds()) == null} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.indentBookmarks());
+      }} />
+      <MenuItem label={t('bookmark.outdent')} disabled={stijlUit() || !kanUitspringen(lijst(), bookmarkSelectedIds())} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.outdentBookmarks());
+      }} />
+      <Separator />
+      <Submenu icon={kleurIcoon(stijl().color || null)} label={t('bookmark.color')} disabled={stijlUit()}>
+        <MenuItem icon={kleurIcoon(null)} label={t('bookmark.colorDefault')} checkbox={true}
+          checked={stijl().color === null} disabled={stijlUit()} onClick={() => zet({ color: null })} />
+        <For each={BLADWIJZER_KLEUREN}>
+          {(k) => (
+            <MenuItem icon={kleurIcoon(k.hex)} label={t(kleurLabelSleutel(k.sleutel))} checkbox={true}
+              checked={stijl().color === k.hex} disabled={stijlUit()} onClick={() => zet({ color: k.hex })} />
+          )}
+        </For>
+        <Separator />
+        <MenuItem label={t('bookmark.colorCustom')} disabled={stijlUit()}
+          onClick={() => kiesEigenBladwijzerKleur(stijl().color)} />
+      </Submenu>
+      <MenuItem label={t('bookmark.bold')} checkbox={true} checked={stijl().bold} disabled={stijlUit()} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.toggleBookmarkBold());
+      }} />
+      <MenuItem label={t('bookmark.italic')} checkbox={true} checked={stijl().italic} disabled={stijlUit()} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.toggleBookmarkItalic());
+      }} />
+      <Separator />
+      <MenuItem label={`${td('pageLabels.title')} → ${tp('leftPanel.bookmarks')}…`} disabled={uit().add}
+        onClick={() => openDialog('bookmark-names', { direction: 'bookmarks' })} />
+      <MenuItem label={`${tp('leftPanel.bookmarks')} → ${td('pageLabels.title')}…`} disabled={uit().add}
+        onClick={() => openDialog('bookmark-names', { direction: 'labels' })} />
       <Separator />
       <MenuItem label={t('bookmark.expandAll')} onClick={() => {
         import('../../ui/panels/bookmarks.js').then(m => m.expandAll());
@@ -1185,6 +1347,7 @@ function ThumbnailMenuContent() {
 
       <Separator />
 
+      <MenuItem label={t('thumbnail.pageLabels')} onClick={() => openDialog('page-labels')} />
       <MenuItem icon={thumbnailPropertiesIcon} label={t('thumbnail.properties')} disabled={isMulti()} onClick={() => {
         import('../stores/dialogStore.js').then(m => m.openDialog('page-properties', { pageNum: pageNum() }));
       }} />
@@ -1243,26 +1406,44 @@ function TextSelectionMenuContent() {
 
 export default function ContextMenu() {
   let menuRef;
+  // De inhoud pas opbouwen als het menu voor het eerst opengaat, en daarna
+  // laten staan. Het verborgen menu (standaard het annotatiemenu) kostte bij
+  // de start zo'n vijfde van het opbouwen van het hele venster (#707).
+  const inhoudOpgebouwd = createMemo((eerder) => eerder || visible(), false);
 
-  // Position the menu when it becomes visible
+  // Position the menu when it becomes visible: measured at its natural size,
+  // then shifted (and, when taller than the window, given the window height
+  // and a scrollbar) so it stays fully inside the window (#883).
   createEffect(() => {
     if (visible()) {
       const pos = position();
+      menuType();
       requestAnimationFrame(() => {
         if (!menuRef) return;
-        menuRef.style.left = `${pos.x}px`;
-        menuRef.style.top = `${pos.y}px`;
-
+        menuRef.style.maxHeight = '';
+        menuRef.classList.remove('scrollt');
+        menuRef.scrollTop = 0;
         const rect = menuRef.getBoundingClientRect();
-        if (rect.right > window.innerWidth) {
-          menuRef.style.left = `${Math.max(0, window.innerWidth - rect.width - 10)}px`;
-        }
-        if (rect.bottom > window.innerHeight) {
-          menuRef.style.top = `${Math.max(0, window.innerHeight - rect.height - 10)}px`;
+        const { left, top, maxHoogte } = menuPlaatsing(
+          { x: pos.x, y: pos.y, breedte: rect.width, hoogte: rect.height },
+          window.innerWidth, window.innerHeight, MENU_MARGE);
+        menuRef.style.left = `${left}px`;
+        menuRef.style.top = `${top}px`;
+        if (maxHoogte != null) {
+          menuRef.style.maxHeight = `${maxHoogte}px`;
+          menuRef.classList.add('scrollt');
+          // The scrollbar makes it wider: stay inside with that width too.
+          const teVer = menuRef.getBoundingClientRect().right - (window.innerWidth - MENU_MARGE);
+          if (teVer > 0) menuRef.style.left = `${Math.max(MENU_MARGE, left - teVer)}px`;
         }
       });
     }
   });
+
+  // A scrolling menu moves its items under an open submenu: place it again.
+  function handleMenuScroll() {
+    menuRef?.querySelectorAll('.context-menu-submenu:hover').forEach(plaatsSubmenuVan);
+  }
 
   // Dismiss when clicking outside the menu.
   // mousedown on document handles clicks on ribbon, panels, title bar, etc.
@@ -1300,28 +1481,31 @@ export default function ContextMenu() {
       ref={menuRef}
       class="context-menu"
       classList={{ visible: visible() }}
+      onScroll={handleMenuScroll}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <Switch>
-        <Match when={menuType() === 'annotation'}>
-          <AnnotationMenuContent />
-        </Match>
-        <Match when={menuType() === 'annotationMulti'}>
-          <MultiAnnotationMenuContent />
-        </Match>
-        <Match when={menuType() === 'page'}>
-          <PageMenuContent />
-        </Match>
-        <Match when={menuType() === 'textSelection'}>
-          <TextSelectionMenuContent />
-        </Match>
-        <Match when={menuType() === 'bookmark'}>
-          <BookmarkMenuContent />
-        </Match>
-        <Match when={menuType() === 'thumbnail'}>
-          <ThumbnailMenuContent />
-        </Match>
-      </Switch>
+      <Show when={inhoudOpgebouwd()}>
+        <Switch>
+          <Match when={menuType() === 'annotation'}>
+            <AnnotationMenuContent />
+          </Match>
+          <Match when={menuType() === 'annotationMulti'}>
+            <MultiAnnotationMenuContent />
+          </Match>
+          <Match when={menuType() === 'page'}>
+            <PageMenuContent />
+          </Match>
+          <Match when={menuType() === 'textSelection'}>
+            <TextSelectionMenuContent />
+          </Match>
+          <Match when={menuType() === 'bookmark'}>
+            <BookmarkMenuContent />
+          </Match>
+          <Match when={menuType() === 'thumbnail'}>
+            <ThumbnailMenuContent />
+          </Match>
+        </Switch>
+      </Show>
     </div>
   );
 }

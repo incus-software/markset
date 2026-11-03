@@ -1,6 +1,12 @@
-import { Show } from 'solid-js';
+import { readRenderDiagnostics, subscribeRenderDiagnostics } from '../../pdf/render-diagnostics.js';
+import { Show, createSignal, onCleanup, onMount } from 'solid-js';
+import { watchState, onWatchState } from '../../workflows/watch-status.js';
 import { state, getActiveDocument } from '../../core/state.js';
-import { useTranslation, localizeNumber } from '../../i18n/useTranslation.js';
+import { labelVan, heeftEigenLabel } from '../../pdf/pagina-labels.js';
+import { useTranslation, localizeNumber, language } from '../../i18n/useTranslation.js';
+import { isTauri } from '../../core/platform.js';
+import { mcpIndicator, mcpSignaalInfo, startMcpSignaal } from '../stores/mcpSignaalStore.js';
+import { mcpTooltip } from '../../core/mcp-signaal.js';
 
 // All page navigation goes through goToPage() so the side effects
 // (active thumbnail update, hide properties, fire events) happen in one
@@ -94,35 +100,95 @@ async function handleZoomOut() {
 async function handleZoomInput(e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  let val = e.target.value.replace('%', '').trim();
-  let pct = parseInt(val, 10);
-  if (!isNaN(pct) && pct >= 10 && pct <= 500) {
+  // Komma en punt allebei als decimaalteken: "62,5" en "62.5" (zoom-display.js).
+  const pct = leesZoomInvoer(e.target.value);
+  if (pct != null) {
     const doc = state.documents[state.activeDocumentIndex];
     if (doc) {
       // Vector viewport mode is the source of truth — setZoom() handles
       // the dispatch (viewport.setZoomAtPoint vs legacy doc.scale path).
       const { setZoom } = await import('../../pdf/renderer.js');
-      await setZoom(pct / 100);
+      await setZoom(percentToScale(pct));
     }
   }
   e.target.blur();
 }
 
 async function handleZoomBlur(e) {
-  let val = e.target.value.replace('%', '').trim();
-  let pct = parseInt(val, 10);
-  if (isNaN(pct) || pct < 10 || pct > 500) {
+  const pct = leesZoomInvoer(e.target.value);
+  if (pct == null) {
     const doc = state.documents[state.activeDocumentIndex];
-    e.target.value = Math.round((doc ? doc.scale : 1.5) * 100) + '%';
+    e.target.value = scaleToPercent(doc ? doc.scale : 1.5) + '%';
   } else if (!e.target.value.includes('%')) {
-    e.target.value = pct + '%';
+    e.target.value = toonGetal(pct, language()) + '%';
   }
 }
 
 import { engineFor } from '../stores/engineStatusStore.js';
+import { scaleToPercent, percentToScale, leesZoomInvoer } from '../../core/zoom-display.js';
+import { toonGetal } from '../../core/getal-invoer.js';
+
+// Stops the document-workflow folder watch (it keeps running after its dialog closes).
+async function stopFolderWatch() {
+  const { stopWorkflow } = await import('../../workflows/workflow-service.js');
+  stopWorkflow();
+}
+
+// Verbindingssignaal van de AI-koppeling (MCP): grijs = server uit, open punt
+// = aan maar rustig, groen = een assistent was de laatste 30 s actief. Licht
+// kort op bij elke tool-aanroep. Alleen op het bureaublad (core/mcp-signaal.js).
+function McpSignaal(props) {
+  const t = props.t;
+  onMount(() => { startMcpSignaal(); });
+  const tijdTekst = (ms) => {
+    try {
+      return new Date(ms).toLocaleTimeString(language() || undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+      return new Date(ms).toLocaleTimeString();
+    }
+  };
+  const titel = () => mcpTooltip(t, { staat: mcpIndicator().staat, ...mcpSignaalInfo() }, tijdTekst);
+  return (
+    <div class="status-item status-mcp" id="status-mcp"
+      classList={{
+        'status-mcp-uit': mcpIndicator().staat === 'uit',
+        'status-mcp-rust': mcpIndicator().staat === 'rust',
+        'status-mcp-actief': mcpIndicator().staat === 'actief',
+        'status-mcp-puls': mcpIndicator().puls,
+      }}
+      title={titel()} aria-label={`${t('mcpSignal.label')}: ${titel()}`} role="img">
+      <svg class="status-mcp-glyph" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linejoin="round" stroke-width="2" d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/>
+      </svg>
+      <span class="status-mcp-dot" aria-hidden="true"></span>
+    </div>
+  );
+}
 
 export default function StatusBar() {
   const { t } = useTranslation('statusbar');
+  const [diagnosticTick, setDiagnosticTick] = createSignal(0);
+  onCleanup(subscribeRenderDiagnostics(() => setDiagnosticTick(n => n + 1)));
+  const findings = () => {
+    diagnosticTick();
+    return readRenderDiagnostics(getActiveDocument()?.filePath).pages.flatMap(p => p.findings);
+  };
+  let nextFinding = 0;
+  const showFinding = async () => {
+    const list = findings();
+    if (!list.length) return;
+    const doc = getActiveDocument();
+    const item = list[nextFinding++ % list.length];
+    const { goToPage } = await import('../../pdf/renderer.js');
+    if (getActiveDocument() !== doc) return;
+    await goToPage(item.page);
+    if (getActiveDocument() !== doc) return;
+    const { showMessage } = await import('../stores/dialogStore.js');
+    showMessage(t('renderDiagnostics.detail', { page: item.page, code: item.code }));
+  };
+  const [watching, setWatching] = createSignal(watchState());
+  onCleanup(onWatchState(setWatching));
+  const watchFolder = () => String(watching()?.input || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop();
 
   const toolName = () => {
     const key = `tools.${state.currentTool}`;
@@ -133,13 +199,22 @@ export default function StatusBar() {
     const doc = state.documents[state.activeDocumentIndex];
     return doc ? doc.currentPage : 1;
   };
+  // Bladnaam van de huidige pagina, als het document paginalabels heeft (#580).
+  const currentLabel = () => {
+    const doc = state.documents[state.activeDocumentIndex];
+    const page = doc?.currentPage || 1;
+    return heeftEigenLabel(doc?.pageLabels, page) ? labelVan(doc.pageLabels, page) : '';
+  };
   const totalPages = () => {
     const doc = state.documents[state.activeDocumentIndex];
     return localizeNumber(doc?.pdfDoc?.numPages || 0);
   };
   const zoomText = () => {
     const doc = state.documents[state.activeDocumentIndex];
-    return localizeNumber(Math.round((doc ? doc.scale : 1.5) * 100)) + '%';
+    // 100% is the effective dpi (zoom-display.js): the screen calibration
+    // (#520) when this screen has one, else the zoomDpi preference. Both are
+    // read from state.preferences inside this call, so the label follows them.
+    return localizeNumber(scaleToPercent(doc ? doc.scale : 1.5)) + '%';
   };
   const viewMode = () => state.documents[state.activeDocumentIndex]?.viewMode || 'single';
   const viewRotation = () => {
@@ -190,7 +265,10 @@ export default function StatusBar() {
           </button>
 
           <span class="status-page-info">
-            {t('page')} <input type="number" class="status-page-input" tabIndex={-1} value={currentPage()} min="1" onKeyDown={handlePageInput} onBlur={handlePageBlur} /> / <span>{totalPages()}</span>
+            {t('page')} <input type="text" inputmode="decimal" data-getal class="status-page-input" tabIndex={-1} value={currentPage()} min="1" onKeyDown={handlePageInput} onBlur={handlePageBlur} /> / <span>{totalPages()}</span>
+            <Show when={currentLabel()}>
+              <span class="status-page-label" title={currentLabel()}>{currentLabel()}</span>
+            </Show>
           </span>
 
           <button class="status-nav-btn" tabIndex={-1} title={t('nextPage')} onClick={goNext}>
@@ -272,6 +350,21 @@ export default function StatusBar() {
       </Show>
 
       <div class="status-bar-right">
+        <Show when={findings().length > 0}>
+          <button class="status-nav-btn status-item status-render-findings" tabIndex={-1} onClick={showFinding} title={t('renderDiagnostics.title')}>
+            {t('renderDiagnostics.count', { count: findings().length })}
+          </button>
+        </Show>
+        <Show when={watching()}>
+          <button class="status-view-rotation status-watch" classList={{ 'status-watch-error': !!watching()?.error }} tabIndex={-1}
+            title={t('watchTitle', { input: watching()?.input, output: watching()?.output })}
+            onClick={stopFolderWatch}>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <rect x="6" y="6" width="12" height="12" stroke-width="2"/>
+            </svg>
+            <span>{watching()?.error ? t('watchFailed', { folder: watchFolder() }) : t('watchActive', { folder: watchFolder() })}</span>
+          </button>
+        </Show>
         <div class="status-item">
           <Show when={state.statusMessageVisible}>
             {state.statusMessage}
@@ -301,6 +394,9 @@ export default function StatusBar() {
             init guard in App.jsx that overwrites any persisted value).
             Vector / Open PDF.rs paths remain in the code for diagnostic
             re-enable via devtools, but no UI affordance exposes them. */}
+        <Show when={isTauri()}>
+          <McpSignaal t={t} />
+        </Show>
       </div>
     </div>
   );

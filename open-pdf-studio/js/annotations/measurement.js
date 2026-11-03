@@ -1,21 +1,28 @@
+import { tekenDocument as getActiveDocument } from './rendering/document-context.js';
 import { batch } from 'solid-js';
-import { state, getActiveDocument } from '../core/state.js';
+import { state } from '../core/state.js';
 import { openDialog } from '../bridge.js';
-import { mergeStoredScale } from '../../markset/page-scale.js'; // Markset
+// Markset
+import { mergeStoredScale } from '../../markset/page-scale.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { savePreferences } from '../core/preferences.js';
 import { getScaleForPoint } from './scale-bar.js';
 import { getScaleFromRegion } from './scale-region.js';
+import { documentSchaalOpPagina } from './scale-region-scale.js';
 import { schaalBronnen, metSchaalBronnen } from './schaal-bronnen.js';
 import { cloneAnnotation } from './factory.js';
+import { leesOpslagJson, schrijfOpslagJson, verwijderOpslag } from '../core/opslag.js';
 import { nettoVlakOppervlak } from './vlak-ringen.js';
+import { vlakZijden, lengteEenheid } from './vlak-zijden.js';
+import { isSpotCoord, spotCoordTekst } from './spot-coord.js';
 import {
   recordBulkModify,
   recordMeasureScale,
   beginUndoTransaction,
   endUndoTransaction,
 } from '../core/undo-manager.js';
-import { formatImperialLength, imperialOr } from '../../markset/us-units.js'; // Markset
+// Markset
+import { formatImperialLength, imperialOr } from '../../markset/us-units.js';
 
 // Scale calibration: pixels per unit
 // Priority: scaleRegion (innermost containing point) → viewport annotation →
@@ -25,6 +32,13 @@ import { formatImperialLength, imperialOr } from '../../markset/us-units.js'; //
 // The point-bound part of that order lives in schaal-op-punt.js (via
 // getScaleForPoint), shared with the light scale bridges.
 export function getMeasureScale(pageNum, x, y) {
+  return findMeasureScale(pageNum, x, y) || { pixelsPerUnit: 1, unit: 'mm' };
+}
+
+// Dezelfde opzoeking als getMeasureScale, maar null als er nergens een schaal
+// is in plaats van de terugval op 1 punt per mm. Voor wie dan gewoon punten
+// toont, zoals de lengte in de tooltip bij het slepen van een greep.
+export function findMeasureScale(pageNum, x, y) {
   // 1. Check scaleRegion (innermost) — highest priority when a point is given
   if (pageNum != null && x != null && y != null) {
     const regionScale = getScaleFromRegion(pageNum, x, y);
@@ -43,8 +57,8 @@ export function getMeasureScale(pageNum, x, y) {
   }
   // 2. Per-document scale
   const doc = getActiveDocument();
-  const docScale = doc?.measureScale;
-  if (docScale && docScale.pixelsPerUnit > 0) {
+  const docScale = documentSchaalOpPagina(doc, pageNum ?? doc?.currentPage);
+  if (docScale) {
     return { pixelsPerUnit: docScale.pixelsPerUnit, unit: docScale.unit || 'mm' };
   }
   // 3. Legacy global preference
@@ -52,7 +66,7 @@ export function getMeasureScale(pageNum, x, y) {
   if (ms && ms.pixelsPerUnit > 0) {
     return { pixelsPerUnit: ms.pixelsPerUnit, unit: ms.unit || 'mm' };
   }
-  return { pixelsPerUnit: 1, unit: 'mm' };
+  return null;
 }
 
 // Snap an endpoint so that the distance from (fromX,fromY) to the result
@@ -122,6 +136,74 @@ export function calculateArea(points, holes, pageNum) {
     unit: scale.unit + '\u00B2',
     pixels: area
   };
+}
+
+// ── Meetvlak: eigen schaal en zijdematen (GitHub #536) ────────────────────
+//
+// Een meetvlak kan een EIGEN schaal hebben (measureScale, eenheden per punt,
+// in de lengte-eenheid van measureUnit). Zonder eigen schaal geldt de schaal
+// op het zwaartepunt van de punten, precies zoals calculateArea hem opzoekt.
+// De oppervlaktetekst en de zijdematen rekenen met dezelfde lengteschaal.
+
+function zwaartepunt(points) {
+  let x = 0, y = 0;
+  for (const p of points) { x += p.x; y += p.y; }
+  return { x: x / points.length, y: y / points.length };
+}
+
+/**
+ * De lengteschaal van een meetvlak: { perPt (eenheden per punt), unit }.
+ * Een eigen schaal wint; anders de schaal op het zwaartepunt.
+ */
+export function vlakLengteSchaal(ann) {
+  const eigen = Number(ann?.measureScale);
+  if (eigen > 0) return { perPt: eigen, unit: lengteEenheid(ann.measureUnit) || 'mm' };
+  const points = ann?.points || [];
+  let scale;
+  if (ann?.page != null && points.length > 0) {
+    const c = zwaartepunt(points);
+    scale = getMeasureScale(ann.page, c.x, c.y);
+  } else {
+    scale = getMeasureScale();
+  }
+  return { perPt: 1 / scale.pixelsPerUnit, unit: scale.unit || 'mm' };
+}
+
+/** De oppervlakte van een meetvlak ({ value, unit, pixels }), met zijn eigen schaal. */
+export function vlakMeting(ann) {
+  // Zonder eigen schaal: precies calculateArea, zodat bestaande vlakken
+  // dezelfde waarde houden als voorheen.
+  if (!ann?.points || ann.points.length < 3 || !(Number(ann.measureScale) > 0)) {
+    return calculateArea(ann?.points, ann?.holes, ann?.page);
+  }
+  const { perPt, unit } = vlakLengteSchaal(ann);
+  const pixels = nettoVlakOppervlak(ann.points, ann.holes);
+  return { value: pixels * perPt * perPt, unit: unit + '²', pixels };
+}
+
+/**
+ * Tekst, waarde en eenheid van een meetvlak opnieuw uit zijn punten en zijn
+ * (eigen of document-)schaal. Eén routine voor het eigenschappenpaneel, het
+ * verslepen van hoekpunten en het toevoegen van een gat.
+ */
+export function herberekenVlakMaat(ann) {
+  if (!ann?.points || ann.points.length < 3) return;
+  const meting = vlakMeting(ann);
+  ann.measureText = formatMeasurement(meting);
+  ann.measureValue = meting.value;
+  ann.measureUnit = meting.unit;
+}
+
+/**
+ * De zijdematen van een meetvlak: elke rechte zijde van de buitenring
+ * (vlak-zijden.js) met haar lengte als tekst, in dezelfde schaal, eenheid en
+ * afronding als de oppervlaktetekst (formatMeasurement).
+ */
+export function vlakZijdeTeksten(ann) {
+  const zijden = vlakZijden(ann?.points);
+  if (zijden.length === 0) return [];
+  const { perPt, unit } = vlakLengteSchaal(ann);
+  return zijden.map((z) => ({ ...z, tekst: formatMeasurement({ value: z.lengte * perPt, unit }) }));
 }
 
 // Calculate perimeter of a polyline
@@ -316,8 +398,20 @@ export function recalculateAllMeasurements() {
   }
 }
 
+/**
+ * Spot Coord-label opnieuw opbouwen uit de plek van het beginpunt, met de
+ * schaal die daar geldt (zoals het gereedschap hem maakte). Geen lengte.
+ */
+export function syncSpotCoord(ann) {
+  const scale = getMeasureScale(ann.page, ann.startX, ann.startY);
+  ann.measureText = spotCoordTekst(ann.startX, ann.startY, scale);
+  ann.measureUnit = scale.unit;
+}
+
 function recalculateMeasurementsIn(doc) {
   for (const ann of doc.annotations) {
+    // Spot Coord: coördinaten, geen lengte (zie spot-coord.js).
+    if (isSpotCoord(ann)) { syncSpotCoord(ann); continue; }
     const pt = getAnnotationPoint(ann);
     const scale = getMeasureScale(pt.page, pt.x, pt.y);
 
@@ -361,12 +455,12 @@ function recalculateMeasurementsIn(doc) {
   }
 }
 
-// LocalStorage key for per-document scale persistence
+// Naam in de browseropslag (core/opslag.js) voor de schaal per document
 function scaleStorageKey(filePath) {
   return 'ops_measureScale_' + filePath;
 }
 
-// Save the measure scale of the given (or active) document to localStorage.
+// Save the measure scale of the given (or active) document to browser storage.
 // A caller that works on a specific document (loadPDF, also for background
 // tabs) must pass it, or the scale of the tab in front is what gets stored.
 export function saveDocumentScale(doc) {
@@ -375,21 +469,21 @@ export function saveDocumentScale(doc) {
   const ms = doc.measureScale;
   if (ms) {
     try {
-      localStorage.setItem(scaleStorageKey(doc.filePath), JSON.stringify(ms));
+      schrijfOpslagJson(scaleStorageKey(doc.filePath), ms);
     } catch { /* quota exceeded or private mode */ }
   } else {
-    localStorage.removeItem(scaleStorageKey(doc.filePath));
+    verwijderOpslag(scaleStorageKey(doc.filePath));
   }
 }
 
-// Load measure scale from localStorage into the given (or active) document
+// Load measure scale from browser storage into the given (or active) document
 export function loadDocumentScale(doc) {
   if (!doc) doc = getActiveDocument();
   if (!doc || !doc.filePath) return;
   try {
-    const raw = localStorage.getItem(scaleStorageKey(doc.filePath));
-    if (raw) {
-      doc.measureScale = mergeStoredScale(JSON.parse(raw), doc.measureScale); // Markset: keep calibrations read from the PDF
+    const opgeslagen = leesOpslagJson(scaleStorageKey(doc.filePath));
+    if (opgeslagen) {
+      doc.measureScale = mergeStoredScale(opgeslagen, doc.measureScale); // Markset: keep calibrations read from the PDF
     }
   } catch { /* corrupted data */ }
 }

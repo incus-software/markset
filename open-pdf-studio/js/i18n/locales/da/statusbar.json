@@ -11,6 +11,7 @@
     "box": "Rektangel",
     "polygon": "Polygon",
     "cloud": "Sky",
+    "cloudPolyline": "Skypolylinje",
     "polyline": "Polylinje",
     "textbox": "Tekstboks",
     "callout": "Billedtekst",
@@ -27,7 +28,9 @@
     "formTextField": "Formulartekstfelt",
     "formCheckbox": "Formularafkrydsningsfelt",
     "formRadio": "Formularalternativknap",
-    "screenshot": "Skærmbillede"
+    "screenshot": "Skærmbillede",
+    "pageLabelPick": "Vælg tekst til sideetiket",
+    "proofread": "Korrektur"
   },
   "toolLabel": "Værktøj:",
   "annotationsLabel": "Annotationer:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Dette dokument indeholder interaktive formularfelter. Du kan udfylde formularen og gemme dine data.",
   "enableEditing": "Aktiver redigering",
   "pdfAConformance": "Dette dokument hævder PDF/A-overensstemmelse.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Filen kunne ikke omdøbes: {{error}}",
+  "renameInvalidChars": "Filnavnet må ikke indeholde:  / : * ? \" < > |",
+  "renameFileExists": "Der findes allerede en fil med dette navn.",
+  "engineTitle": "Gengivelsesmotor, der bruges til den aktuelle visning",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vektor)"
+  },
+  "viewSingle": "Enkelt side",
+  "viewContinuous": "Kontinuerlig",
+  "viewBook": "To sider",
+  "viewFacing": "To sider side om side",
   "viewRotatedTitle": "Visningen er roteret {{degrees}}° med uret; dokumentet er uændret. Klik for at dreje visningen tilbage.",
+  "compareTabTitle": "Sammenlign",
   "filledAreaSketch": {
     "undoPoint": "Fortryd punkt",
     "undoPointTitle": "Fjern seneste punkt (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "B",
   "boxHeightAbbr": "H",
+  "boxSizeHint": "Skriv en værdi + Enter — eller klik udenfor for at anvende",
   "ocr": {
     "progress": {
       "starting": "Genkender tekst...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Resultater ({{count}})",
   "searchResultPage": "Side {{page}}",
   "searchHitsOne": "1 match",
-  "searchHitsMany": "{{count}} match"
+  "searchHitsMany": "{{count}} match",
+  "passwordProtectedBar": "Beskyttet med adgangskode: åbnet skrivebeskyttet.",
+  "documentSearch": {
+    "title": "Søg i dokumenter",
+    "query": "Søgetekst",
+    "scope": "Søg i",
+    "active": "Aktuelt dokument",
+    "open": "Åbne dokumenter",
+    "folder": "Mappe",
+    "choose": "Vælg mappe",
+    "annotations": "Medtag kommentarer",
+    "search": "Søg",
+    "cancel": "Annuller",
+    "stale": "Dokumentet er ændret. Kør søgningen igen.",
+    "folderHint": "Søger direkte i PDF-filer i denne mappe uden at åbne faner eller ændre filer.",
+    "limited": "Resultatgrænsen er nået. Præciser din søgning.",
+    "cancelled": "Søgningen blev annulleret; resultaterne er ufuldstændige.",
+    "ocrHint": "Ingen søgbar tekst på siderne {{pages}}. Åbn dokumentet, og kør OCR eksplicit, hvis det er nødvendigt.",
+    "status": {
+      "searching": "Søger",
+      "complete": "Fuldført",
+      "needs_ocr": "Indeholder sider uden søgbar tekst",
+      "encrypted": "Adgangskode påkrævet",
+      "unreadable": "Kunne ikke søge",
+      "changed": "Dokument ændret; søg igen",
+      "cancelled": "Annulleret",
+      "limited": "Resultatgrænse nået"
+    },
+    "failed": "Søgningen mislykkedes. Kontrollér forespørgslen og mappen, og prøv igen.",
+    "prepareOcr": "Åbn til OCR…"
+  },
+  "symbolSearch": "Find symboler",
+  "findMoreOptions": "Flere søgeindstillinger",
+  "watchActive": "Overvåger {{folder}}",
+  "watchFailed": "Overvågningsfejl: {{folder}}",
+  "watchTitle": "Dokumentarbejdsgangen overvåger {{input}} og skriver til {{output}}. Klik for at stoppe overvågningen.",
+  "renderDiagnostics": {
+    "title": "Gå til næste gengivelsesfund. Ingen fund garanterer ikke en fuldstændig gengivelse.",
+    "count": "Gengivelsesfund: {{count}}",
+    "detail": "Side {{page}}: {{code}}. Prøv en lavere zoom, eller åbn dokumentet igen; fuldstændigheden er ikke garanteret."
+  },
+  "mcpSignal": {
+    "label": "AI-forbindelse (MCP)",
+    "connected": "AI-assistent forbundet",
+    "idle": "MCP-server tændt, inaktiv",
+    "off": "MCP-server slukket",
+    "port": "Port: {{port}}",
+    "lastTool": "Seneste værktøj: {{tool}} kl. {{time}}",
+    "noTool": "Ingen værktøjskald endnu"
+  }
 }

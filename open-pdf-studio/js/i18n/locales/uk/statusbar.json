@@ -11,6 +11,7 @@
     "box": "Прямокутник",
     "polygon": "Багатокутник",
     "cloud": "Хмара",
+    "cloudPolyline": "Хмарна полілінія",
     "polyline": "Полілінія",
     "textbox": "Текстове поле",
     "callout": "Виноска",
@@ -27,7 +28,9 @@
     "formTextField": "Текстове поле форми",
     "formCheckbox": "Прапорець форми",
     "formRadio": "Перемикач форми",
-    "screenshot": "Знімок екрана"
+    "screenshot": "Знімок екрана",
+    "pageLabelPick": "Вибір тексту для мітки сторінки",
+    "proofread": "Коректура"
   },
   "toolLabel": "Інструмент:",
   "annotationsLabel": "Анотації:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Цей документ містить інтерактивні поля форми. Ви можете заповнити форму та зберегти дані.",
   "enableEditing": "Увімкнути редагування",
   "pdfAConformance": "Цей документ заявляє про відповідність PDF/A.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Не вдалося перейменувати файл: {{error}}",
+  "renameInvalidChars": "Ім'я файлу не може містити  / : * ? \" < > |",
+  "renameFileExists": "Файл із такою назвою вже існує.",
+  "engineTitle": "Рушій візуалізації для поточного перегляду",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (вектор)"
+  },
+  "viewSingle": "Одна сторінка",
+  "viewContinuous": "Безперервний",
+  "viewBook": "Дві сторінки",
+  "viewFacing": "Дві сторінки поруч",
   "viewRotatedTitle": "Вигляд повернуто на {{degrees}}° за годинниковою стрілкою; документ не змінено. Натисніть, щоб повернути вигляд.",
+  "compareTabTitle": "Порівняння",
   "filledAreaSketch": {
     "undoPoint": "Скасувати точку",
     "undoPointTitle": "Видалити останню точку (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "Ш",
   "boxHeightAbbr": "В",
+  "boxSizeHint": "Введіть значення + Enter — або клацніть поза полем, щоб застосувати",
   "ocr": {
     "progress": {
       "starting": "Розпізнавання тексту...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Результати ({{count}})",
   "searchResultPage": "Сторінка {{page}}",
   "searchHitsOne": "1 збіг",
-  "searchHitsMany": "Збігів: {{count}}"
+  "searchHitsMany": "Збігів: {{count}}",
+  "passwordProtectedBar": "Захищено паролем: відкрито лише для читання.",
+  "documentSearch": {
+    "title": "Пошук у документах",
+    "query": "Текст для пошуку",
+    "scope": "Шукати в",
+    "active": "Поточний документ",
+    "open": "Відкриті документи",
+    "folder": "Папка",
+    "choose": "Вибрати папку",
+    "annotations": "Включно з коментарями",
+    "search": "Знайти",
+    "cancel": "Скасувати",
+    "stale": "Документ змінився. Виконайте пошук знову.",
+    "folderHint": "Шукає PDF-файли безпосередньо в цій папці, не відкриваючи вкладок і не змінюючи файлів.",
+    "limited": "Досягнуто ліміту результатів. Уточніть запит.",
+    "cancelled": "Пошук скасовано; результати неповні.",
+    "ocrHint": "Немає тексту для пошуку на сторінках {{pages}}. За потреби відкрийте документ і явно виконайте OCR.",
+    "status": {
+      "searching": "Пошук",
+      "complete": "Готово",
+      "needs_ocr": "Містить сторінки без тексту для пошуку",
+      "encrypted": "Потрібен пароль",
+      "unreadable": "Не вдалося виконати пошук",
+      "changed": "Документ змінився; повторіть пошук",
+      "cancelled": "Скасовано",
+      "limited": "Досягнуто ліміту результатів"
+    },
+    "failed": "Пошук не вдався. Перевірте запит і папку, а потім повторіть.",
+    "prepareOcr": "Відкрити для OCR…"
+  },
+  "symbolSearch": "Знайти символи",
+  "findMoreOptions": "Додаткові параметри пошуку",
+  "watchActive": "Стеження: {{folder}}",
+  "watchFailed": "Помилка стеження: {{folder}}",
+  "watchTitle": "Робочий процес документів стежить за {{input}} і записує в {{output}}. Натисніть, щоб зупинити стеження.",
+  "renderDiagnostics": {
+    "title": "Перейти до наступного зауваження відтворення. Відсутність зауважень не гарантує повного відтворення.",
+    "count": "Зауваження відтворення: {{count}}",
+    "detail": "Сторінка {{page}}: {{code}}. Спробуйте менший масштаб або відкрийте документ знову; повнота не гарантується."
+  },
+  "mcpSignal": {
+    "label": "Підключення ШІ (MCP)",
+    "connected": "ШІ-асистента підключено",
+    "idle": "Сервер MCP увімкнено, без активності",
+    "off": "Сервер MCP вимкнено",
+    "port": "Порт: {{port}}",
+    "lastTool": "Останній інструмент: {{tool}} о {{time}}",
+    "noTool": "Викликів інструментів ще немає"
+  }
 }

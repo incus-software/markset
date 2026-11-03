@@ -330,6 +330,15 @@
   height: 14px;
 }
 
+/* Rotate arrows read poorly at 14px; use the full icon slot */
+#rotate-left .ribbon-btn-icon svg,
+#rotate-right .ribbon-btn-icon svg,
+#view-rotate-left .ribbon-btn-icon svg,
+#view-rotate-right .ribbon-btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
 .ribbon-btn.small .ribbon-btn-label {
   font-size: 11px;
   text-align: left;
@@ -631,12 +640,26 @@
   min-width: 60px;
 }
 
+/* De laagkeuze op Opmaak (#865) toont namen van de gebruiker en van de
+   tekening: een lange naam mag het lint niet breder maken. */
+#fmt-layer {
+  max-width: 140px;
+}
+
 /* Themed dropdown list: WebView2/Chromium render the popup with the OS
    default unless the option colours are set explicitly, which looked wrong
-   (light popup) on dark themes. */
-.ribbon-form-select option {
-  background: var(--theme-ribbon-input-bg);
+   (light popup) on dark themes. De optie-achtergrond moet dekkend zijn: in
+   het standaardthema is --theme-ribbon-input-bg bijna doorzichtig, en dan
+   kwam de lichte tekst op de witte ondergrond van de lijst (#825). */
+.ribbon-form-select option,
+.ribbon-form-select optgroup {
+  background-color: var(--theme-ribbon-content-bg);
   color: var(--theme-ribbon-input-text);
+}
+
+/* Donkere thema's: ook de lijst zelf (schuifbalk, rand) donker. */
+[data-theme]:not([data-theme="light"]) .ribbon-form-select {
+  color-scheme: dark;
 }
 
 .ribbon-form-select-sm {
@@ -803,9 +826,9 @@
 
 .ribbon-split-btn-menu {
   display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
+  /* fixed: buiten de klip van .ribbon-groups-adaptive; top/left zet
+     ribbon-popup.js (#617). */
+  position: fixed;
   z-index: 1000;
   background: var(--theme-ribbon-content-bg);
   border: 1px solid var(--theme-ribbon-btn-hover-border);
@@ -840,6 +863,21 @@
 .ribbon-split-btn-menu-item svg {
   stroke: var(--theme-ribbon-icon-stroke);
   flex-shrink: 0;
+}
+
+/* Gekozen keuze in een splitknopmenu (bv. View > Split, #715). */
+.ribbon-split-btn-menu-item.active {
+  background: var(--theme-ribbon-btn-active-bg, var(--theme-ribbon-btn-hover));
+  font-weight: 600;
+}
+
+.ribbon-split-btn-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ribbon-split-btn-menu-item:disabled:hover {
+  background: none;
 }
 
 /* Ribbon dropdown */
@@ -961,9 +999,9 @@
 
 .ribbon-menu-dropdown {
   display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
+  /* fixed: buiten de klip van .ribbon-groups-adaptive; top/left zet
+     ribbon-popup.js (#617). */
+  position: fixed;
   z-index: 1000;
   background: var(--theme-surface, #fff);
   border: 1px solid var(--theme-border, #ccc);
@@ -1025,9 +1063,10 @@
 
 .ribbon-style-more-popup {
   display: none;
-  position: absolute;
-  top: 100%;
-  right: 0;
+  /* fixed: buiten de klip van .ribbon-groups-adaptive (anders alleen de
+     eerste rij, de rest achter de documenttabs); top/left zet
+     ribbon-popup.js (#617). */
+  position: fixed;
   z-index: 1000;
   background: var(--theme-surface, #fff);
   border: 1px solid var(--theme-border, #ccc);
@@ -1175,17 +1214,21 @@
   border-color: var(--theme-border, #ccc);
 }
 
-.measure-status-success {
+/* De statustinten van extensietabbladen (#551) gebruiken dezelfde kleuren. */
+.measure-status-success,
+.ribbon-ext-tone-success {
   font-size: 9px;
   color: #16a34a;
 }
 
-.measure-status-error {
+.measure-status-error,
+.ribbon-ext-tone-error {
   font-size: 9px;
   color: #dc2626;
 }
 
-.measure-status-warning {
+.measure-status-warning,
+.ribbon-ext-tone-warning {
   font-size: 9px;
   color: var(--theme-accent, #d97706);
 }
@@ -1232,9 +1275,9 @@
 
 .theme-picker-dropdown {
   display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
+  /* fixed: buiten de klip van .ribbon-groups-adaptive; top/left zet
+     ribbon-popup.js (#617). */
+  position: fixed;
   z-index: 1000;
   min-width: 170px;
   border: 1px solid var(--theme-ribbon-input-border, #d4d4d4);
@@ -1492,3 +1535,144 @@
   flex: 0 0 auto;
 }
 .ribbon-checkbox-option span { cursor: pointer; }
+
+/* ─── Linttabbladen van extensies (#551) ───────────────────────────────────
+   De host tekent extensietabbladen met de bestaande lintklassen; hier alleen
+   de aanvullingen. Uitsluitend themavariabelen, geen eigen kleuren. */
+
+.ribbon-ext-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.ribbon-ext-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  max-width: 120px;
+}
+.ribbon-ext-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ribbon-ext-tab-icon {
+  display: inline-flex;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+}
+.ribbon-ext-tab-icon svg { width: 12px; height: 12px; }
+.ribbon-ext-tab-verborgen { display: none !important; }
+
+.ribbon-ext-more {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 0 1px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: var(--theme-ribbon-text);
+}
+.ribbon-ext-more:hover,
+.ribbon-ext-more.open {
+  background: var(--theme-ribbon-btn-hover);
+  border-color: var(--theme-ribbon-btn-hover-border);
+}
+
+.ribbon-ext-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 2px;
+  min-width: 140px;
+}
+.ribbon-ext-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 3px 8px;
+  font-size: 12px;
+  text-align: start;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: var(--theme-ribbon-text);
+}
+.ribbon-ext-menu-item:hover,
+.ribbon-ext-menu-item:focus-visible {
+  background: var(--theme-ribbon-btn-hover);
+  border-color: var(--theme-ribbon-btn-hover-border);
+  outline: none;
+}
+.ribbon-ext-menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ribbon-ext-kolom {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-self: stretch;
+  gap: 2px;
+  padding: 0 2px;
+}
+.ribbon-ext-row { height: 22px; }
+.ribbon-ext-status-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+/* De andere tinten staan bij .measure-status-* hierboven. */
+.ribbon-ext-tone-neutral { color: var(--theme-ribbon-input-text); }
+.ribbon-ext-fout {
+  align-self: center;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--theme-ribbon-text);
+}
+
+/* Toetsenbordfocus in de tabstrook en op extensie-items. */
+.ribbon-tabs .ribbon-tab:focus-visible,
+.ribbon-ext-more:focus-visible,
+.ribbon-ext-content .ribbon-btn:focus-visible,
+.ribbon-ext-content .ribbon-form-select:focus-visible {
+  outline: 1px solid var(--theme-ribbon-tab-active-border);
+  outline-offset: -1px;
+}
+
+/* Object-snap-modi in de lintgroep 'Snap': meesterschakelaar boven,
+   daaronder twee kolommen met de vinkjes — compact genoeg voor één groep. */
+.ribbon-snap-options {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 10px;
+  align-content: center;
+  align-self: center;
+  height: 100%;
+  padding: 2px 0;
+}
+.ribbon-snap-options .snap-master {
+  grid-column: 1 / -1;
+  font-weight: 600;
+}
+.ribbon-checkbox-option input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

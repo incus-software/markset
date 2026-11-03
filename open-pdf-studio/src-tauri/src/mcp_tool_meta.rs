@@ -52,18 +52,44 @@ pub const TOOLS: &[ToolMeta] = &[
     lees("app_clear_selection", "Clear selection"),
     // Opvragen.
     lees("app_screenshot_view", "Capture page view"),
+    // Writes a file only when a path is given; never changes the document.
+    voegt_toe("app_capture_region", "Capture page area as image"),
     lees("app_get_viewport_state", "Get view state"),
     lees("app_get_current_tool", "Get current tool"),
     lees("app_list_annotations", "List annotations"),
     lees("app_get_annotation", "Get annotation"),
     lees("app_list_tabs", "List document tabs"),
     lees("app_get_page_count", "Get page count"),
+    lees("app_search_documents", "Search documents"),
+    wijzigt("app_locations", "Manage spatial locations"),
+    voegt_toe("app_hidden_information", "Inspect and export cleaned copy"),
+    voegt_toe("app_print_preflight", "Inspect print readiness"),
+    wijzigt("app_review_ocr", "Verify OCR text"),
+    // Writes collection components chosen by the client to disk and reads
+    // named local files into a copy.
+    wijzigt("app_portfolio", "Manage PDF collections"),
+    voegt_toe("app_recognize_form", "Recognize form fields"),
+    voegt_toe("app_search_symbols", "Find repeated symbols"),
+    wijzigt("app_workbook_bindings", "Refresh spreadsheet quantities"),
+    // watch starts background automation on a folder; remove deletes saved workflows.
+    wijzigt("app_document_workflows", "Run document workflows"),
+    // import replaces the current set manifest, including its history.
+    wijzigt("app_drawing_sets", "Drawing sets"),
+    voegt_toe("app_sheet_links", "Cross-sheet links"),
+    // receipt, cancel and supersede are irreversible audit events.
+    wijzigt("app_approval_routing", "Approval routing"),
     lees("app_get_page_text", "Read existing page text"),
     lees("app_get_takeoff", "Get quantity take-off"),
     lees("app_list_commands", "List app commands"),
-    lees("app_assistant_history", "Get assistant conversation"),
+    // Leest de interface; wisselt geen linttabblad (#584).
+    lees("app_read_ui", "Read interface state"),
     lees("app_list_printers", "List printers"),
     lees("app_list_layers", "List markup layers"),
+    lees("app_list_system_types", "List system types"),
+    // Opent alleen de editor: de gebruiker past toe of annuleert in de app.
+    lees("app_open_system_type_editor", "Open system type editor"),
+    lees("app_get_system_geometry", "Get system geometry"),
+    lees("app_list_extensions", "List extensions"),
     // Voegt iets toe zonder bestaande gegevens te wijzigen.
     voegt_toe("app_new_blank_pdf", "New blank PDF"),
     voegt_toe("app_create_annotation", "Create annotation"),
@@ -73,29 +99,54 @@ pub const TOOLS: &[ToolMeta] = &[
     voegt_toe("app_place_schedule", "Place quantity schedule"),
     voegt_toe("app_structural_layout", "Set out structural layout"),
     voegt_toe("app_merge_pdf", "Merge PDF files"),
+    voegt_toe("app_insert_blank_pages", "Insert blank pages"),
     voegt_toe("app_import_cad", "Import CAD drawing"),
     voegt_toe("app_symbol_scale", "Symbol placement scale"),
-    voegt_toe("app_assistant_ask", "Ask assistant"),
-    voegt_toe("app_assistant_pending", "Take pending assistant question"),
-    voegt_toe("app_assistant_answer", "Answer assistant question"),
+    // Agenttaken (#556): verandert alleen de taakwachtrij; een resultaat is een
+    // voorstel dat de extensie zelf toepast.
+    voegt_toe("app_agent_task_pending", "Take pending agent task"),
+    voegt_toe("app_agent_task_result", "Answer agent task"),
     voegt_toe("app_mouse_move", "Move pointer"),
     voegt_toe("app_scroll", "Scroll"),
+    // Herladen verliest geen gegevens: dezelfde extensie draait daarna opnieuw.
+    voegt_toe("app_reload_extension", "Reload extension"),
     // Wijzigt of verwijdert bestaande inhoud, of schrijft een bestand.
     wijzigt("app_update_annotation", "Update annotation"),
     wijzigt("app_set_layer", "Change markup layer"),
+    wijzigt("app_update_system_type", "Update system type"),
+    // Een extensieopdracht kan bestaande inhoud wijzigen (#575); de eigen
+    // ext_-tools krijgen hun hints van de opdracht zelf (mcp_extensie_tools.rs).
+    wijzigt("app_call_extension_command", "Run extension command"),
+    // Registreren kan een bestaande, onbewerkte mcp:-definitie vervangen en
+    // alle systemen met dat type hertekenen: dat wijzigt bestaande gegevens.
+    wijzigt("app_register_system_type", "Register system type"),
+    // Installeren kan een bestaande installatie vervangen (#550).
+    wijzigt("app_install_extension", "Install extension"),
     wijzigt("app_delete_annotation", "Delete annotation"),
     wijzigt("app_undo", "Undo"),
     wijzigt("app_redo", "Redo"),
     wijzigt("app_close_tab", "Close document tab"),
     wijzigt("app_save_pdf", "Save PDF"),
     wijzigt("app_replace_text", "Replace existing page text"),
+    wijzigt("app_translate_page", "Replace page text in bulk"),
     wijzigt("app_export_cad", "Export to CAD drawing"),
+    wijzigt("app_export_ifcx", "Export to IFCX (beta)"),
     // Afdrukken laat het document ongemoeid, maar is geen leesactie: de ene
     // schrijft een bestand dat een bestaand bestand kan overschrijven, de
     // andere laat papier uit een printer komen. Allebei onomkeerbaar buiten de
     // app, dus wijzigt (destructiveHint) — Claude vraagt er altijd voor.
     wijzigt("app_print_to_pdf", "Print to PDF file"),
     wijzigt("app_print", "Print to printer"),
+    // Paginabewerkingen: wijzigen of verwijderen bestaande pagina's; uitnemen
+    // schrijft een bestand dat de client kiest.
+    wijzigt("app_rotate_pages", "Rotate pages"),
+    wijzigt("app_delete_pages", "Delete pages"),
+    wijzigt("app_extract_pages", "Extract pages to a new file"),
+    wijzigt("app_reorder_pages", "Reorder pages"),
+    wijzigt("app_shift_pages", "Shift page content"),
+    // delete en remove verwijderen bestaande bladwijzers en watermerken.
+    wijzigt("app_bookmarks", "Manage bookmarks"),
+    wijzigt("app_watermarks", "Manage watermarks and headers/footers"),
     wijzigt("app_set_measure_scale", "Set measurement scale"),
     wijzigt("app_snippet_flatten", "Flatten vector snippet"),
     wijzigt("app_titleblock", "Fill title block"),
@@ -120,7 +171,6 @@ pub const TOOLS: &[ToolMeta] = &[
     ontwikkel("screenshot_page", "Render test page", true),
     ontwikkel("screenshot_all", "Render all test pages", true),
     ontwikkel("get_pdf_metadata", "Read test PDF metadata", true),
-    ontwikkel("app_ai_complete", "Ask OpenAEC AI", false),
     ontwikkel("app_accounts_status", "OpenAEC sign-in state", true),
     ontwikkel("app_accounts_fetch", "OpenAEC account API call", false),
 ];

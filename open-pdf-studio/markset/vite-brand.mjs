@@ -10,7 +10,6 @@
 // not rewritten.
 
 import { resolve, relative } from 'node:path';
-import { applyTranslations, ASSISTANT_EN } from './translations/assistant-en.js';
 
 export const UPSTREAM_NAME = /Open PDF Studio/g;
 export const PRODUCT_NAME = 'Markset';
@@ -35,8 +34,7 @@ export function shouldBrand(id, ownDir) {
 
 /**
  * The upstream file's path from open-pdf-studio/ ("js/…") for a module id,
- * or null outside it. Used to look up English text for files that have
- * Dutch written into the code (markset/translations/).
+ * or null outside it.
  */
 export function upstreamRelPath(id, root) {
   const rel = slashes(relative(root, slashes(id).replace(/\?.*$/, '')));
@@ -55,9 +53,7 @@ export function marksetBrand() {
     },
     transform(code, id) {
       if (!shouldBrand(id, ownDir)) return null;
-      const rel = upstreamRelPath(id, root);
-      // English text first: the pairs match upstream's source as written.
-      let out = rel && ASSISTANT_EN[rel] ? applyTranslations(code, rel) : code;
+      let out = code;
       if (out.includes('Open PDF Studio')) out = out.replace(UPSTREAM_NAME, PRODUCT_NAME);
       return out === code ? null : { code: out, map: null };
     },

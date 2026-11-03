@@ -9,7 +9,7 @@ export default function BehaviorTab(props) {
         <legend>{t('behavior.snapping')}</legend>
         <div class="pref-row">
           <label>{t('behavior.angleSnap')}</label>
-          <input type="number" min="1" max="90" value={p.angleSnapDegrees[0]()} onInput={e => p.angleSnapDegrees[1](parseInt(e.target.value) || 30)} />
+          <input type="text" inputmode="decimal" data-getal min="1" max="90" value={p.angleSnapDegrees[0]()} onInput={e => p.angleSnapDegrees[1](parseInt(e.target.value) || 30)} />
         </div>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">
@@ -19,7 +19,7 @@ export default function BehaviorTab(props) {
         </div>
         <div class="pref-row">
           <label>{t('behavior.gridSize')}</label>
-          <input type="number" min="5" max="100" value={p.gridSize[0]()} onInput={e => p.gridSize[1](parseInt(e.target.value) || 10)} />
+          <input type="text" inputmode="decimal" data-getal min="5" max="100" value={p.gridSize[0]()} onInput={e => p.gridSize[1](parseInt(e.target.value) || 10)} />
         </div>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">
@@ -45,11 +45,11 @@ export default function BehaviorTab(props) {
         </div>
         <div class="pref-row">
           <label>{t('behavior.polarIncrement') || 'Polar increment (°)'}</label>
-          <input type="number" min="1" max="180" step="1" value={p.polarIncrement[0]()} onInput={e => p.polarIncrement[1](parseFloat(e.target.value) || 45)} disabled={!p.polarTrackingEnabled[0]()} />
+          <input type="text" inputmode="decimal" data-getal min="1" max="180" step="1" value={p.polarIncrement[0]()} onInput={e => p.polarIncrement[1](parseFloat(e.target.value) || 45)} disabled={!p.polarTrackingEnabled[0]()} />
         </div>
         <div class="pref-row">
           <label>{t('behavior.polarTolerance') || 'Polar tolerance (°)'}</label>
-          <input type="number" min="0.5" max="15" step="0.5" value={p.polarTolerance[0]()} onInput={e => p.polarTolerance[1](parseFloat(e.target.value) || 3)} disabled={!p.polarTrackingEnabled[0]()} />
+          <input type="text" inputmode="decimal" data-getal min="0.5" max="15" step="0.5" value={p.polarTolerance[0]()} onInput={e => p.polarTolerance[1](parseFloat(e.target.value) || 3)} disabled={!p.polarTrackingEnabled[0]()} />
         </div>
       </fieldset>
 
@@ -77,6 +77,18 @@ export default function BehaviorTab(props) {
           <label class="pref-checkbox-label">
             <input type="checkbox" checked={p.snapToCenters[0]()} onChange={e => p.snapToCenters[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
             <span>{t('behavior.snapToCenters')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.snapToVertices[0]()} onChange={e => p.snapToVertices[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+            <span>{t('behavior.snapToVertices')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.snapToStartPoints[0]()} onChange={e => p.snapToStartPoints[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+            <span>{t('behavior.snapToStartPoints')}</span>
           </label>
         </div>
         <div class="pref-row pref-checkbox-row">
@@ -117,13 +129,38 @@ export default function BehaviorTab(props) {
         </div>
         <div class="pref-row">
           <label>{t('behavior.objectSnapRadius')}</label>
-          <input type="number" min="5" max="30" value={p.objectSnapRadius[0]()} onInput={e => p.objectSnapRadius[1](parseInt(e.target.value) || 12)} disabled={!p.enableObjectSnap[0]()} />
+          <input type="text" inputmode="decimal" data-getal min="5" max="30" value={p.objectSnapRadius[0]()} onInput={e => p.objectSnapRadius[1](parseInt(e.target.value) || 12)} disabled={!p.enableObjectSnap[0]()} />
         </div>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">
             <input type="checkbox" checked={p.snapToPdfContent[0]()} onChange={e => p.snapToPdfContent[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
             <span>{t('behavior.snapToPdfContent')}</span>
           </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="pref-fieldset">
+        <legend>{t('behavior.moveInference')}</legend>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.moveInferenceTracking[0]()} onChange={e => p.moveInferenceTracking[1](e.target.checked)} />
+            <span>{t('behavior.moveInferenceTracking')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.moveInferenceExtension[0]()} onChange={e => p.moveInferenceExtension[1](e.target.checked)} />
+            <span>{t('behavior.moveInferenceExtension')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.moveInferenceParallel[0]()} onChange={e => p.moveInferenceParallel[1](e.target.checked)} />
+            <span>{t('behavior.moveInferenceParallel')}</span>
+          </label>
+        </div>
+        <div class="pref-row">
+          <span class="pref-hint">{t('behavior.moveInferenceHint')}</span>
         </div>
       </fieldset>
 
@@ -161,6 +198,18 @@ export default function BehaviorTab(props) {
           <label class="pref-checkbox-label">
             <input type="checkbox" checked={p.wheelZoomWithoutCtrl[0]()} onChange={e => p.wheelZoomWithoutCtrl[1](e.target.checked)} />
             <span>{t('behavior.wheelZoomWithoutCtrl') || 'Zoomen met muiswiel (zonder Ctrl)'}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.middleDoubleClickFit[0]()} onChange={e => p.middleDoubleClickFit[1](e.target.checked)} />
+            <span>{t('behavior.middleDoubleClickFit')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" id="pref-ribbon-wheel-tabs" checked={p.ribbonWheelSwitchesTabs[0]()} onChange={e => p.ribbonWheelSwitchesTabs[1](e.target.checked)} />
+            <span>{t('behavior.ribbonWheelSwitchesTabs')}</span>
           </label>
         </div>
       </fieldset>

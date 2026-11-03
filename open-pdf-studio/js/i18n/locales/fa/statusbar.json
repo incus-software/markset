@@ -11,6 +11,7 @@
     "box": "مستطیل",
     "polygon": "چندضلعی",
     "cloud": "ابر",
+    "cloudPolyline": "چندخطی ابری",
     "polyline": "چندخطی",
     "textbox": "کادر متن",
     "callout": "فراخوان",
@@ -27,7 +28,9 @@
     "formTextField": "فیلد متنی فرم",
     "formCheckbox": "کادر انتخاب فرم",
     "formRadio": "دکمه رادیویی فرم",
-    "screenshot": "تصویر از صفحه"
+    "screenshot": "تصویر از صفحه",
+    "pageLabelPick": "انتخاب متن برای برچسب صفحه",
+    "proofread": "نمونه‌خوانی"
   },
   "toolLabel": "ابزار:",
   "annotationsLabel": "حاشیه‌نویسی‌ها:",
@@ -36,6 +39,7 @@
   "previousPage": "صفحه قبلی",
   "nextPage": "صفحه بعدی",
   "lastPage": "صفحه آخر",
+  "page": "صفحه",
   "zoomOut": "کوچک‌نمایی",
   "zoomIn": "بزرگ‌نمایی",
   "noDocumentsOpen": "هیچ سندی باز نیست",
@@ -51,14 +55,21 @@
   "formFieldsMessage": "این سند حاوی فیلدهای فرم تعاملی است. می‌توانید فرم را پر کنید و داده‌های خود را ذخیره کنید.",
   "enableEditing": "فعال‌سازی ویرایش",
   "pdfAConformance": "این سند ادعای انطباق با PDF/A را دارد.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "تغییر نام فایل ناموفق بود: {{error}}",
+  "renameInvalidChars": "نام فایل نمی‌تواند شامل  / : * ? \" < > | باشد",
+  "renameFileExists": "فایلی با این نام از قبل وجود دارد.",
+  "engineTitle": "موتور رندر مورد استفاده برای نمای فعلی",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (برداری)"
+  },
+  "viewSingle": "تک صفحه",
+  "viewContinuous": "پیوسته",
+  "viewBook": "دو صفحه",
+  "viewFacing": "دو صفحه کنار هم",
   "viewRotatedTitle": "نما {{degrees}}° در جهت عقربه‌های ساعت چرخیده است؛ سند تغییری نکرده است. برای برگرداندن نما کلیک کنید.",
+  "compareTabTitle": "مقایسه",
   "filledAreaSketch": {
     "undoPoint": "واگرد نقطه",
     "undoPointTitle": "حذف آخرین نقطه (Backspace)",
@@ -81,6 +92,7 @@
   },
   "boxWidthAbbr": "ع",
   "boxHeightAbbr": "ا",
+  "boxSizeHint": "یک مقدار وارد کنید + Enter — یا برای اعمال، بیرون کلیک کنید",
   "ocr": {
     "progress": {
       "starting": "در حال تشخیص متن...",
@@ -96,5 +108,54 @@
   "searchResultsTitle": "نتایج ({{count}})",
   "searchResultPage": "صفحه {{page}}",
   "searchHitsOne": "1 مورد",
-  "searchHitsMany": "{{count}} مورد"
+  "searchHitsMany": "{{count}} مورد",
+  "passwordProtectedBar": "محافظت‌شده با رمز عبور: به‌صورت فقط‌خواندنی باز شد.",
+  "documentSearch": {
+    "title": "جستجوی اسناد",
+    "query": "متن جستجو",
+    "scope": "جستجو در",
+    "active": "سند جاری",
+    "open": "اسناد باز",
+    "folder": "پوشه",
+    "choose": "انتخاب پوشه",
+    "annotations": "شامل نظرات",
+    "search": "جستجو",
+    "cancel": "لغو",
+    "stale": "سند تغییر کرده است. جستجو را دوباره اجرا کنید.",
+    "folderHint": "فایل‌های PDF را مستقیماً در این پوشه جستجو می‌کند، بدون باز کردن زبانه یا تغییر فایل‌ها.",
+    "limited": "به سقف نتایج رسیدید. جستجوی خود را دقیق‌تر کنید.",
+    "cancelled": "جستجو لغو شد؛ نتایج ناقص است.",
+    "ocrHint": "در صفحات {{pages}} متن قابل جستجو وجود ندارد. در صورت نیاز سند را باز کنید و OCR را صراحتاً اجرا کنید.",
+    "status": {
+      "searching": "در حال جستجو",
+      "complete": "کامل",
+      "needs_ocr": "دارای صفحات بدون متن قابل جستجو",
+      "encrypted": "گذرواژه لازم است",
+      "unreadable": "جستجو ممکن نشد",
+      "changed": "سند تغییر کرد؛ دوباره جستجو کنید",
+      "cancelled": "لغوشده",
+      "limited": "به سقف نتایج رسیدید"
+    },
+    "failed": "جستجو ناموفق بود. عبارت جستجو و پوشه را بررسی کنید و دوباره تلاش کنید.",
+    "prepareOcr": "باز کردن برای OCR…"
+  },
+  "symbolSearch": "یافتن نمادها",
+  "findMoreOptions": "گزینه‌های بیشتر جستجو",
+  "watchActive": "در حال پایش {{folder}}",
+  "watchFailed": "خطای پایش: {{folder}}",
+  "watchTitle": "گردش‌کار سند در حال پایش {{input}} و نوشتن در {{output}} است. برای توقف پایش کلیک کنید.",
+  "renderDiagnostics": {
+    "title": "رفتن به یافتهٔ بعدی نمایش. نبودِ یافته، نمایش کامل را تضمین نمی‌کند.",
+    "count": "یافته‌های نمایش: {{count}}",
+    "detail": "صفحهٔ {{page}}: {{code}}. بزرگ‌نمایی کمتری را امتحان کنید یا سند را دوباره باز کنید؛ کامل بودن تضمین نمی‌شود."
+  },
+  "mcpSignal": {
+    "label": "اتصال هوش مصنوعی (MCP)",
+    "connected": "دستیار هوش مصنوعی متصل است",
+    "idle": "سرور MCP روشن، بیکار",
+    "off": "سرور MCP خاموش",
+    "port": "درگاه: {{port}}",
+    "lastTool": "آخرین ابزار: {{tool}} در {{time}}",
+    "noTool": "هنوز هیچ ابزاری فراخوانی نشده است"
+  }
 }

@@ -11,6 +11,7 @@
     "box": "สี่เหลี่ยม",
     "polygon": "รูปหลายเหลี่ยม",
     "cloud": "เมฆ",
+    "cloudPolyline": "เส้นหลายจุดแบบเมฆ",
     "polyline": "เส้นหลายจุด",
     "textbox": "กล่องข้อความ",
     "callout": "คำบรรยาย",
@@ -27,7 +28,9 @@
     "formTextField": "ฟิลด์ข้อความแบบฟอร์ม",
     "formCheckbox": "ช่องทำเครื่องหมายแบบฟอร์ม",
     "formRadio": "ปุ่มตัวเลือกแบบฟอร์ม",
-    "screenshot": "จับภาพหน้าจอ"
+    "screenshot": "จับภาพหน้าจอ",
+    "pageLabelPick": "เลือกข้อความสำหรับป้ายชื่อหน้า",
+    "proofread": "พิสูจน์อักษร"
   },
   "toolLabel": "เครื่องมือ:",
   "annotationsLabel": "คำอธิบายประกอบ:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "เอกสารนี้มีฟิลด์แบบฟอร์มแบบโต้ตอบ คุณสามารถกรอกแบบฟอร์มและบันทึกข้อมูลของคุณได้",
   "enableEditing": "เปิดใช้การแก้ไข",
   "pdfAConformance": "เอกสารนี้ระบุว่าสอดคล้องกับ PDF/A",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "เปลี่ยนชื่อไฟล์ไม่สำเร็จ: {{error}}",
+  "renameInvalidChars": "ชื่อไฟล์ต้องไม่มีอักขระ  / : * ? \" < > |",
+  "renameFileExists": "มีไฟล์ชื่อนี้อยู่แล้ว",
+  "engineTitle": "เอนจินเรนเดอร์ที่ใช้สำหรับมุมมองปัจจุบัน",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (เวกเตอร์)"
+  },
+  "viewSingle": "หน้าเดียว",
+  "viewContinuous": "ต่อเนื่อง",
+  "viewBook": "สองหน้า",
+  "viewFacing": "สองหน้าเคียงกัน",
   "viewRotatedTitle": "มุมมองถูกหมุน {{degrees}}° ตามเข็มนาฬิกา เอกสารไม่มีการเปลี่ยนแปลง คลิกเพื่อหมุนมุมมองกลับ",
+  "compareTabTitle": "เปรียบเทียบ",
   "filledAreaSketch": {
     "undoPoint": "เลิกทำจุด",
     "undoPointTitle": "ลบจุดล่าสุด (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "ก",
   "boxHeightAbbr": "ส",
+  "boxSizeHint": "พิมพ์ค่า + Enter — หรือคลิกที่อื่นเพื่อใช้",
   "ocr": {
     "progress": {
       "starting": "กำลังจดจำข้อความ...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "ผลลัพธ์ ({{count}})",
   "searchResultPage": "หน้า {{page}}",
   "searchHitsOne": "1 รายการ",
-  "searchHitsMany": "{{count}} รายการ"
+  "searchHitsMany": "{{count}} รายการ",
+  "passwordProtectedBar": "ป้องกันด้วยรหัสผ่าน: เปิดแบบอ่านอย่างเดียว",
+  "documentSearch": {
+    "title": "ค้นหาเอกสาร",
+    "query": "ข้อความค้นหา",
+    "scope": "ค้นหาใน",
+    "active": "เอกสารปัจจุบัน",
+    "open": "เอกสารที่เปิดอยู่",
+    "folder": "โฟลเดอร์",
+    "choose": "เลือกโฟลเดอร์",
+    "annotations": "รวมความคิดเห็น",
+    "search": "ค้นหา",
+    "cancel": "ยกเลิก",
+    "stale": "เอกสารมีการเปลี่ยนแปลง โปรดค้นหาอีกครั้ง",
+    "folderHint": "ค้นหาไฟล์ PDF ที่อยู่ในโฟลเดอร์นี้โดยตรง โดยไม่เปิดแท็บหรือเปลี่ยนแปลงไฟล์",
+    "limited": "ถึงขีดจำกัดผลลัพธ์แล้ว โปรดปรับการค้นหาให้แคบลง",
+    "cancelled": "ยกเลิกการค้นหาแล้ว ผลลัพธ์ไม่ครบถ้วน",
+    "ocrHint": "ไม่มีข้อความที่ค้นหาได้ในหน้า {{pages}} โปรดเปิดเอกสารและเรียกใช้ OCR ด้วยตนเองหากจำเป็น",
+    "status": {
+      "searching": "กำลังค้นหา",
+      "complete": "เสร็จสมบูรณ์",
+      "needs_ocr": "มีหน้าที่ไม่มีข้อความที่ค้นหาได้",
+      "encrypted": "ต้องใช้รหัสผ่าน",
+      "unreadable": "ไม่สามารถค้นหาได้",
+      "changed": "เอกสารมีการเปลี่ยนแปลง โปรดค้นหาอีกครั้ง",
+      "cancelled": "ยกเลิกแล้ว",
+      "limited": "ถึงขีดจำกัดผลลัพธ์แล้ว"
+    },
+    "failed": "การค้นหาล้มเหลว โปรดตรวจสอบคำค้นหาและโฟลเดอร์ แล้วลองอีกครั้ง",
+    "prepareOcr": "เปิดเพื่อทำ OCR…"
+  },
+  "symbolSearch": "ค้นหาสัญลักษณ์",
+  "findMoreOptions": "ตัวเลือกการค้นหาเพิ่มเติม",
+  "watchActive": "กำลังเฝ้าดู {{folder}}",
+  "watchFailed": "ข้อผิดพลาดในการเฝ้าดู: {{folder}}",
+  "watchTitle": "เวิร์กโฟลว์เอกสารกำลังเฝ้าดู {{input}} และเขียนไปยัง {{output}} คลิกเพื่อหยุดเฝ้าดู",
+  "renderDiagnostics": {
+    "title": "ไปยังข้อสังเกตการแสดงผลถัดไป การไม่มีข้อสังเกตไม่ได้รับประกันว่าแสดงผลครบถ้วน",
+    "count": "ข้อสังเกตการแสดงผล: {{count}}",
+    "detail": "หน้า {{page}}: {{code}} ลองลดการซูมหรือเปิดเอกสารใหม่ ไม่รับประกันความครบถ้วน"
+  },
+  "mcpSignal": {
+    "label": "การเชื่อมต่อ AI (MCP)",
+    "connected": "ผู้ช่วย AI เชื่อมต่อแล้ว",
+    "idle": "เซิร์ฟเวอร์ MCP เปิดอยู่ ไม่มีการใช้งาน",
+    "off": "เซิร์ฟเวอร์ MCP ปิดอยู่",
+    "port": "พอร์ต: {{port}}",
+    "lastTool": "เครื่องมือล่าสุด: {{tool}} เวลา {{time}}",
+    "noTool": "ยังไม่มีการเรียกใช้เครื่องมือ"
+  }
 }

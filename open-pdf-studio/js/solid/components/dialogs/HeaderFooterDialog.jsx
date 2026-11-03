@@ -2,10 +2,13 @@ import { createSignal, Show } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { state, getActiveDocument } from '../../../core/state.js';
-import { recordAddWatermark, recordModifyWatermark } from '../../../core/undo-manager.js';
+import { recordModifyWatermark } from '../../../core/undo-manager.js';
+import { voegWatermerkToe } from '../../../watermark/watermerk-bewerken.js';
 import { markDocumentModified } from '../../../ui/chrome/tabs.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { batesInstellingen, batesNummer } from '../../../watermark/kopvoet-tekst.js';
+import { kopVoetInWeergave, haalKopVoetUitWeergave } from '../../../watermark/kopvoet-weergave.js';
 
 function generateId() {
   return 'wm-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
@@ -52,6 +55,16 @@ export default function HeaderFooterDialog(props) {
   const [marginBottom, setMarginBottom] = createSignal(editWm?.marginBottom || 30);
   const [marginLeft, setMarginLeft] = createSignal(editWm?.marginLeft || 40);
   const [marginRight, setMarginRight] = createSignal(editWm?.marginRight || 40);
+
+  // Bates-nummering: voorvoegsel + volgnummer met voorloopnullen + achtervoegsel ({bates}).
+  const bates = batesInstellingen(editWm);
+  const [batesPrefix, setBatesPrefix] = createSignal(bates.batesPrefix);
+  const [batesStart, setBatesStart] = createSignal(bates.batesStart);
+  const [batesDigits, setBatesDigits] = createSignal(bates.batesDigits);
+  const [batesSuffix, setBatesSuffix] = createSignal(bates.batesSuffix);
+  const batesVoorbeeld = () => batesNummer({
+    batesPrefix: batesPrefix(), batesStart: batesStart(), batesDigits: batesDigits(), batesSuffix: batesSuffix(),
+  }, 0);
 
   // Page range signals
   const [pageRange, setPageRange] = createSignal(editWm?.pageRange || 'all');
@@ -117,14 +130,23 @@ export default function HeaderFooterDialog(props) {
       marginRight: parseInt(marginRight()) || 40,
       pageRange: pageRange(),
       customPages: customPages(),
+      ...batesInstellingen({
+        batesPrefix: batesPrefix(), batesStart: batesStart(), batesDigits: batesDigits(), batesSuffix: batesSuffix(),
+      }),
       enabled: true,
+      // Nog niet zo in het bestand: het scherm tekent hem (kopvoet-weergave.js).
+      uitBestand: false,
     };
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     const wm = buildHeaderFooter();
 
     const doc = getActiveDocument();
+    // Staat de oude versie als pagina-inhoud in de weergave, dan eerst daaruit
+    // halen; anders staat hij onder de nieuwe tot de volgende save.
+    if (isEditing && kopVoetInWeergave(doc, editWm)) await haalKopVoetUitWeergave(doc);
+    if (getActiveDocument() !== doc) return;
     if (isEditing) {
       const oldState = { ...editWm };
       const watermarks = doc?.watermarks;
@@ -133,13 +155,12 @@ export default function HeaderFooterDialog(props) {
         Object.assign(watermarks[idx], wm);
         recordModifyWatermark(editWm.id, oldState, { ...watermarks[idx] });
       }
-    } else {
-      if (doc) doc.watermarks.push(wm);
-      recordAddWatermark(wm);
+      markDocumentModified();
+      refresh();
+    } else if (doc) {
+      // Zelfde stap als app_watermarks: undo, gewijzigd, opnieuw tekenen.
+      await voegWatermerkToe(doc, wm);
     }
-
-    markDocumentModified();
-    refresh();
     close();
   }
 
@@ -248,6 +269,42 @@ export default function HeaderFooterDialog(props) {
           <button class="hf-var-btn" onClick={() => insertVariable('{date}')}>{'{date}'}</button>
           <button class="hf-var-btn" onClick={() => insertVariable('{time}')}>{'{time}'}</button>
           <button class="hf-var-btn" onClick={() => insertVariable('{filename}')}>{'{filename}'}</button>
+          <button class="hf-var-btn" onClick={() => insertVariable('{title}')}>{'{title}'}</button>
+          <button class="hf-var-btn" onClick={() => insertVariable('{bates}')}>{'{bates}'}</button>
+        </div>
+
+        <div class="hf-margins hf-bates">
+          <label class="watermark-label" title={t('headerFooter.batesHint')}>{t('headerFooter.bates')}</label>
+          <div class="hf-margin-fields">
+            <label>{t('headerFooter.batesPrefix')} <input
+              type="text"
+              class="watermark-input watermark-input-sm"
+              value={batesPrefix()}
+              onInput={(e) => setBatesPrefix(e.target.value)}
+            /></label>
+            <label>{t('headerFooter.batesStart')} <input
+              type="text" inputmode="decimal" data-getal
+              class="watermark-input watermark-input-sm"
+              value={batesStart()}
+              min="0"
+              onInput={(e) => setBatesStart(e.target.value)}
+            /></label>
+            <label>{t('headerFooter.batesDigits')} <input
+              type="text" inputmode="decimal" data-getal
+              class="watermark-input watermark-input-sm"
+              value={batesDigits()}
+              min="1"
+              max="12"
+              onInput={(e) => setBatesDigits(e.target.value)}
+            /></label>
+            <label>{t('headerFooter.batesSuffix')} <input
+              type="text"
+              class="watermark-input watermark-input-sm"
+              value={batesSuffix()}
+              onInput={(e) => setBatesSuffix(e.target.value)}
+            /></label>
+            <span class="hf-bates-example">{batesVoorbeeld()}</span>
+          </div>
         </div>
 
         <div class="watermark-row">
@@ -266,7 +323,7 @@ export default function HeaderFooterDialog(props) {
         <div class="watermark-row">
           <label class="watermark-label">{t('headerFooter.fontSize')}</label>
           <input
-            type="number"
+            type="text" inputmode="decimal" data-getal
             class="watermark-input watermark-input-sm"
             value={fontSize()}
             min="6"
@@ -288,28 +345,28 @@ export default function HeaderFooterDialog(props) {
           <label class="watermark-label">{t('headerFooter.margins')}</label>
           <div class="hf-margin-fields">
             <label>{t('headerFooter.top')} <input
-              type="number"
+              type="text" inputmode="decimal" data-getal
               class="watermark-input watermark-input-sm"
               value={marginTop()}
               min="0"
               onInput={(e) => setMarginTop(e.target.value)}
             /></label>
             <label>{t('headerFooter.bottom')} <input
-              type="number"
+              type="text" inputmode="decimal" data-getal
               class="watermark-input watermark-input-sm"
               value={marginBottom()}
               min="0"
               onInput={(e) => setMarginBottom(e.target.value)}
             /></label>
             <label>{t('headerFooter.left')} <input
-              type="number"
+              type="text" inputmode="decimal" data-getal
               class="watermark-input watermark-input-sm"
               value={marginLeft()}
               min="0"
               onInput={(e) => setMarginLeft(e.target.value)}
             /></label>
             <label>{t('headerFooter.right')} <input
-              type="number"
+              type="text" inputmode="decimal" data-getal
               class="watermark-input watermark-input-sm"
               value={marginRight()}
               min="0"

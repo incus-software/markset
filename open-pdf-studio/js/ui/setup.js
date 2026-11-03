@@ -1,6 +1,6 @@
 import { state } from '../core/state.js';
 import { annotationCanvas } from './dom-elements.js';
-import { handlePointerDown, handlePointerMove, handlePointerUp, handleDblClick } from '../tools/tool-dispatcher.js';
+import { handlePointerDown, handlePointerMove, handlePointerUp, handlePointerCancel, handleDblClick } from '../tools/tool-dispatcher.js';
 import { registerAllTools } from '../tools/tools/index.js';
 import { initKeyboardHandlers } from '../tools/keyboard-handlers.js';
 import { installeerMiddelmuisPan } from '../tools/middelmuis-pan.js';
@@ -9,6 +9,8 @@ import { cacheWebFile, isTauri } from '../core/platform.js';
 import { openGesleepteBestanden } from './setup/gesleept-bestand.js';
 import { createTab } from './chrome/tabs.js';
 import { addImageFromFile } from '../annotations/image-drop.js';
+import { maxPaneelBreedte } from './panels/miniatuur-maat.js';
+import { pageDropTarget } from './page-drop-target.js';
 
 // Sub-module imports
 import { setupWheelZoom } from './setup/navigation-events.js';
@@ -46,6 +48,19 @@ function setupTauriDragDrop() {
     const currentWebview = webview.getCurrentWebviewWindow();
     currentWebview.onDragDropEvent(async (event) => {
       const t = event.payload.type;
+
+      // The Edit Pages organizer is open (#764): a dropped PDF is inserted
+      // into its page grid at the drop position, not opened in a new tab.
+      const organizer = pageDropTarget();
+      if (organizer) {
+        const dpr = window.devicePixelRatio || 1;
+        const x = (event.payload.position?.x ?? 0) / dpr;
+        const y = (event.payload.position?.y ?? 0) / dpr;
+        if (t === 'over' || t === 'enter') organizer.over(x, y);
+        else if (t === 'leave') organizer.leave();
+        else if (t === 'drop') organizer.drop(event.payload.paths || [], x, y);
+        return;
+      }
 
       // enter / over: while a drag hovers the window, light up the tab bar as
       // the dock target (the "where it will land" preview the user asked for).
@@ -163,7 +178,9 @@ function setupPanelResize() {
         if (leftPanel.classList.contains('collapsed')) return;
         const isRtl = document.documentElement.dir === 'rtl';
         const delta = e.clientX - startX;
-        const newWidth = Math.max(120, Math.min(500, startWidth + (isRtl ? -delta : delta)));
+        // Tot 60% van het venster, zodat de miniaturen in kolommen passen (#579).
+        const maxWidth = maxPaneelBreedte(window.innerWidth);
+        const newWidth = Math.max(120, Math.min(maxWidth, startWidth + (isRtl ? -delta : delta)));
         leftPanel.style.width = newWidth + 'px';
       };
 
@@ -192,6 +209,8 @@ export function setupEventListeners() {
     annotationCanvas.addEventListener('pointerdown', handlePointerDown);
     annotationCanvas.addEventListener('pointermove', handlePointerMove);
     annotationCanvas.addEventListener('pointerup', handlePointerUp);
+    // Vinger of pen afgebroken (#671): het gebaar netjes afronden.
+    annotationCanvas.addEventListener('pointercancel', handlePointerCancel);
     annotationCanvas.addEventListener('dblclick', handleDblClick);
   }
 

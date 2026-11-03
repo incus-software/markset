@@ -1,4 +1,5 @@
 import { Show, For, createSignal, createEffect, createMemo } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { state } from '../../core/state.js';
 import { setTool } from '../../tools/manager.js';
 import {
@@ -16,7 +17,7 @@ import {
   addCustomGroup, removeCustomGroup, addSymbolToGroup, getCustomGroups, upsertCustomGroup,
   resolveSymbolSvg,
 } from '../stores/symbolStore.js';
-import { matchesLocale } from '../data/symbolLocales.js';
+import { matchesLocale, categoryLabel, industryLabel } from '../data/symbolLocales.js';
 import {
   ensureLibraryIndex, libraryIndustries, libraryCountries, indexStatus,
   downloadInfoFor, downloadCountrySector,
@@ -30,7 +31,8 @@ import { setPendingSymbolId, setPendingSymbolWithParams } from '../stores/parame
 import ProToolGroup from '../../../markset/pro-group/ProToolGroup.jsx'; // Markset
 import { symboolSchaal, setSymboolSchaal } from '../../symbols/symbol-scale-store.js';
 import { marksetSymbolSvg, marksetSymbolOverrides } from '../../../markset/library/index.js'; // Markset
-import { SCHAAL_STAPPEN, schaalLabel } from '../../symbols/symbol-scale.js';
+import { SCHAAL_STAPPEN, schaalLabel, leesSchaalInvoer, volgendeSchaalStap } from '../../symbols/symbol-scale.js';
+import useDropdown from './preferences/useDropdown.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
 import { parseLineworkCatalog, lineworkCatalogToGroup, LINEWORK_TEMPLATE_PREFIX } from '../../symbols/linework-catalog.js';
 
@@ -43,6 +45,8 @@ const isCatalogusFamilie = (sym) =>
 import { registerLineworkCatalog } from '../../symbols/linework-catalog-store.js';
 import { openDialog } from '../stores/dialogStore.js';
 import { updateStatusMessage } from '../../ui/chrome/status-bar.js';
+import { isTauri } from '../../core/platform.js';
+import { knopUit, meldingTekst } from '../../core/webfuncties.js';
 
 const DOCK_SNAP = 60;
 
@@ -112,7 +116,9 @@ export function selectSymbol(symbol) { // Markset: exported for the K/X shortcut
       setTool('parametricSymbol');
       return;
     }
-    setPendingSymbolId(symbol.parametricId);
+    // `params`: vaste voorinstelling van de knop (roloplegging = oplegging
+    // met type 'rol', vakwerkstaaf = staaf met twee scharnieren).
+    setPendingSymbolId(symbol.parametricId, symbol.params || null);
     setTool('parametricSymbol');
     return;
   }
@@ -129,6 +135,8 @@ export function selectSymbol(symbol) { // Markset: exported for the K/X shortcut
       wallPattern: symbol.wall.pattern,
       wallDikteMm: symbol.wall.dikteMm || 100,
       ifcCategory: ifcCategoryForSymbol(symbol),
+      // Uit het palet: hoort bij de invoegsessie voor symbolen (#587).
+      symbolInsert: true,
     };
     setTool('wall');
     return;
@@ -154,27 +162,11 @@ export function selectSymbol(symbol) { // Markset: exported for the K/X shortcut
     symbolId: symbol.id,
     ifcPredefinedType: nenIfcForSymbolId(symbol.id)?.ifcPredefinedType,
     ...marksetSymbolOverrides(symbol), // Markset: sheet-relative height
+    // Invoegmodus voor symbolen (#587): de opmaakwerkbalk stelt de opmaak in
+    // voor de volgende plaatsingen. setTool() start of behoudt de sessie en
+    // bouwt de spookafbeelding onder de cursor (met die opmaak erin).
+    symbolInsert: true,
   };
-  // Pre-cache rasterized preview image for cursor preview
-  const blob = new Blob([effectiveSvg], { type: 'image/svg+xml' });
-  const url = URL.createObjectURL(blob);
-  const img = new Image();
-  img.onload = () => {
-    const canvas = document.createElement('canvas');
-    const scale = 2;
-    canvas.width = img.naturalWidth * scale;
-    canvas.height = img.naturalHeight * scale;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    URL.revokeObjectURL(url);
-    const pngImg = new Image();
-    pngImg.onload = () => {
-      if (state.toolOverrides) state.toolOverrides._previewImg = pngImg;
-    };
-    pngImg.src = canvas.toDataURL('image/png');
-  };
-  img.onerror = () => URL.revokeObjectURL(url);
-  img.src = url;
   setTool('stamp');
 }
 
@@ -198,6 +190,80 @@ const closeSvg = `<svg width="8" height="8" viewBox="0 0 10 10"><line x1="2" y1=
 
 const arrowSvg = `<svg viewBox="0 0 10 10" width="10" height="10"><path d="M3 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+// --- Plaatsingsschaal als ComboBox (issue #357) ---
+// Eén bewerkbaar veld met een uitklaplijst, zoals een Windows-ComboBox: kies
+// een vaste stap of typ een eigen factor ("1,5", "2x", "50%"). De waarde telt
+// pas bij Enter, bij het verlaten van het veld of bij een keuze uit de lijst;
+// onzin zet de geldende schaal terug in plaats van naar 1x te springen.
+function SchaalCombo(props) {
+  const { open, setOpen, dropdownStyle, setWrapperRef, setDropdownRef, toggleDropdown } =
+    useDropdown(SCHAAL_STAPPEN.length);
+  let invoer;
+  const tekst = () => schaalLabel(symboolSchaal());
+
+  function bevestig() {
+    if (!invoer) return;
+    const f = leesSchaalInvoer(invoer.value);
+    if (f != null) setSymboolSchaal(f);
+    invoer.value = tekst();
+  }
+
+  function kies(stap) {
+    setSymboolSchaal(stap);
+    if (invoer) invoer.value = tekst();
+    setOpen(false);
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      bevestig();
+      setOpen(false);
+    } else if (e.key === 'Escape') {
+      invoer.value = tekst();
+      setOpen(false);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const huidig = leesSchaalInvoer(invoer.value) ?? symboolSchaal();
+      kies(volgendeSchaalStap(huidig, e.key === 'ArrowDown' ? 1 : -1));
+    }
+  }
+
+  return (
+    <div class="pref-combo sp-scale-combo" ref={setWrapperRef}>
+      <input
+        id="sp-scale-input"
+        type="text"
+        class="pref-combo-input"
+        ref={invoer}
+        value={tekst()}
+        title={props.title}
+        spellcheck={false}
+        onBlur={bevestig}
+        onKeyDown={onKeyDown}
+      />
+      <button type="button" class="pref-combo-arrow" tabIndex={-1} onMouseDown={(e) => toggleDropdown(e, false)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <Portal>
+        <div class="pref-combo-dropdown" classList={{ show: open() }} style={dropdownStyle()} ref={setDropdownRef}>
+          <For each={SCHAAL_STAPPEN}>
+            {(stap) => (
+              <div
+                class="pref-combo-option"
+                classList={{ selected: symboolSchaal() === stap }}
+                onMouseDown={(e) => { e.preventDefault(); kies(stap); }}
+              >
+                {schaalLabel(stap)}
+              </div>
+            )}
+          </For>
+        </div>
+      </Portal>
+    </div>
+  );
+}
+
 // --- Inner content (shared between docked and floating) ---
 function SymbolContent() {
   const { t } = useTranslation('ribbon');
@@ -209,7 +275,7 @@ function SymbolContent() {
           <div class="sp-search-icon" innerHTML={searchSvg} />
           <input
             type="text"
-            placeholder="Search symbols..."
+            placeholder={t('symbolPalette.search')}
             value={searchQuery()}
             onInput={(e) => setSearchQuery(e.target.value)}
           />
@@ -219,44 +285,28 @@ function SymbolContent() {
       {/* Plaatsingsschaal (issue #357): geldt voor VOLGENDE symbolen; wat al
           op de tekening staat verandert niet. */}
       <div class="sp-scale">
-        <label for="sp-scale-select" title={t('drawing.symbolScaleTitle')}>{t('drawing.symbolScale')}</label>
-        <select
-          id="sp-scale-select"
-          value={String(symboolSchaal())}
-          onChange={(e) => setSymboolSchaal(e.target.value)}
-        >
-          <For each={SCHAAL_STAPPEN}>
-            {(stap) => <option value={String(stap)}>{schaalLabel(stap)}</option>}
-          </For>
-        </select>
-        <input
-          type="number"
-          class="sp-scale-eigen"
-          min="0.1" max="10" step="0.05"
-          value={symboolSchaal()}
-          title={t('drawing.symbolScaleCustom')}
-          onChange={(e) => setSymboolSchaal(e.target.value)}
-        />
+        <label for="sp-scale-input" title={t('drawing.symbolScaleTitle')}>{t('drawing.symbolScale')}</label>
+        <SchaalCombo title={t('drawing.symbolScaleCustom')} />
       </div>
 
       {/* Categories */}
       <div class="sp-categories">
         <ProToolGroup /> {/* Markset: Pro tools, greyed out without the Pro plugin */}
-        <Show when={filteredCategories().length > 0} fallback={<div class="sp-empty">No symbols found</div>}>
+        <Show when={filteredCategories().length > 0} fallback={<div class="sp-empty">{t('symbolPalette.noResults')}</div>}>
           <For each={filteredCategories()}>
             {(cat) => (
               <div>
                 <div class="sp-cat-header" onClick={() => toggleCategory(cat.id)}>
                   <div class={`sp-cat-arrow${isCategoryExpanded(cat.id) ? ' expanded' : ''}`} innerHTML={arrowSvg} />
                   <div class="sp-cat-icon" style={{ color: cat.color || '#333' }} innerHTML={cat.icon} />
-                  <span class="sp-cat-name">{cat.name}</span>
+                  <span class="sp-cat-name">{categoryLabel(t, cat)}</span>
                   {/* Tekeninstellingen (tekeningtypen/regelsets) — alleen bij
                       de NL IFC Bouw-categorie. Vast knop-id voor tests/rig. */}
                   <Show when={cat.id === 'nl-ifc-bouw'}>
                     <button
                       id="btn-tekeninstellingen"
                       class="sp-settings-btn"
-                      title="Drawing settings"
+                      title={t('symbolPalette.drawingSettings')}
                       onClick={(e) => { e.stopPropagation(); openDialog('tekeninstellingen'); }}
                       innerHTML={settingsSvg}
                     />
@@ -265,7 +315,7 @@ function SymbolContent() {
                     <button
                       id="btn-systeemtypen"
                       class="sp-settings-btn"
-                      title="Manage system types"
+                      title={t('symbolPalette.manageSystemTypes')}
                       onClick={(e) => { e.stopPropagation(); openDialog('systeemtypen'); }}
                       innerHTML={`<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="10" height="10"/><line x1="4.3" y1="1" x2="4.3" y2="11"/><line x1="7.6" y1="1" x2="7.6" y2="11"/><line x1="1" y1="4.3" x2="11" y2="4.3"/><line x1="1" y1="7.6" x2="11" y2="7.6"/></svg>`}
                     />
@@ -319,6 +369,7 @@ function SymbolContent() {
 
 // --- Docked symbol palette ---
 export function DockedSymbolPalette(props) {
+  const { t } = useTranslation('ribbon');
   const side = () => props.side;
   const shouldShow = () => symbolPaletteVisible() && symbolPaletteMode() === `docked-${side()}`;
 
@@ -327,9 +378,9 @@ export function DockedSymbolPalette(props) {
       <div class={`sp-panel sp-docked${side() === 'right' ? ' sp-docked-right' : ''}`}>
         <div class="sp-header">
           <div class="sp-grip" onMouseDown={(e) => startDrag(e, true)} innerHTML={gripSvg} />
-          <span class="sp-title">Toolpalette</span>
-          <button class="sp-settings-btn" title="Settings" onClick={() => setSettingsOpen(true)} innerHTML={settingsSvg} />
-          <button class="sp-close-btn" onClick={() => { setSymbolPaletteVisible(false); unregisterPaletteDock('symbols'); saveSymbolPaletteState(); }} innerHTML={closeSvg} />
+          <span class="sp-title">{t('view.toolPaletteLabel')}</span>
+          <button class="sp-settings-btn" title={t('symbolPalette.settingsTitle')} onClick={() => setSettingsOpen(true)} innerHTML={settingsSvg} />
+          <button class="sp-close-btn" title={t('view.closePalette')} onClick={() => { setSymbolPaletteVisible(false); unregisterPaletteDock('symbols'); saveSymbolPaletteState(); }} innerHTML={closeSvg} />
         </div>
         <SymbolContent />
       </div>
@@ -339,6 +390,7 @@ export function DockedSymbolPalette(props) {
 
 // --- Floating symbol palette ---
 export function FloatingSymbolPalette() {
+  const { t } = useTranslation('ribbon');
   const shouldShow = () => symbolPaletteVisible() && symbolPaletteMode() === 'float';
 
   return (
@@ -351,9 +403,9 @@ export function FloatingSymbolPalette() {
           if (e.target.closest('.sp-float-close')) return;
           startDrag(e, false);
         }}>
-          <span class="sp-float-title">Toolpalette</span>
-          <button class="sp-settings-btn" title="Settings" onClick={() => setSettingsOpen(true)} innerHTML={settingsSvg} />
-          <button class="sp-float-close" onClick={() => { setSymbolPaletteVisible(false); saveSymbolPaletteState(); }} innerHTML={closeSvg} />
+          <span class="sp-float-title">{t('view.toolPaletteLabel')}</span>
+          <button class="sp-settings-btn" title={t('symbolPalette.settingsTitle')} onClick={() => setSettingsOpen(true)} innerHTML={settingsSvg} />
+          <button class="sp-float-close" title={t('view.closePalette')} onClick={() => { setSymbolPaletteVisible(false); saveSymbolPaletteState(); }} innerHTML={closeSvg} />
         </div>
         <SymbolContent />
       </div>
@@ -363,7 +415,12 @@ export function FloatingSymbolPalette() {
 
 // --- Settings Dialog ---
 export function SymbolSettingsDialog() {
+  const { t: tCommon } = useTranslation('common');
+  const { t } = useTranslation('ribbon');
   const [newGroupName, setNewGroupName] = createSignal('');
+  // De online bibliotheek staat op GitHub: als gast uit (#548).
+  const downloadUit = knopUit('symbol-library-download', { inTauri: isTauri() });
+  const downloadMelding = () => meldingTekst(tCommon, tCommon('onlineSymbolLibrary'));
   let fileInputRef;
   let importGroupInputRef;
 
@@ -457,15 +514,15 @@ export function SymbolSettingsDialog() {
         const maten = catalog.families.reduce((n, f) => n + f.variants.length, 0);
         const zonderPreview = catalog.families.filter(f => !f.preview).length;
         updateStatusMessage(
-          `Catalogus '${collectionId}' geladen: ${catalog.families.length} families, ${maten} maten`
-          + (zonderPreview ? ` — ${zonderPreview} zonder preview in het bestand` : '')
+          t('symbolPalette.catalogLoaded', { id: collectionId, families: catalog.families.length, sizes: maten })
+          + (zonderPreview ? ` — ${t('symbolPalette.catalogNoPreview', { n: zonderPreview })}` : '')
         );
         return;
       }
 
       if (!data.name || !Array.isArray(data.symbols)) {
         console.warn('Invalid symbol group file: missing name or symbols array');
-        updateStatusMessage('Bestand niet herkend: geen symboolgroep en geen catalogus');
+        updateStatusMessage(t('symbolPalette.fileNotRecognized'));
         return;
       }
       const groupId = addCustomGroup(data.name);
@@ -480,7 +537,7 @@ export function SymbolSettingsDialog() {
       // Een catalogus die zichzelf wel als linework-variants aankondigt maar
       // niet klopt, gooit uit parseLineworkCatalog. Die reden hoort de
       // gebruiker te zien in plaats van alleen in de console te belanden.
-      updateStatusMessage(`Import mislukt: ${err?.message || err}`, 6000);
+      updateStatusMessage(t('symbolPalette.importFailed', { error: err?.message || err }), 6000);
     }
     e.target.value = '';
   }
@@ -494,20 +551,20 @@ export function SymbolSettingsDialog() {
       <div class="sp-settings-overlay" onClick={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
         <div class="sp-settings-dialog">
           <div class="sp-settings-header">
-            <h3>Symbol Library Settings</h3>
-            <button class="sp-float-close" onClick={() => setSettingsOpen(false)} innerHTML={closeSvg} />
+            <h3>{t('symbolPalette.settingsTitle')}</h3>
+            <button class="sp-float-close" title={tCommon('close')} onClick={() => setSettingsOpen(false)} innerHTML={closeSvg} />
           </div>
           <div class="sp-settings-locale">
             <label class="sp-settings-locale-field">
-              <span>Industry</span>{/* Markset: English (was Dutch) */}
+              <span>{t('symbolPalette.industry')}</span>
               <select value={selectedIndustry()} onChange={(e) => setSelectedIndustry(e.target.value)}>
                 <For each={libraryIndustries()}>
-                  {(ind) => <option value={ind.id} selected={ind.id === selectedIndustry()}>{ind.name}</option>}
+                  {(ind) => <option value={ind.id} selected={ind.id === selectedIndustry()}>{industryLabel(t, ind)}</option>}
                 </For>
               </select>
             </label>
             <label class="sp-settings-locale-field">
-              <span>Country</span>{/* Markset: English */}
+              <span>{t('symbolPalette.country')}</span>
               <select value={selectedCountry()} onChange={(e) => setSelectedCountry(e.target.value)}>
                 <For each={libraryCountries()}>
                   {(c) => <option value={c.id} selected={c.id === selectedCountry()}>{c.flag ? c.flag + ' ' : ''}{c.name}</option>}
@@ -516,32 +573,41 @@ export function SymbolSettingsDialog() {
             </label>
           </div>
           <Show when={indexStatus() === 'loading'}>
-            <div class="sp-settings-download sp-settings-download-note">Online bibliotheek laden…</div>
+            <div class="sp-settings-download sp-settings-download-note">{t('symbolPalette.libraryLoading')}</div>
+          </Show>
+          <Show when={indexStatus() === 'uit'}>
+            <div class="sp-settings-download sp-settings-download-note">{downloadMelding()}</div>
           </Show>
           <Show when={indexStatus() === 'offline'}>
-            <div class="sp-settings-download sp-settings-download-note">Online bibliotheek niet bereikbaar — beperkte landenlijst</div>
+            <div class="sp-settings-download sp-settings-download-note">{t('symbolPalette.libraryOffline')}</div>
           </Show>
           <Show when={dlInfo().toFetch.length > 0 || dlInfo().tagOnly.length > 0 || downloadBusy()}>
             <div class="sp-settings-download">
               <Show when={!downloadBusy()} fallback={
                 <span class="sp-settings-download-label">
-                  Downloading {Math.min((downloadProgress()?.done ?? 0) + 1, downloadProgress()?.total ?? 1)}/{downloadProgress()?.total ?? 1}: {downloadProgress()?.label || ''}
+                  {t('symbolPalette.downloading', {
+                    current: Math.min((downloadProgress()?.done ?? 0) + 1, downloadProgress()?.total ?? 1),
+                    total: downloadProgress()?.total ?? 1,
+                    label: downloadProgress()?.label || '',
+                  })}
                 </span>
               }>
                 <span class="sp-settings-download-label">
                   {dlInfo().toFetch.length > 0
-                    ? `${dlInfo().toFetch.length} collection${dlInfo().toFetch.length === 1 ? '' : 's'} available online (${dlInfo().symbolCount} symbols)` // Markset: English
-                    : `Turn on ${dlInfo().tagOnly.length} downloaded collection${dlInfo().tagOnly.length === 1 ? '' : 's'} for this country`}
+                    ? t('symbolPalette.availableOnline', { n: dlInfo().toFetch.length, symbols: dlInfo().symbolCount })
+                    : t('symbolPalette.activateDownloaded', { n: dlInfo().tagOnly.length })}
                 </span>
-                <button class="sp-settings-btn-add"
+                <button id="symbol-library-download" class="sp-settings-btn-add"
+                  disabled={downloadUit}
+                  title={downloadUit ? downloadMelding() : undefined}
                   onClick={() => downloadCountrySector(selectedCountry(), selectedIndustry())}>
-                  Download
+                  {t('symbolPalette.download')}
                 </button>
               </Show>
             </div>
           </Show>
           <Show when={downloadError()}>
-            <div class="sp-settings-download sp-settings-download-error">Download mislukt: {downloadError()}</div>
+            <div class="sp-settings-download sp-settings-download-error">{t('symbolPalette.downloadFailed', { error: downloadError() })}</div>
           </Show>
           <div class="sp-settings-body">
             <For each={allCategories().filter(c => matchesLocale(c, selectedIndustry(), selectedCountry()))}>
@@ -552,20 +618,20 @@ export function SymbolSettingsDialog() {
                       <input type="checkbox" checked={isGroupEnabled(cat.id)}
                         onChange={() => toggleGroupEnabled(cat.id)}
                         style={{ margin: 0, cursor: 'pointer' }} />
-                      <span class="sp-settings-group-name" style={{ color: cat.color || '#333' }}>{cat.name}</span>
+                      <span class="sp-settings-group-name" style={{ color: cat.color || '#333' }}>{categoryLabel(t, cat)}</span>
                     </label>
                     <Show when={cat.builtin}>
-                      <span class="sp-settings-group-badge">Built-in</span>
+                      <span class="sp-settings-group-badge">{t('symbolPalette.builtIn')}</span>
                     </Show>
                     <Show when={!cat.builtin && cat.online}>
-                      <span class="sp-settings-group-badge">Online</span>
+                      <span class="sp-settings-group-badge">{t('symbolPalette.online')}</span>
                     </Show>
                     <Show when={!cat.builtin}>
                       <button class="sp-settings-btn-add" style={{ height: '20px', 'font-size': '9px', padding: '0 6px' }}
-                        onClick={() => handleUploadClick(cat.id)}>+ Add Symbol</button>
+                        onClick={() => handleUploadClick(cat.id)}>{t('symbolPalette.addSymbol')}</button>
                       <button class="sp-settings-btn-add" style={{ height: '20px', 'font-size': '9px', padding: '0 6px' }}
-                        onClick={() => handleExportGroup(cat)}>Export</button>
-                      <button class="sp-settings-btn-remove" onClick={() => removeCustomGroup(cat.id)}>Remove</button>
+                        onClick={() => handleExportGroup(cat)}>{t('symbolPalette.export')}</button>
+                      <button class="sp-settings-btn-remove" onClick={() => removeCustomGroup(cat.id)}>{t('symbolPalette.remove')}</button>
                     </Show>
                   </div>
                   <div class="sp-settings-symbols">
@@ -576,7 +642,7 @@ export function SymbolSettingsDialog() {
                       )}
                     </For>
                     <Show when={cat.symbols.length === 0}>
-                      <span style={{ 'font-size': '10px', color: '#999' }}>No symbols yet</span>
+                      <span style={{ 'font-size': '10px', color: '#999' }}>{t('symbolPalette.noSymbolsYet')}</span>
                     </Show>
                   </div>
                 </div>
@@ -586,16 +652,16 @@ export function SymbolSettingsDialog() {
           <div class="sp-settings-footer">
             <input
               type="text"
-              placeholder="New group name..."
+              placeholder={t('symbolPalette.newGroupName')}
               value={newGroupName()}
               onInput={(e) => setNewGroupName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddGroup(); }}
             />
             <button class="sp-settings-btn-add" disabled={!newGroupName().trim()} onClick={handleAddGroup}>
-              Add Group
+              {t('symbolPalette.addGroup')}
             </button>
             <button class="sp-settings-btn-add" onClick={() => importGroupInputRef?.click()}>
-              Import Group
+              {t('symbolPalette.importGroup')}
             </button>
           </div>
         </div>

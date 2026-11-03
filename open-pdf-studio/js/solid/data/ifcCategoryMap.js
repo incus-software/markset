@@ -52,8 +52,8 @@ const KEYWORD_RULES = [
   [/\btrap|stairs|traptrede/, 'IfcStair'],
   // Ruimte (IfcSpace)
   [/\bruimte\b|ifc-?space|\bspace\b/, 'IfcSpace'],
-  // Constructie — stalen profielen
-  [/\bhea\b|\bheb\b|\bipe\b|\bunp\b|\bkoker\b|staalprofiel|staal-/, 'IfcMember'],
+  // Constructie — stalen profielen (koker ook kort geschreven: K100/5)
+  [/\bhea\b|\bheb\b|\bipe\b|\bunp\b|\bkoker\b|\bk\d{2,3}\/\d|staalprofiel|staal-/, 'IfcMember'],
   // Constructie — houten balk / ligger
   [/houten balk|hout-?balk|\bligger\b|\bbalk\b/, 'IfcBeam'],
   // Constructie — palen / fundering
@@ -96,6 +96,7 @@ const PARAMETRIC_ID_DEFAULT = {
   'ifc-space': 'IfcSpace',
   'hout-balk': 'IfcBeam',
   'bout': 'IfcMechanicalFastener',
+  'anker': 'IfcMechanicalFastener',
   'staal-hea': 'IfcMember', 'staal-heb': 'IfcMember', 'staal-ipe': 'IfcMember',
   'staal-unp': 'IfcMember', 'staal-koker': 'IfcMember',
   'paal-aanzicht-type-1': 'IfcPile', 'paal-aanzicht-type-2': 'IfcPile',
@@ -108,9 +109,21 @@ const PARAMETRIC_ID_DEFAULT = {
   'wapeningskorf': 'IfcReinforcingBar',
   'wapeningsstaaf': 'IfcReinforcingBar',
   'netwapening': 'IfcReinforcingBar',
+  // Constructieve tekengereedschappen (#312).
+  'wapeningsdetail': 'IfcReinforcingBar',
+  'staaf-plattegrond': 'IfcReinforcingBar',
+  'wapeningsnet': 'IfcReinforcingMesh',
+  'vloer-vorstrand': 'IfcReinforcingBar',
+  'kopplaat': 'IfcPlate',
+  'voetplaat': 'IfcPlate',
   'sondering': 'IfcAnnotation',
   'paalpuntniveau': 'IfcAnnotation',
   'overspanningspijl-vloer': 'IfcAnnotation',
+  // Constructieve schematisering: rekenschema, geen bouwelement.
+  'staaf': 'IfcAnnotation',
+  'knoop': 'IfcAnnotation',
+  'verdeelde-last': 'IfcAnnotation',
+  'moment': 'IfcAnnotation',
   'stenenrij': 'IfcWall',
   // Inrichting (#478): sanitaire toestellen en keukenblokken.
   'wandcloset': 'IfcSanitaryTerminal',

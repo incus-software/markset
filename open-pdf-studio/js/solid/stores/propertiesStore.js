@@ -1,3 +1,4 @@
+import { laagKeuzeWaarde, leesLaagKeuze } from '../../annotations/laag-keuze.js';
 import { createSignal, batch } from 'solid-js';
 import { DRAFTING_RULE_TYPES, effectiveDraftingLineWidth } from '../../annotations/drafting-rules.js';
 import { createStore } from 'solid-js/store';
@@ -6,6 +7,8 @@ import { imperialOr } from '../../../markset/us-units.js'; // Markset
 import { fitToContent } from '../../../markset/smart/hooks.js'; // Markset
 import { getTemplate as getSmartTemplate } from '../../symbols/registry.js'; // Markset
 import { formatPageSizeIn } from '../../../markset/us-units.js'; // Markset
+import { PLAIN_TEXT_TOOL, PLAIN_TEXT_FONT_SIZE } from '../../../markset/plain-text.js'; // Markset
+import { parseScaleString, pixelsPerUnitFor, userUnitVanPagina } from '../../annotations/scale-region-scale.js';
 import {
   recordPropertyChange,
   recordModify,
@@ -15,6 +18,7 @@ import {
   endUndoTransaction,
 } from '../../core/undo-manager.js';
 import { cloneAnnotation } from '../../annotations/factory.js';
+import { lintZetLijnkoppen, koppenVan } from '../../pdf/lijnkoppen.js';
 import { ondersteuntKruis, kruisZichtbaarVoorSelectie } from '../../annotations/kruis-geometrie.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { computeTextboxContentHeight } from '../../annotations/rendering/shapes.js';
@@ -34,22 +38,32 @@ import {
   SYSTEEMRASTER_DEFAULTS, SYSTEEMRASTER_PLAAT_RANGE, SYSTEEMRASTER_RANDCONDITIES,
   resolveSysteem, paneelKey, setEdgeProfiel, setPaneelType, setPaneelComponent,
   setRandProfiel, updateSparing, addSparing, systeemSparingen, sparingRegime,
-  buildSysteemraster,
+  sparingRegelsVoorType, buildSysteemraster,
 } from '../../annotations/systeemraster.js';
 import { systeemrasterBuildOpts } from '../../annotations/systeemraster-scale.js';
 import { createDefaultPaneelTypen } from '../../annotations/systeem-typen.js';
+import { kenSysteemTypeToe } from '../../annotations/systeem-instance-links.js';
 import {
   getSysteemTypeById, getSysteemTypenData, updateSysteemType,
 } from '../../annotations/systeem-typen-registry.js';
-import { recalculateAllMeasurements, calculateArea, calculatePerimeter, calculateDistance, formatMeasurement, formatDimensionText, getMeasureScale } from '../../annotations/measurement.js';
+import { recalculateAllMeasurements, calculateArea, calculatePerimeter, calculateDistance, formatMeasurement, formatDimensionText, getMeasureScale, herberekenVlakMaat, vlakLengteSchaal } from '../../annotations/measurement.js';
+import { lengteEenheid, schaalInEenheid } from '../../annotations/vlak-zijden.js';
+import { parseDepth } from '../../annotations/measure-depth.js';
 import {
   isRuimteVlak, isRuimteTag, ruimteVanTag, tagWeergaveParams, tagWijziging,
 } from '../../plattegrond/ruimte-koppeling.js';
 import { applyTemplateRealSize } from '../../symbols/real-size.js';
 import { applyStampLineWidth, applyStampColor, stampLineWidthOf } from '../../annotations/stamp-line-width.js';
 import { pendingParams, setPendingParams } from './parametricSymbolStore.js';
-import { klemMaat, leesMaatInvoer, toonMaat, veiligeVerhouding, RECHTHOEK_VORMEN } from '../../annotations/minimummaat.js';
+import { klemMaat, toonMaat, veiligeVerhouding, RECHTHOEK_VORMEN } from '../../annotations/minimummaat.js';
+import { nieuweAfbeeldingsMaat } from '../../annotations/papiermaat-eenheid.js';
+import { papierEenheid } from './papierEenheidStore.js';
 import { kanZonderRand } from '../../annotations/fill-utils.js';
+import { heeftVulDekking, zetLijnDekking } from '../../annotations/vul-dekking.js';
+import { isWisselbaarProfiel, profielTypen, wisselProfielType } from '../../symbols/profieltype.js';
+import { schaalgebiedStijl } from '../../annotations/scale-region-style.js';
+import { leesGetalBegin, leesGeheelGetal } from '../../core/getal-invoer.js';
+import { inktPaneelWaarden, inktPropWaarde } from '../../annotations/pressure-ink-panel.js';
 
 // Types whose single 'color' control IS their stroke colour and which render
 // via `strokeColor || color`. For these, the 'color' control must mirror onto
@@ -94,6 +108,8 @@ const [annotProps, setAnnotProps] = createStore({
   printable: true,
   readOnly: false,
   marked: false,
+  // Laag (#377): de waarde van de keuzelijst, zie annotations/laag-keuze.js.
+  layer: '',
   altText: '',
   status: 'none',
   statusBy: '',
@@ -104,8 +120,13 @@ const [annotProps, setAnnotProps] = createStore({
   textColor: '#000000',
   lineWidth: 3,
   opacity: 100,
+  fillOpacity: 100,
   icon: 'comment',
+  attachmentName: '',
+  attachmentSize: null,
+  attachmentMime: '',
   borderStyle: 'solid',
+  boxShape: 'rect',
   cross: false,
   text: '',
   fontSize: 16,
@@ -116,6 +137,7 @@ const [annotProps, setAnnotProps] = createStore({
   fontUnderline: false,
   fontStrikethrough: false,
   textAlign: 'left',
+  textVAlign: 'top',
   lineSpacing: '1.5',
   rotation: 0,
   imageWidth: 0,
@@ -131,16 +153,23 @@ const [annotProps, setAnnotProps] = createStore({
   startHead: 'none',
   endHead: 'open',
   headSize: 12,
+  // Vrije hand (#385): drukgevoeligheid, minimale breedte (%), gladheid.
+  inkPressure: true,
+  inkHasPressure: false,
+  inkMinWidth: 30,
+  inkSmoothing: 0,
   arrowLength: '',
   measureScale: 0,
   measureUnit: '',
   measurePrecision: 2,
   measureName: '',
+  measureDepth: '',
   dimType: '',
   styleType: '',
   dimExtension: true,
   dimShowUnit: true,
   measureShowLabel: true,
+  measureShowEdgeLengths: false,
   isRuimte: false,
   opsRuimteNummer: '',
   ruimteOppervlakte: '',
@@ -156,11 +185,17 @@ const [annotProps, setAnnotProps] = createStore({
   srFontSize: STAVENREEKS_DEFAULTS.fontSize,
   srDiameter: 12,
   srBarLengthMm: 0,
+  srBarMark: '',
+  srSteelGrade: '',
   srLegDir: 'down-left',
   srLegLength: 24,
   srLabelSide: 'end',
   symbolId: '',
   symbolFrozen: false, // Markset
+  // Staalprofiel (#697): het profieltype (sjabloon-id, of 'mixed') en de
+  // typen waar het naartoe kan wisselen ([{ id, name, nameEn }]).
+  profielType: '',
+  profielTypen: [],
   params: {},
   // Gevelelement: het geselecteerde onderdeel (stijl/paneel) of null.
   gevelSub: null,
@@ -174,6 +209,7 @@ const [sectionVis, setSectionVis] = createStore({
   replies: false,
   appearance: false,
   lineEndings: false,
+  ink: false,
   dimensions: false,
   textFormat: false,
   paragraph: false,
@@ -185,15 +221,22 @@ const [sectionVis, setSectionVis] = createStore({
   customFields: false,
   // Sub-group visibility
   iconGroup: false,
+  attachmentGroup: false,
   fillColorGroup: false,
+  fillNoneAllowed: true,
   strokeColorGroup: false,
   strokeNoneAllowed: false,
   colorGroup: false,
   lineWidthGroup: false,
   borderStyleGroup: false,
+  boxShapeGroup: false,
   textGroup: false,
   fontSizeGroup: false,
   opacityGroup: true,
+  fillOpacityGroup: false,
+  // Aparte dekking voor lijn en vulling (#685): de dekking heet dan
+  // lijndekking en de vul-dekking staat ernaast.
+  aparteDekking: false,
   rotationGroup: false,
 });
 
@@ -242,13 +285,16 @@ function computeSectionVisibility(type) {
   const isTextbox = ['textbox', 'callout'].includes(type);
   const isShape = ['line', 'arrow', 'box', 'circle', 'draw', 'textbox', 'callout'].includes(type);
   // Een invoegteken (#508) heeft de ingevoegde tekst als inhoud.
-  const isTextContent = type === 'text' || type === 'comment' || type === 'caret';
+  const isTextContent = type === 'text' || type === 'comment' || type === 'caret' || type === 'fileAttachment';
   const isImage = type === 'image';
-  const isArrow = type === 'arrow';
   const isLineOrArrow = type === 'arrow' || type === 'line';
   const isTextMarkup = isTextAnchored({ type });
-  const hideLineWidth = ['highlight', 'comment', 'image', 'textHighlight', 'caret'].includes(type);
-  const hasFillColor = ['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line', 'measureArea', 'filledArea'].includes(type);
+  const hideLineWidth = ['highlight', 'comment', 'fileAttachment', 'image', 'textHighlight', 'caret'].includes(type);
+  // Schaalgebied (#611): eigen vulkleur en vul-doorzichtigheid; "geen" vulling
+  // is daar vul-doorzichtigheid 0, want zonder vulkleur volgt de vulling de
+  // randkleur (het oude uiterlijk).
+  const isScaleRegion = type === 'scaleRegion';
+  const hasFillColor = ['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line', 'measureArea', 'filledArea', 'scaleRegion'].includes(type);
   const hideColor = ['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud', 'measureDistance', 'measureArea', 'measurePerimeter', 'filledArea'].includes(type);
   const hasBorderStyle = ['textbox', 'callout', 'arrow', 'line', 'box', 'circle', 'polygon', 'cloud', 'draw', 'polyline', 'splineArrow', 'measureDistance', 'measureArea', 'measurePerimeter', 'filledArea'].includes(type);
   const hasHatchPattern = ['box', 'circle', 'polygon', 'cloud', 'measureArea', 'filledArea'].includes(type);
@@ -267,7 +313,8 @@ function computeSectionVisibility(type) {
     general: true,
     replies: !isScaleBar,
     appearance: !isScaleBar,
-    lineEndings: isArrow || type === 'splineArrow' || type === 'measureDistance' || type === 'measurePerimeter',
+    lineEndings: lintZetLijnkoppen(type) || type === 'measureDistance' || type === 'measurePerimeter',
+    ink: type === 'draw',
     dimensions: isLineOrArrow,
     measurement: isMeasurement,
     scaleBar: isScaleBar,
@@ -277,20 +324,85 @@ function computeSectionVisibility(type) {
     image: isImage,
     actions: true,
     customFields: hasCustomFields,
-    iconGroup: type === 'comment',
+    // Bijlage-annotatie (#376) heeft haar eigen pictogrammen (/Name).
+    iconGroup: type === 'comment' || type === 'fileAttachment',
+    attachmentGroup: type === 'fileAttachment',
     fillColorGroup: hasFillColor,
+    fillNoneAllowed: !isScaleRegion,
     strokeColorGroup: isShape || type === 'measureDistance' || type === 'measureArea' || type === 'measurePerimeter' || type === 'filledArea',
     strokeNoneAllowed: kanZonderRand(type),
     colorGroup: !hideColor || isTextMarkup,
     lineWidthGroup: !hideLineWidth,
     borderStyleGroup: hasBorderStyle,
+    boxShapeGroup: type === 'textbox',
     hatchPatternGroup: hasHatchPattern,
     crossGroup: ondersteuntKruis(type),
     textGroup: isTextContent,
     fontSizeGroup: type === 'text',
     opacityGroup: !isScaleBar,
+    fillOpacityGroup: isScaleRegion || heeftVulDekking(type),
+    aparteDekking: heeftVulDekking(type),
     rotationGroup: hasRotation,
   });
+}
+
+// Paneelvelden van een systeem die van zijn TYPE (of de typebibliotheek)
+// afhangen. Bij een gekoppeld type gelden de TYPE-celmaten (strook: de
+// strookbreedte); een onbevestigde maat van het type is null en toont leeg
+// (#567: geen standaardmaat). Zonder type de instance-maat.
+function _systeemTypeVelden(annotation) {
+  const isSysteem = annotation.type === 'systeemraster';
+  const st = isSysteem ? getSysteemTypeById(annotation.systeemTypeId) : null;
+  const plaat = st
+    ? {
+      plaatBreedteMm: (st.layout === 'strook' ? st.strookBreedteMm : st.celXMm) ?? null,
+      plaatHoogteMm: st.celYMm ?? null,
+    }
+    : {
+      plaatBreedteMm: annotation.plaatBreedteMm ?? SYSTEEMRASTER_DEFAULTS.plaatBreedteMm,
+      plaatHoogteMm: annotation.plaatHoogteMm ?? SYSTEEMRASTER_DEFAULTS.plaatHoogteMm,
+    };
+  return {
+    ...plaat,
+    // Systeem: TYPE-verwijzing (systeemTypeId) + de type-bibliotheek voor de
+    // dropdown. Bij een gekoppeld type tonen de celmaat-/randprofiel-velden
+    // de TYPE-waarden (bewerken schrijft op het type → alle instanties
+    // veranderen mee).
+    sgTypeId: isSysteem ? (annotation.systeemTypeId || null) : null,
+    sgTypeList: isSysteem ? getSysteemTypenData().typen.map(t => ({ id: t.id, naam: t.naam })) : [],
+    // Layout-vorm van het type ('raster'|'strook') — stuurt de labels en
+    // sub-secties (strook/paneel) in de Systeem-sectie.
+    sgLayout: isSysteem ? (st?.layout || 'raster') : 'raster',
+    sgEdgeProfiel: isSysteem
+      ? (st?.edgeProfiel || resolveSysteem(annotation).layers[0].edge.profiel) : 'geen',
+    // Paneel-assortiment van het systeemtype (dropdown in de sub-sectie).
+    sgPaneelTypen: isSysteem
+      ? (st?.paneelTypen || createDefaultPaneelTypen()).map(p => ({ id: p.id, naam: p.naam }))
+      : [],
+    // IFC-pad van het component (onderdelen erven dit pad).
+    sgIfcPad: isSysteem
+      ? `${annotation.ifcCategory || 'IfcCovering'}${annotation.ifcPredefinedType
+        ? ` (${annotation.ifcPredefinedType})` : ''}`
+      : '',
+  };
+}
+
+/**
+ * Na een bevestigde wijziging van de typebibliotheek (#567): ververs alleen de
+ * type-afgeleide velden van het systeem dat het paneel nu toont. Geen nieuwe
+ * selectie, geen selectiemelding naar plugins en geen wissel van paneelmodus;
+ * bij een meervoudige selectie of een ander annotatietype gebeurt er niets.
+ * @returns {boolean} of er ververst is.
+ */
+export function storeVerversSysteemType() {
+  const ann = currentAnnotation;
+  if (!ann || ann.type !== 'systeemraster' || annotProps.multiCount > 0) return false;
+  setAnnotProps({
+    ..._systeemTypeVelden(ann),
+    // Omzetten in de editor wijzigt ook de IFC-kopie op de instance.
+    ifcCategory: ann.ifcCategory || '',
+  });
+  return true;
 }
 
 // Show properties for a single annotation
@@ -300,6 +412,14 @@ export function storeShowProperties(annotation) {
   const _corrDoc = getActiveDocument();
   if (_corrDoc && isFoldedChild(annotation, _corrDoc.annotations)) {
     annotation = _corrDoc.annotations.find(a => a.id === annotation.inReplyTo) || annotation;
+  }
+  // Het paneel bewerkt het exemplaar uit het document (#765). Een net
+  // getekend tekstvak komt hier als het kale object binnen; schrijven
+  // daarop werkt de reactieve store niet bij, terwijl de weergave via de
+  // store leest. Dan bleef bijvoorbeeld het gekozen lettertype Arial.
+  if (_corrDoc && annotation?.id) {
+    const inDocument = _corrDoc.annotations.find(a => a.id === annotation.id);
+    if (inDocument) annotation = inDocument;
   }
   currentAnnotation = annotation;
   // Fire plugin selection-listeners (separate from property-panel-registry):
@@ -319,13 +439,16 @@ export function storeShowProperties(annotation) {
     printable: annotation.printable !== false,
     readOnly: annotation.readOnly || false,
     marked: annotation.marked || false,
+    layer: laagKeuzeWaarde(annotation, getActiveDocument()),
     altText: annotation.altText || '',
     status: annotation.status || 'none',
     statusBy: annotation.statusBy || '',
     statusAt: annotation.statusAt ? formatDate(annotation.statusAt) : '',
     ifcCategory: annotation.ifcCategory || '',
     color: annotation.color || '#000000',
-    fillColor: annotation.fillColor || null,
+    fillColor: annotation.type === 'scaleRegion'
+      ? schaalgebiedStijl(annotation).vulKleur : (annotation.fillColor || null),
+    fillOpacity: _vulDoorzichtigheidPct(annotation),
     strokeColor: annotation.strokeColor || annotation.color || '#000000',
     textColor: annotation.textColor || annotation.color || '#000000',
     // NL-tekenwerkcomponenten zonder eigen lineWidth tonen hun GEËRFDE
@@ -337,8 +460,12 @@ export function storeShowProperties(annotation) {
         : DRAFTING_RULE_TYPES.has(annotation.type)
           ? Math.round(effectiveDraftingLineWidth(annotation) * 100) / 100 : 3),
     opacity: annotation.opacity !== undefined ? Math.round(annotation.opacity * 100) : 100,
-    icon: annotation.icon || 'comment',
+    icon: annotation.icon || (annotation.type === 'fileAttachment' ? 'paperclip' : 'comment'),
+    attachmentName: annotation.attachment?.name || '',
+    attachmentSize: annotation.attachment?.size ?? null,
+    attachmentMime: annotation.attachment?.mime || '',
     borderStyle: annotation.borderStyle || 'solid',
+    boxShape: annotation.boxShape || 'rect',
     cross: annotation.cross === true,
     hatchPattern: annotation.hatchPattern || (annotation.type === 'measureArea' ? 'diagonal-left' : 'none'),
     hatchColor: annotation.hatchColor || (annotation.type === 'measureArea' ? '#ff0000' : (annotation.strokeColor || annotation.color || '#000000')),
@@ -353,11 +480,14 @@ export function storeShowProperties(annotation) {
     fontUnderline: annotation.fontUnderline || false,
     fontStrikethrough: annotation.fontStrikethrough || false,
     textAlign: annotation.textAlign || 'left',
+    textVAlign: annotation.textVAlign || 'top',
     lineSpacing: annotation.lineSpacing || '1.5',
     rotation: annotation.rotation || 0,
-    // Met decimalen: een afbeelding van 0,4 pt toonde anders "0".
-    imageWidth: annotation.type === 'image' ? toonMaat(annotation.width) : 0,
-    imageHeight: annotation.type === 'image' ? toonMaat(annotation.height) : 0,
+    // In paginapunten, onafgerond: het paneel toont ze in de gekozen
+    // papiereenheid (#598) en rondt pas daar af, zodat ook een kleine maat
+    // in inch niet "0" wordt.
+    imageWidth: annotation.type === 'image' ? annotation.width : 0,
+    imageHeight: annotation.type === 'image' ? annotation.height : 0,
     imageRotation: annotation.type === 'image' ? Math.round(annotation.rotation || 0) : 0,
     lockAspectRatio: annotation.type === 'image' ? (annotation.lockAspectRatio || false) : false,
     linkedPath: annotation.linkedPath || '',
@@ -366,9 +496,13 @@ export function storeShowProperties(annotation) {
     cropTop: annotation.type === 'image' ? Math.round((annotation.cropTop || 0) * 100) : 0,
     cropRight: annotation.type === 'image' ? Math.round((annotation.cropRight || 0) * 100) : 0,
     cropBottom: annotation.type === 'image' ? Math.round((annotation.cropBottom || 0) * 100) : 0,
-    startHead: annotation.startHead || (annotation.type === 'measureDistance' ? 'openCircle' : 'none'),
-    endHead: annotation.endHead || (annotation.type === 'measureDistance' ? 'openCircle' : 'open'),
-    headSize: annotation.headSize || 12,
+    // Pijl, gebogen pijl en callout: de koppen zoals het scherm ze tekent (#612).
+    ...(lintZetLijnkoppen(annotation.type) ? koppenVan(annotation) : {
+      startHead: annotation.startHead || (annotation.type === 'measureDistance' ? 'openCircle' : 'none'),
+      endHead: annotation.endHead || (annotation.type === 'measureDistance' ? 'openCircle' : 'open'),
+      headSize: annotation.headSize || 12,
+    }),
+    ...inktPaneelWaarden(annotation),
     arrowLength: (annotation.type === 'arrow' || annotation.type === 'line')
       ? (() => {
           // Show the length in measured units (mm etc.), resolved at the
@@ -386,9 +520,13 @@ export function storeShowProperties(annotation) {
         })()
       : '',
     measureScale: annotation.measureScale || 0,
-    measureUnit: annotation.measureUnit || '',
+    // Een meetvlak bewaart zijn oppervlakte-eenheid ('mm²'); de keuzelijst
+    // kent lengte-eenheden (#536).
+    measureUnit: (annotation.type === 'measureArea' ? lengteEenheid(annotation.measureUnit) : annotation.measureUnit) || '',
     measurePrecision: annotation.measurePrecision !== undefined ? annotation.measurePrecision : 2,
     measureName: annotation.measureName || '',
+    // Diepte van de meting (#311), in de eenheid van de meting; leeg = geen.
+    measureDepth: annotation.measureDepth ?? '',
     dimType: annotation.dimType || '',
     styleType: annotation.styleType || annotation.dimType || '',
     dimExtension: annotation.dimExtension !== false, // default ON
@@ -396,6 +534,8 @@ export function storeShowProperties(annotation) {
     // alleen een expliciete false zet ze uit (maat-label.js).
     dimShowUnit: annotation.dimShowUnit !== false,
     measureShowLabel: annotation.measureShowLabel !== false,
+    // Zijdematen van een meetvlak: standaard uit (#536).
+    measureShowEdgeLengths: annotation.measureShowEdgeLengths === true,
     // Uitloop en hulplijnen in mm op papier; leeg = automatisch (oude beeld).
     dimLineOvershootMm: annotation.dimLineOvershootMm ?? '',
     dimExtGapMm: annotation.dimExtGapMm ?? '',
@@ -420,6 +560,8 @@ export function storeShowProperties(annotation) {
     srCount: annotation.count ?? 3,
     srDiameter: annotation.diameter ?? 12,
     srBarLengthMm: annotation.barLengthMm ?? 0,
+    srBarMark: annotation.barMark ?? '',
+    srSteelGrade: annotation.steelGrade ?? '',
     srLegDir: annotation.legDir || 'down-left',
     srLegLength: annotation.legLength ?? STAVENREEKS_DEFAULTS.legLength,
     srLineTail: annotation.lineTail ?? STAVENREEKS_DEFAULTS.lineTail,
@@ -427,6 +569,8 @@ export function storeShowProperties(annotation) {
     srLabelSide: annotation.labelSide || 'end',
     symbolId: annotation.symbolId || '',
     symbolFrozen: !!annotation.frozen, // Markset: drawn from its saved copy (template missing)
+    profielType: isWisselbaarProfiel(annotation) ? annotation.symbolId : '',
+    profielTypen: isWisselbaarProfiel(annotation) ? profielTypen(annotation.symbolId) : [],
     // Een ruimtetag toont naam, nummer en oppervlakte van zijn ruimte.
     params: annotation.params
       ? { ...(tagWeergaveParams(annotation, getActiveDocument()?.annotations) || annotation.params) }
@@ -451,11 +595,11 @@ export function storeShowProperties(annotation) {
     toonHartlijn: annotation.toonHartlijn === true,
     tagTonen: annotation.tagTonen === true,
     tagTekst: annotation.tagTekst || '',
-    // Systeemraster — bij een gekoppeld systeemtype gelden de TYPE-celmaten.
-    plaatBreedteMm: getSysteemTypeById(annotation.systeemTypeId)?.celXMm
-      ?? annotation.plaatBreedteMm ?? SYSTEEMRASTER_DEFAULTS.plaatBreedteMm,
-    plaatHoogteMm: getSysteemTypeById(annotation.systeemTypeId)?.celYMm
-      ?? annotation.plaatHoogteMm ?? SYSTEEMRASTER_DEFAULTS.plaatHoogteMm,
+    // Systeemraster — plaatmaat (bij een type de TYPE-celmaten), type-
+    // verwijzing en -lijst, layout, randprofiel, assortiment en IFC-pad:
+    // dezelfde velden die storeVerversSysteemType na een typewijziging
+    // ververst.
+    ..._systeemTypeVelden(annotation),
     equalizeX: annotation.equalizeX === true,
     equalizeY: annotation.equalizeY === true,
     randConditie: annotation.randConditie || SYSTEEMRASTER_DEFAULTS.randConditie,
@@ -476,19 +620,8 @@ export function storeShowProperties(annotation) {
     // schrijft op het type → alle instanties veranderen mee).
     sgSysType: annotation.type === 'systeemraster'
       ? resolveSysteem(annotation).type : null,
-    sgTypeId: annotation.type === 'systeemraster'
-      ? (annotation.systeemTypeId || null) : null,
-    sgTypeList: annotation.type === 'systeemraster'
-      ? getSysteemTypenData().typen.map(t => ({ id: t.id, naam: t.naam })) : [],
     sgRasterHoek: annotation.type === 'systeemraster'
       ? (Number(annotation.rasterHoek) || 0) : 0,
-    // Layout-vorm van het type ('raster'|'strook') — stuurt de labels en
-    // sub-secties (strook/paneel) in de Systeem-sectie.
-    sgLayout: annotation.type === 'systeemraster'
-      ? (getSysteemTypeById(annotation.systeemTypeId)?.layout || 'raster') : 'raster',
-    sgEdgeProfiel: annotation.type === 'systeemraster'
-      ? (getSysteemTypeById(annotation.systeemTypeId)?.edgeProfiel
-        || resolveSysteem(annotation).layers[0].edge.profiel) : 'geen',
     // Geselecteerd SUB-ELEMENT (tweede klik): paneel, randsegment of
     // rasterlijn — met de weergavedata voor de "Onderdeel"-sub-sectie.
     sgSelectedSub: annotation.type === 'systeemraster' && annotation.selectedSub
@@ -508,20 +641,10 @@ export function storeShowProperties(annotation) {
         .panels[paneelKey(annotation.selectedSub.ix, annotation.selectedSub.iy)];
       return ov && typeof ov === 'object' ? { ...ov } : null;
     })(),
-    // Paneel-assortiment van het systeemtype (dropdown in de sub-sectie).
-    sgPaneelTypen: annotation.type === 'systeemraster'
-      ? (getSysteemTypeById(annotation.systeemTypeId)?.paneelTypen
-        || createDefaultPaneelTypen()).map(p => ({ id: p.id, naam: p.naam }))
-      : [],
     // Rand-override (raw) van het geselecteerde randsegment ('' = erft).
     sgRandOverride: annotation.type === 'systeemraster' && annotation.selectedSub
       && annotation.selectedSub.kind === 'rand'
       ? (resolveSysteem(annotation).layers[0].edges[String(annotation.selectedSub.seg)] || '')
-      : '',
-    // IFC-pad van het component (onderdelen erven dit pad).
-    sgIfcPad: annotation.type === 'systeemraster'
-      ? `${annotation.ifcCategory || 'IfcCovering'}${annotation.ifcPredefinedType
-        ? ` (${annotation.ifcPredefinedType})` : ''}`
       : '',
     replies: annotation.replies || [],
     multiCount: 0,
@@ -551,6 +674,7 @@ export function storeHideProperties() {
     replies: false,
     appearance: false,
     lineEndings: false,
+    ink: false,
     dimensions: false,
     measurement: false,
     scaleBar: false,
@@ -561,14 +685,18 @@ export function storeHideProperties() {
     actions: false,
     iconGroup: false,
     fillColorGroup: false,
+    fillNoneAllowed: true,
     strokeColorGroup: false,
   strokeNoneAllowed: false,
     colorGroup: false,
     lineWidthGroup: false,
     borderStyleGroup: false,
+    boxShapeGroup: false,
     textGroup: false,
     fontSizeGroup: false,
     opacityGroup: false,
+    fillOpacityGroup: false,
+    aparteDekking: false,
     rotationGroup: false,
   });
 
@@ -580,6 +708,16 @@ export function storeClosePanel() {
   currentAnnotation = null;
   fireSelectionChange(null);
   setPanelVisible(false);
+}
+
+// Staalprofiel (#697) bij een meervoudige selectie: alleen als ALLE
+// geselecteerde profielen uit dezelfde profielgroep komen.
+function _gedeeldProfielType(selected) {
+  if (!selected.length || !selected.every(isWisselbaarProfiel)) return { profielType: '', profielTypen: [] };
+  const typen = profielTypen(selected[0].symbolId);
+  const ids = new Set(typen.map(t => t.id));
+  if (!selected.every(a => ids.has(a.symbolId))) return { profielType: '', profielTypen: [] };
+  return { profielType: sharedValue(selected, a => a.symbolId, 'mixed'), profielTypen: typen };
 }
 
 // Helper: return the shared value if all items agree, otherwise fallback
@@ -610,7 +748,9 @@ export function storeShowMultiSelection(selected) {
     return allMarked ? true : noneMarked ? false : 'mixed';
   })();
   const sharedColor = sharedValue(selected, a => a.color || '#000000', 'mixed');
-  const sharedFillColor = sharedValue(selected, a => a.fillColor || null, 'mixed');
+  const sharedFillColor = sharedValue(selected, a => a.type === 'scaleRegion'
+    ? schaalgebiedStijl(a).vulKleur : (a.fillColor || null), 'mixed');
+  const sharedFillOpacity = sharedValue(selected, a => _vulDoorzichtigheidPct(a), 'mixed');
   const sharedStrokeColor = sharedValue(selected, a => a.strokeColor || a.color || '#000000', 'mixed');
   const sharedTextColor = sharedValue(selected, a => a.textColor || a.color || '#000000', 'mixed');
   const sharedLineWidth = sharedValue(selected, a => a.lineWidth !== undefined ? a.lineWidth
@@ -648,6 +788,7 @@ export function storeShowMultiSelection(selected) {
     printable: sharedPrintable,
     readOnly: sharedReadOnly,
     marked: sharedMarked,
+    layer: sharedValue(selected, a => laagKeuzeWaarde(a, getActiveDocument()), 'mixed'),
     altText: sharedAltText,
     status: sharedStatus,
     color: sharedColor,
@@ -656,8 +797,10 @@ export function storeShowMultiSelection(selected) {
     textColor: sharedTextColor,
     lineWidth: sharedLineWidth,
     opacity: sharedOpacity,
+    fillOpacity: sharedFillOpacity,
     icon: sharedValue(selected, a => a.icon || 'comment', 'mixed'),
     borderStyle: sharedBorderStyle,
+    boxShape: sharedValue(selected, a => a.boxShape || 'rect', 'mixed'),
     cross: sharedValue(selected, a => a.cross === true, 'mixed'),
     hatchPattern: sharedHatchPattern,
     hatchColor: sharedHatchColor,
@@ -672,6 +815,7 @@ export function storeShowMultiSelection(selected) {
     fontUnderline: sharedValue(selected, a => a.fontUnderline || false, 'mixed'),
     fontStrikethrough: sharedValue(selected, a => a.fontStrikethrough || false, 'mixed'),
     textAlign: sharedValue(selected, a => a.textAlign || 'left', 'mixed'),
+    textVAlign: sharedValue(selected, a => a.textVAlign || 'top', 'mixed'),
     lineSpacing: sharedValue(selected, a => a.lineSpacing || '1.5', 'mixed'),
     rotation: sharedValue(selected, a => a.rotation || 0, 'mixed'),
     imageWidth: 0,
@@ -683,21 +827,26 @@ export function storeShowMultiSelection(selected) {
     cropTop: 0,
     cropRight: 0,
     cropBottom: 0,
-    startHead: sharedValue(selected, a => a.startHead || 'none', 'mixed'),
-    endHead: sharedValue(selected, a => a.endHead || 'open', 'mixed'),
-    headSize: sharedValue(selected, a => a.headSize || 12, 'mixed'),
+    startHead: sharedValue(selected, a => koppenVan(a).startHead, 'mixed'),
+    endHead: sharedValue(selected, a => koppenVan(a).endHead, 'mixed'),
+    headSize: sharedValue(selected, a => koppenVan(a).headSize, 'mixed'),
+    inkPressure: sharedValue(selected, a => a.inkPressure !== false, 'mixed'),
+    inkMinWidth: sharedValue(selected, a => inktPaneelWaarden(a).inkMinWidth, 'mixed'),
+    inkSmoothing: sharedValue(selected, a => inktPaneelWaarden(a).inkSmoothing, 'mixed'),
+    inkHasPressure: selected.some(a => Array.isArray(a.pressures) && a.pressures.length > 0),
     arrowLength: '',
     replies: [],
     multiCount: selected.length,
+    ..._gedeeldProfielType(selected),
   });
 
   // Helper: check if ALL selected annotations satisfy a predicate on their type
   const allMatch = (predicate) => selected.every(a => predicate(a.type));
 
-  const fillColorTypes = new Set(['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line']);
+  const fillColorTypes = new Set(['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line', 'scaleRegion']);
   const strokeColorTypes = new Set(['line', 'arrow', 'box', 'circle', 'draw', 'textbox', 'callout', 'polygon', 'cloud']);
   const hideColorTypes = new Set(['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud']);
-  const hideLineWidthTypes = new Set(['highlight', 'comment', 'image', 'textHighlight', 'caret']);
+  const hideLineWidthTypes = new Set(['highlight', 'comment', 'fileAttachment', 'image', 'textHighlight', 'caret']);
   const borderStyleTypes = new Set(['textbox', 'callout', 'arrow', 'line', 'box', 'circle', 'polygon', 'cloud', 'draw', 'polyline', 'splineArrow']);
   const hatchPatternTypes = new Set(['box', 'circle', 'polygon', 'cloud', 'measureArea', 'filledArea']);
   const rotationTypes = new Set(['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature']);
@@ -709,7 +858,8 @@ export function storeShowMultiSelection(selected) {
     general: true,
     replies: false,
     appearance: true,
-    lineEndings: allSameType && (sharedType === 'arrow' || sharedType === 'splineArrow'),
+    lineEndings: allSameType && lintZetLijnkoppen(sharedType),
+    ink: allSameType && sharedType === 'draw',
     dimensions: false,
     measurement: false,
     textFormat: allMatch(t => textboxTypes.has(t)),
@@ -719,16 +869,20 @@ export function storeShowMultiSelection(selected) {
     actions: true,
     iconGroup: allSameType && sharedType === 'comment',
     fillColorGroup: allMatch(t => fillColorTypes.has(t)),
+    fillNoneAllowed: !selected.some(a => a.type === 'scaleRegion'),
     strokeColorGroup: allMatch(t => strokeColorTypes.has(t)),
     strokeNoneAllowed: allMatch(t => kanZonderRand(t)),
     colorGroup: allMatch(t => !hideColorTypes.has(t) || isTextAnchored({ type: t })),
     lineWidthGroup: allMatch(t => !hideLineWidthTypes.has(t)),
     borderStyleGroup: allMatch(t => borderStyleTypes.has(t)),
+    boxShapeGroup: allMatch(t => t === 'textbox'),
     hatchPatternGroup: allMatch(t => hatchPatternTypes.has(t)),
     crossGroup: kruisZichtbaarVoorSelectie(selected),
     textGroup: allSameType && (sharedType === 'text' || sharedType === 'comment'),
     fontSizeGroup: allSameType && sharedType === 'text',
     opacityGroup: true,
+    fillOpacityGroup: allMatch(t => t === 'scaleRegion') || allMatch(heeftVulDekking),
+    aparteDekking: allMatch(heeftVulDekking),
     rotationGroup: allMatch(t => rotationTypes.has(t)),
   });
 
@@ -737,6 +891,10 @@ export function storeShowMultiSelection(selected) {
 }
 
 // Show text edit properties (PDF text editing mode)
+// Lettertype van de PDF-tekst die nu bewerkt wordt (zie hieronder).
+const [pdfTekstBronFont, setPdfTekstBronFont] = createSignal(null);
+export { pdfTekstBronFont };
+
 export function storeShowTextEditProperties(info) {
   const ff = (info.fontFamily || 'Helvetica').toLowerCase();
   let displayFontFamily;
@@ -797,6 +955,10 @@ export function storeShowTextEditProperties(info) {
   };
 
   currentAnnotation = pseudoAnnotation;
+  // Het lettertype waarmee de tekst nu in de PDF staat: zolang dat gekozen
+  // blijft, schrijft de saver de tekst in dat (ingebedde) font terug en is er
+  // niets te melden (TextFormatSection, #765).
+  setPdfTekstBronFont(displayFontFamily);
 
   // First show as textbox to get text format section
   storeShowProperties(pseudoAnnotation);
@@ -810,6 +972,7 @@ export function storeShowTextEditProperties(info) {
     replies: false,
     appearance: false,
     lineEndings: false,
+    ink: false,
     dimensions: false,
     measurement: false,
     textFormat: true,
@@ -819,14 +982,18 @@ export function storeShowTextEditProperties(info) {
     actions: false,
     iconGroup: false,
     fillColorGroup: false,
+    fillNoneAllowed: true,
     strokeColorGroup: false,
   strokeNoneAllowed: false,
     colorGroup: false,
     lineWidthGroup: false,
     borderStyleGroup: false,
+    boxShapeGroup: false,
     textGroup: false,
     fontSizeGroup: false,
     opacityGroup: false,
+    fillOpacityGroup: false,
+    aparteDekking: false,
     rotationGroup: false,
   });
 
@@ -914,7 +1081,7 @@ function _stampStatusMeta(ann, value) {
 // laatste poot), bovengrens 200 zoals het paneelbereik. Ongeldige invoer valt
 // terug op de standaardwaarde.
 function _clampLineTail(value) {
-  const n = parseFloat(String(value).replace(',', '.'));
+  const n = leesGetalBegin(value);
   if (!Number.isFinite(n)) return STAVENREEKS_DEFAULTS.lineTail;
   return Math.max(0, Math.min(200, n));
 }
@@ -922,7 +1089,7 @@ function _clampLineTail(value) {
 // Tekstgrootte van het stavenreeks-label: 6..72, ongeldige invoer valt terug
 // op de standaardwaarde.
 function _clampFontSize(value) {
-  const n = parseFloat(String(value).replace(',', '.'));
+  const n = leesGetalBegin(value);
   if (!Number.isFinite(n) || !(n > 0)) return STAVENREEKS_DEFAULTS.fontSize;
   return Math.max(6, Math.min(72, Math.round(n)));
 }
@@ -932,17 +1099,12 @@ function _clampFontSize(value) {
 // instanties met dat type veranderen mee; instance-sleutels (rasterhoek,
 // centreren, paneeltype) muteren alleen de annotatie.
 function _applySysteemProp(ann, key, value) {
-  const num = (v) => parseFloat(String(v).replace(',', '.'));
+  const num = (v) => leesGetalBegin(v);
   switch (key) {
-    case 'sgTypeId': {
-      ann.systeemTypeId = value || undefined;
-      const st = getSysteemTypeById(ann.systeemTypeId);
-      if (st) {
-        ann.ifcCategory = st.ifcCategory;
-        ann.ifcPredefinedType = st.ifcPredefinedType;
-      }
+    case 'sgTypeId':
+      // Dezelfde regel als de plugin-API (#574): systeem-instance-links.js.
+      kenSysteemTypeToe(ann, value || undefined, getSysteemTypeById(value || undefined));
       break;
-    }
     case 'sgTypeCelX': case 'sgTypeCelY': {
       const n = num(value);
       if (!Number.isFinite(n) || !(n > 0)) break;
@@ -1002,7 +1164,7 @@ function _applySysteemProp(ann, key, value) {
     case 'sgSparingB': case 'sgSparingH': case 'sgSparingX': case 'sgSparingY': {
       const sub = ann.selectedSub;
       if (!sub || sub.kind !== 'sparing') break;
-      const n = parseFloat(String(value).replace(',', '.'));
+      const n = leesGetalBegin(value);
       if (!Number.isFinite(n)) break;
       const veld = { sgSparingB: 'bMm', sgSparingH: 'hMm',
         sgSparingX: 'xMm', sgSparingY: 'yMm' }[key];
@@ -1043,7 +1205,7 @@ function _syncSparingSub(ann) {
   ann.selectedSub = {
     kind: 'sparing', id: sp.id,
     xMm: sp.xMm, yMm: sp.yMm, bMm: sp.bMm, hMm: sp.hMm,
-    regime: sparingRegime(sp.bMm, sp.hMm, st?.sparingRegels, st?.layout || 'raster'),
+    regime: sparingRegime(sp.bMm, sp.hMm, sparingRegelsVoorType(st), st?.layout || 'raster'),
   };
 }
 
@@ -1069,68 +1231,80 @@ function applyPropToAnnotation(ann, key, value) {
       if (ann.type === 'stamp') applyStampColor(ann);
       break;
     case 'fillColor': ann.fillColor = value; break;
+    case 'fillOpacity': ann.fillOpacity = _vulDoorzichtigheidUitPct(value); break;
+    // Staalprofiel (#697): een ander profieltype; wat geen wisselbaar profiel
+    // is (of een andere groep), blijft ongemoeid.
+    case 'profielType': wisselProfielType(ann, value); break;
     case 'strokeColor': ann.strokeColor = value; break;
     case 'lineWidth':
-      zetRanddikte(ann, parseFloat(value));
+      zetRanddikte(ann, leesGetalBegin(value));
       // Een stempel wordt als raster getekend en kent geen ctx.lineWidth; de
       // dikte moet in de SVG worden gezet. Synchroon, zodat undo de gewijzigde
       // stampSvg meekrijgt.
       if (ann.type === 'stamp') applyStampLineWidth(ann);
       break;
-    case 'opacity': ann.opacity = parseInt(value) / 100; break;
+    // Bij een vorm met aparte vul-dekking houdt de vulling haar dekking (#685).
+    case 'opacity': zetLijnDekking(ann, leesGeheelGetal(value) / 100); break;
     case 'icon': ann.icon = value; break;
+    case 'inkPressure': case 'inkMinWidth': case 'inkSmoothing':
+      Object.assign(ann, inktPropWaarde(key, value));
+      break;
     case 'borderStyle': ann.borderStyle = value; break;
+    case 'boxShape': ann.boxShape = value === 'rect' ? undefined : value; break;
     case 'cross': ann.cross = value === true || undefined; break;
     case 'hatchPattern': ann.hatchPattern = value; break;
     case 'hatchColor': ann.hatchColor = value; break;
-    case 'hatchScale': ann.hatchScale = parseInt(value); break;
-    case 'hatchAngle': ann.hatchAngle = parseInt(value); break;
+    case 'hatchScale': ann.hatchScale = leesGeheelGetal(value); break;
+    case 'hatchAngle': ann.hatchAngle = leesGeheelGetal(value); break;
     case 'text': ann.text = value; break;
-    case 'fontSize': ann.fontSize = parseInt(value); break;
+    case 'fontSize': ann.fontSize = leesGeheelGetal(value); break;
     case 'textColor':
       ann.textColor = value;
       ann.color = value;
       break;
     case 'fontFamily': ann.fontFamily = value; break;
-    case 'textFontSize': ann.fontSize = parseInt(value); break;
+    case 'textFontSize': ann.fontSize = leesGeheelGetal(value); break;
     case 'fontBold': ann.fontBold = value; zetRunsStijl(ann, 'bold', value); break;
     case 'fontItalic': ann.fontItalic = value; zetRunsStijl(ann, 'italic', value); break;
     case 'fontUnderline': ann.fontUnderline = value; break;
     case 'fontStrikethrough': ann.fontStrikethrough = value; break;
     case 'textAlign': ann.textAlign = value; break;
+    case 'textVAlign': ann.textVAlign = value === 'top' ? undefined : value; break;
     case 'lineSpacing': {
-      ann.lineSpacing = parseFloat(value);
+      ann.lineSpacing = leesGetalBegin(value);
       if (['textbox', 'callout'].includes(ann.type) && ann.text) {
         ann.height = computeTextboxContentHeight(ann);
       }
       break;
     }
-    case 'rotation': ann.rotation = Math.max(-360, Math.min(360, parseInt(value) || 0)); break;
-    case 'measureScale': ann.measureScale = parseFloat(value) || 0; recomputeMeasureText(ann); break;
-    case 'measureUnit': ann.measureUnit = value; recomputeMeasureText(ann); break;
-    case 'measurePrecision': ann.measurePrecision = parseInt(value); recomputeMeasureText(ann); break;
+    case 'rotation': ann.rotation = Math.max(-360, Math.min(360, leesGeheelGetal(value) || 0)); break;
+    case 'measureScale': ann.measureScale = leesGetalBegin(value) || 0; recomputeMeasureText(ann); break;
+    case 'measureUnit': zetMeetEenheid(ann, value); break;
+    case 'measurePrecision': ann.measurePrecision = leesGeheelGetal(value); recomputeMeasureText(ann); break;
     case 'measureName':
       ann.measureName = value;
       if (isRuimteVlak(ann)) ann.opsRuimteNaam = value;
       break;
     case 'scaleBarUnit': ann.unit = value; break;
-    case 'scaleBarTotalUnits': ann.totalUnits = parseFloat(value) || 1; break;
-    case 'scaleBarDivisions': ann.divisions = Math.max(1, Math.min(20, parseInt(value) || 5)); break;
-    case 'scaleBarHeight': ann.height = Math.max(4, parseInt(value) || 14); break;
+    case 'scaleBarTotalUnits': ann.totalUnits = leesGetalBegin(value) || 1; break;
+    case 'scaleBarDivisions': ann.divisions = Math.max(1, Math.min(20, leesGeheelGetal(value) || 5)); break;
+    case 'scaleBarHeight': ann.height = _schaalbalkHoogte(value); break;
     // Stavenreeks — parameters; de geometrie wordt bij het renderen afgeleid
     // uit start/eind + deze waarden (geen coördinaten herberekenen hier).
-    case 'srCount': ann.count = Math.max(1, Math.min(999, parseInt(value) || 1)); break;
-    case 'srDiameter': ann.diameter = parseFloat(value) || 12; break;
-    case 'srBarLengthMm': ann.barLengthMm = Math.max(0, parseFloat(value) || 0); break;
+    case 'srCount': ann.count = Math.max(1, Math.min(999, leesGeheelGetal(value) || 1)); break;
+    case 'srDiameter': ann.diameter = leesGetalBegin(value) || 12; break;
+    case 'srBarLengthMm': ann.barLengthMm = Math.max(0, leesGetalBegin(value) || 0); break;
+    case 'srBarMark': ann.barMark = String(value ?? '').trim(); break;
+    case 'srSteelGrade': ann.steelGrade = String(value ?? '').trim().toUpperCase(); break;
     case 'srLegDir': ann.legDir = value; break;
-    case 'srLegLength': ann.legLength = Math.max(1, parseFloat(value) || STAVENREEKS_DEFAULTS.legLength); break;
+    case 'srLegLength': ann.legLength = Math.max(1, leesGetalBegin(value) || STAVENREEKS_DEFAULTS.legLength); break;
     case 'srLineTail': ann.lineTail = _clampLineTail(value); break;
     case 'srFontSize': ann.fontSize = _clampFontSize(value); break;
     case 'srLabelSide': ann.labelSide = value; break;
     // Betonbalk — parameters; de band wordt bij het renderen opnieuw uit de
     // hartlijn + breedte afgeleid (geen coördinaten herberekenen hier).
     case 'breedteMm': {
-      const bw = parseFloat(String(value).replace(',', '.'));
+      const bw = leesGetalBegin(value);
       ann.breedteMm = Number.isFinite(bw) && bw > 0
         ? Math.max(BETONBALK_BREEDTE_RANGE.min, Math.min(BETONBALK_BREEDTE_RANGE.max, bw))
         : BETONBALK_DEFAULTS.breedteMm;
@@ -1138,7 +1312,7 @@ function applyPropToAnnotation(ann, key, value) {
       break;
     }
     case 'hoogteMm': {
-      const bh = parseFloat(String(value).replace(',', '.'));
+      const bh = leesGetalBegin(value);
       ann.hoogteMm = Number.isFinite(bh) && bh > 0
         ? Math.max(BETONBALK_HOOGTE_RANGE.min, Math.min(BETONBALK_HOOGTE_RANGE.max, bh))
         : BETONBALK_DEFAULTS.hoogteMm;
@@ -1154,14 +1328,14 @@ function applyPropToAnnotation(ann, key, value) {
     // Systeemraster — parameters; het raster wordt bij het renderen opnieuw
     // uit de contour + deze waarden afgeleid (geen coördinaten herrekenen).
     case 'plaatBreedteMm': {
-      const spb = parseFloat(String(value).replace(',', '.'));
+      const spb = leesGetalBegin(value);
       ann.plaatBreedteMm = Number.isFinite(spb) && spb > 0
         ? Math.max(SYSTEEMRASTER_PLAAT_RANGE.min, Math.min(SYSTEEMRASTER_PLAAT_RANGE.max, spb))
         : SYSTEEMRASTER_DEFAULTS.plaatBreedteMm;
       break;
     }
     case 'plaatHoogteMm': {
-      const sph = parseFloat(String(value).replace(',', '.'));
+      const sph = leesGetalBegin(value);
       ann.plaatHoogteMm = Number.isFinite(sph) && sph > 0
         ? Math.max(SYSTEEMRASTER_PLAAT_RANGE.min, Math.min(SYSTEEMRASTER_PLAAT_RANGE.max, sph))
         : SYSTEEMRASTER_DEFAULTS.plaatHoogteMm;
@@ -1174,7 +1348,7 @@ function applyPropToAnnotation(ann, key, value) {
         ? value : SYSTEEMRASTER_DEFAULTS.randConditie;
       break;
     case 'minRandMm': {
-      const smr = parseFloat(String(value).replace(',', '.'));
+      const smr = leesGetalBegin(value);
       ann.minRandMm = Number.isFinite(smr) && smr >= 0 ? smr : SYSTEEMRASTER_DEFAULTS.minRandMm;
       break;
     }
@@ -1189,10 +1363,10 @@ function applyPropToAnnotation(ann, key, value) {
       break;
     case 'viewportName': ann.name = value; break;
     case 'viewportScaleRatio': {
-      const ratio = parseInt(value);
+      const ratio = leesGeheelGetal(value);
       if (ratio > 0) {
         ann.scaleRatio = `1:${ratio}`;
-        ann.pixelsPerUnit = 72 / (25.4 * ratio);
+        ann.pixelsPerUnit = pixelsPerUnitFor(`1:${ratio}`, 'mm', userUnitVanPagina(getActiveDocument(), ann.page));
         ann.unit = 'mm';
       }
       break;
@@ -1211,11 +1385,33 @@ function applyPropToAnnotation(ann, key, value) {
     case 'scaleRegionUnits': ann.units = String(value || 'mm'); break;
     case 'scaleRegionLabel': ann.label = String(value || ''); break;
     case 'tintColor': ann.tintColor = value || undefined; break;
+    case 'measureDepth': zetMeetDiepte(ann, value); break;
     default:
       ann[key] = ((key === 'width' || key === 'height') && RECHTHOEK_VORMEN.has(ann.type))
         ? klemMaat(value) : value;
       break;
   }
+}
+
+// Eenheid van een meting kiezen. Bij een meetvlak (#536) blijft de echte maat
+// gelijk: een eigen schaal rekent mee om naar de nieuwe eenheid, en zonder
+// eigen schaal wordt de schaal van het document in die eenheid vastgelegd
+// (anders zette het herberekenen de eenheid meteen terug). Pixels hebben geen
+// vaste maat; daar blijft het schaalgetal staan.
+function zetMeetEenheid(ann, eenheid) {
+  if (ann?.type === 'measureArea' && eenheid) {
+    const huidig = vlakLengteSchaal(ann);
+    ann.measureScale = schaalInEenheid(huidig.perPt, huidig.unit, eenheid);
+  }
+  ann.measureUnit = eenheid;
+  recomputeMeasureText(ann);
+}
+
+// Diepte van een meting (#311): een positief getal, of weg.
+function zetMeetDiepte(ann, value) {
+  const d = parseDepth(value);
+  if (d === undefined) delete ann.measureDepth;
+  else ann.measureDepth = d;
 }
 
 // Recompute measurement text for a measurement annotation
@@ -1243,10 +1439,8 @@ function recomputeMeasureText(ann) {
     ann.measureUnit = dist.unit;
     ann.measurePixels = dist.pixels;
   } else if (ann.type === 'measureArea' && ann.points && ann.points.length >= 3) {
-    const area = calculateArea(ann.points, ann.holes, ann.page);
-    ann.measureText = formatMeasurement(area);
-    ann.measureValue = area.value;
-    ann.measureUnit = area.unit;
+    // Met de eigen schaal (measureScale) als die er is (#536).
+    herberekenVlakMaat(ann);
   } else if (ann.type === 'measurePerimeter' && ann.points && ann.points.length >= 2) {
     const perim = calculatePerimeter(ann.points, ann.page);
     ann.measureText = formatMeasurement(perim);
@@ -1269,15 +1463,13 @@ function recomputeMeasureText(ann) {
  * @param {string} key   Property name. May be a dot-path for nested writes.
  * @param {*}      value New value.
  */
-// Page-pixels per real-world unit for a scaleRegion's OWN scale + units
+// Page units per real-world unit for a scaleRegion's OWN scale + units
 // (e.g. '1:50' + 'mm' → 72/25.4/50 pt per mm). Used to show/edit the
-// region's physical width/height.
+// region's physical width/height. Same conversion as measuring inside the
+// region (getScaleFromRegion), /UserUnit of its page included (#884).
 function _scaleRegionPpu(ann) {
-  const m = String(ann?.scaleString || '1:100').match(/1\s*:\s*([\d.]+)/);
-  const ratio = m ? parseFloat(m[1]) : 100;
-  const unitToMm = { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 };
-  const mmPerUnit = unitToMm[ann?.units || 'mm'] || 1;
-  return ((72 / 25.4) * mmPerUnit) / (ratio > 0 ? ratio : 100);
+  const schaal = parseScaleString(ann?.scaleString) ? ann.scaleString : '1:100';
+  return pixelsPerUnitFor(schaal, ann?.units || 'mm', userUnitVanPagina(getActiveDocument(), ann?.page));
 }
 
 // Vlak-brede vet/cursief vanuit het paneel (niet in bewerking): ook de
@@ -1309,8 +1501,11 @@ function applyAnnotProp(key, value) {
     recordBulkModify(selected, originals);
     setAnnotProps(key, value);
 
-    // After toggling lock, refresh the panel to update locked state
-    if (key === 'locked') {
+    // After toggling lock, refresh the panel to update locked state. Bij
+    // schaalgebieden volgt de getoonde vulling de kleur/doorzichtigheid (#611).
+    if (key === 'locked'
+        || key === 'profielType'
+        || (_SCHAALGEBIED_VULSLEUTELS.has(key) && selected.some(a => a.type === 'scaleRegion'))) {
       storeShowMultiSelection(selected);
     }
 
@@ -1459,77 +1654,68 @@ function applyAnnotProp(key, value) {
       if (currentAnnotation.type === 'stamp') applyStampColor(currentAnnotation);
       break;
     case 'fillColor': currentAnnotation.fillColor = value; break;
+    case 'fillOpacity': currentAnnotation.fillOpacity = _vulDoorzichtigheidUitPct(value); break;
     case 'strokeColor':
       currentAnnotation.strokeColor = value;
       if (currentAnnotation.type === 'parametricSymbol') currentAnnotation.color = value;
       break;
     case 'lineWidth':
-      zetRanddikte(currentAnnotation, parseFloat(value));
+      zetRanddikte(currentAnnotation, leesGetalBegin(value));
       // Zie applyPropToAnnotation: bij een stempel moet de dikte de SVG in.
       if (currentAnnotation.type === 'stamp') applyStampLineWidth(currentAnnotation);
       break;
     case 'opacity':
-      currentAnnotation.opacity = parseInt(value) / 100;
+      // Bij een vorm met aparte vul-dekking houdt de vulling haar dekking (#685).
+      zetLijnDekking(currentAnnotation, leesGeheelGetal(value) / 100);
       break;
     case 'icon': currentAnnotation.icon = value; break;
     case 'borderStyle': currentAnnotation.borderStyle = value; break;
+    case 'boxShape': currentAnnotation.boxShape = value === 'rect' ? undefined : value; break;
     case 'cross': currentAnnotation.cross = value === true || undefined; break;
     case 'hatchPattern': currentAnnotation.hatchPattern = value; break;
     case 'hatchColor': currentAnnotation.hatchColor = value; break;
-    case 'hatchScale': currentAnnotation.hatchScale = parseInt(value); break;
-    case 'hatchAngle': currentAnnotation.hatchAngle = parseInt(value); break;
+    case 'hatchScale': currentAnnotation.hatchScale = leesGeheelGetal(value); break;
+    case 'hatchAngle': currentAnnotation.hatchAngle = leesGeheelGetal(value); break;
     case 'text': currentAnnotation.text = value; break;
-    case 'fontSize': currentAnnotation.fontSize = parseInt(value); break;
+    case 'fontSize': currentAnnotation.fontSize = leesGeheelGetal(value); break;
     case 'textColor':
       currentAnnotation.textColor = value;
       currentAnnotation.color = value;
       break;
     case 'fontFamily': currentAnnotation.fontFamily = value; break;
-    case 'textFontSize': currentAnnotation.fontSize = parseInt(value); break;
+    case 'textFontSize': currentAnnotation.fontSize = leesGeheelGetal(value); break;
     case 'fontBold': currentAnnotation.fontBold = value; zetRunsStijl(currentAnnotation, 'bold', value); break;
     case 'fontItalic': currentAnnotation.fontItalic = value; zetRunsStijl(currentAnnotation, 'italic', value); break;
     case 'fontUnderline': currentAnnotation.fontUnderline = value; break;
     case 'fontStrikethrough': currentAnnotation.fontStrikethrough = value; break;
     case 'textAlign': currentAnnotation.textAlign = value; break;
+    case 'textVAlign': currentAnnotation.textVAlign = value === 'top' ? undefined : value; break;
     case 'lineSpacing': {
-      currentAnnotation.lineSpacing = parseFloat(value);
+      currentAnnotation.lineSpacing = leesGetalBegin(value);
       // Resize textbox height to fit content with new line spacing
       if (['textbox', 'callout'].includes(currentAnnotation.type) && currentAnnotation.text) {
         currentAnnotation.height = computeTextboxContentHeight(currentAnnotation);
       }
       break;
     }
-    case 'rotation': currentAnnotation.rotation = Math.max(-360, Math.min(360, parseInt(value) || 0)); break;
-    // Breedte/hoogte van een afbeelding: ELKE positieve waarde mag, met
-    // decimalen. Was geheeltallig met "leeg of 0 -> 20 pt" en een vloer van
-    // 1 pt (35 mm op 1:100) op de partner-as. Een tussenstand tijdens het
+    case 'rotation': currentAnnotation.rotation = Math.max(-360, Math.min(360, leesGeheelGetal(value) || 0)); break;
+    // Breedte/hoogte van een afbeelding: de getypte waarde staat in de
+    // gekozen papiereenheid (mm, cm, in of pt, #598) en wordt paginapunten.
+    // ELKE positieve waarde mag, met decimalen. Een tussenstand tijdens het
     // typen ("", "0", "0.") laat het model met rust. De partner-as volgt de
-    // verhouding exact (#315) en is alleen technisch begrensd.
-    case 'imageWidth': {
-      const newW = leesMaatInvoer(value);
-      if (newW == null) break;
-      currentAnnotation.width = newW;
-      const ratio = currentAnnotation.lockAspectRatio
-        ? veiligeVerhouding(currentAnnotation.originalWidth, currentAnnotation.originalHeight) : 0;
-      if (ratio) {
-        currentAnnotation.height = klemMaat(newW / ratio);
-        setAnnotProps('imageHeight', toonMaat(currentAnnotation.height));
-      }
-      break;
-    }
+    // verhouding exact (#315) en is alleen technisch begrensd. De store krijgt
+    // de maat in paginapunten, niet de getypte tekst.
+    case 'imageWidth':
     case 'imageHeight': {
-      const newH = leesMaatInvoer(value);
-      if (newH == null) break;
-      currentAnnotation.height = newH;
-      const ratio = currentAnnotation.lockAspectRatio
-        ? veiligeVerhouding(currentAnnotation.originalWidth, currentAnnotation.originalHeight) : 0;
-      if (ratio) {
-        currentAnnotation.width = klemMaat(newH * ratio);
-        setAnnotProps('imageWidth', toonMaat(currentAnnotation.width));
-      }
+      const maat = nieuweAfbeeldingsMaat(key === 'imageWidth' ? 'width' : 'height',
+        value, papierEenheid(), currentAnnotation);
+      if (!maat) break;
+      currentAnnotation.width = maat.width;
+      currentAnnotation.height = maat.height;
+      setAnnotProps({ imageWidth: maat.width, imageHeight: maat.height });
       break;
     }
-    case 'imageRotation': currentAnnotation.rotation = parseInt(value) || 0; break;
+    case 'imageRotation': currentAnnotation.rotation = leesGeheelGetal(value) || 0; break;
     case 'linkedPath': currentAnnotation.linkedPath = value || undefined; break;
     case 'tintColor': currentAnnotation.tintColor = value || undefined; break;
     case 'lockAspectRatio': {
@@ -1538,7 +1724,7 @@ function applyAnnotProp(key, value) {
         ? veiligeVerhouding(currentAnnotation.originalWidth, currentAnnotation.originalHeight) : 0;
       if (lockRatio) {
         currentAnnotation.height = klemMaat(currentAnnotation.width / lockRatio);
-        setAnnotProps('imageHeight', toonMaat(currentAnnotation.height));
+        setAnnotProps('imageHeight', currentAnnotation.height);
       }
       break;
     }
@@ -1549,7 +1735,7 @@ function applyAnnotProp(key, value) {
       // Non-destructive crop (issue #212): store as fraction 0-1 per side.
       // Clamp so each side stays within 0-90% AND the pair (left+right /
       // top+bottom) leaves at least 10% of the source visible.
-      const pct = Math.max(0, Math.min(90, parseFloat(value) || 0));
+      const pct = Math.max(0, Math.min(90, leesGetalBegin(value) || 0));
       const opposite = key === 'cropLeft' ? 'cropRight'
         : key === 'cropRight' ? 'cropLeft'
         : key === 'cropTop' ? 'cropBottom' : 'cropTop';
@@ -1560,13 +1746,31 @@ function applyAnnotProp(key, value) {
     }
     case 'startHead': currentAnnotation.startHead = value; break;
     case 'endHead': currentAnnotation.endHead = value; break;
-    case 'headSize': currentAnnotation.headSize = parseInt(value); break;
-    case 'measureScale': currentAnnotation.measureScale = parseFloat(value) || 0; recomputeMeasureText(currentAnnotation); break;
-    case 'measureUnit': currentAnnotation.measureUnit = value; recomputeMeasureText(currentAnnotation); break;
-    case 'measurePrecision': currentAnnotation.measurePrecision = parseInt(value); recomputeMeasureText(currentAnnotation); break;
+    case 'headSize': currentAnnotation.headSize = leesGeheelGetal(value); break;
+    case 'inkPressure': case 'inkMinWidth': case 'inkSmoothing':
+      Object.assign(currentAnnotation, inktPropWaarde(key, value));
+      value = inktPaneelWaarden(currentAnnotation)[key];
+      break;
+    case 'measureScale':
+      currentAnnotation.measureScale = leesGetalBegin(value) || 0;
+      recomputeMeasureText(currentAnnotation);
+      // Zonder eigen schaal volgt een meetvlak de eenheid van het document.
+      if (currentAnnotation.type === 'measureArea') {
+        setAnnotProps('measureUnit', lengteEenheid(currentAnnotation.measureUnit) || '');
+      }
+      break;
+    case 'measureUnit':
+      zetMeetEenheid(currentAnnotation, value);
+      if (currentAnnotation.type === 'measureArea') setAnnotProps('measureScale', currentAnnotation.measureScale || 0);
+      break;
+    case 'measurePrecision': currentAnnotation.measurePrecision = leesGeheelGetal(value); recomputeMeasureText(currentAnnotation); break;
     case 'measureName':
       currentAnnotation.measureName = value;
       if (isRuimteVlak(currentAnnotation)) currentAnnotation.opsRuimteNaam = value;
+      break;
+    case 'measureDepth':
+      zetMeetDiepte(currentAnnotation, value);
+      setAnnotProps('measureDepth', currentAnnotation.measureDepth ?? '');
       break;
     case 'scaleBarUnit': {
       // Unit conversion factors relative to mm
@@ -1587,7 +1791,7 @@ function applyAnnotProp(key, value) {
       break;
     }
     case 'scaleBarTotalUnits': {
-      const newTotal = parseFloat(value) || 1;
+      const newTotal = leesGetalBegin(value) || 1;
       currentAnnotation.totalUnits = newTotal;
       // pixelsPerUnit needs recalc: width stays the same, pixelsPerUnit = width / totalUnits
       currentAnnotation.pixelsPerUnit = currentAnnotation.width / newTotal;
@@ -1597,27 +1801,35 @@ function applyAnnotProp(key, value) {
       break;
     }
     case 'scaleBarDivisions': {
-      currentAnnotation.divisions = Math.max(1, Math.min(20, parseInt(value) || 5));
+      currentAnnotation.divisions = Math.max(1, Math.min(20, leesGeheelGetal(value) || 5));
       break;
     }
     case 'scaleBarHeight': {
-      const newH = Math.max(4, parseInt(value) || 14);
-      currentAnnotation.height = newH;
+      currentAnnotation.height = _schaalbalkHoogte(value);
+      setAnnotProps('scaleBarHeight', currentAnnotation.height);
       break;
     }
     // ── Stavenreeks ────────────────────────────────────────────────────
     // Alleen parameters; de reekslijn (start/eind) blijft ongemoeid. De
     // poten, punten en het label worden bij het renderen afgeleid.
     case 'srCount': {
-      currentAnnotation.count = Math.max(1, Math.min(999, parseInt(value) || 1));
+      currentAnnotation.count = Math.max(1, Math.min(999, leesGeheelGetal(value) || 1));
       break;
     }
     case 'srDiameter': {
-      currentAnnotation.diameter = parseFloat(value) || 12;
+      currentAnnotation.diameter = leesGetalBegin(value) || 12;
       break;
     }
     case 'srBarLengthMm': {
-      currentAnnotation.barLengthMm = Math.max(0, parseFloat(String(value).replace(',', '.')) || 0);
+      currentAnnotation.barLengthMm = Math.max(0, leesGetalBegin(value) || 0);
+      break;
+    }
+    case 'srBarMark': {
+      currentAnnotation.barMark = String(value ?? '').trim();
+      break;
+    }
+    case 'srSteelGrade': {
+      currentAnnotation.steelGrade = String(value ?? '').trim().toUpperCase();
       break;
     }
     case 'srLegDir': {
@@ -1625,7 +1837,7 @@ function applyAnnotProp(key, value) {
       break;
     }
     case 'srLegLength': {
-      currentAnnotation.legLength = Math.max(1, parseFloat(value) || STAVENREEKS_DEFAULTS.legLength);
+      currentAnnotation.legLength = Math.max(1, leesGetalBegin(value) || STAVENREEKS_DEFAULTS.legLength);
       break;
     }
     case 'srLineTail': {
@@ -1641,7 +1853,7 @@ function applyAnnotProp(key, value) {
       break;
     }
     case 'scaleBarPixelsPerUnit': {
-      const ppu = parseFloat(value);
+      const ppu = leesGetalBegin(value);
       if (ppu > 0) {
         currentAnnotation.pixelsPerUnit = ppu;
         currentAnnotation.width = currentAnnotation.totalUnits * ppu;
@@ -1652,10 +1864,11 @@ function applyAnnotProp(key, value) {
     }
     case 'viewportName': currentAnnotation.name = value; break;
     case 'viewportScaleRatio': {
-      const vpRatio = parseInt(value);
+      const vpRatio = leesGeheelGetal(value);
       if (vpRatio > 0) {
         currentAnnotation.scaleRatio = `1:${vpRatio}`;
-        currentAnnotation.pixelsPerUnit = 72 / (25.4 * vpRatio);
+        // In pagina-eenheden, /UserUnit meegerekend (#884), zoals bij meervoudige selectie.
+        currentAnnotation.pixelsPerUnit = pixelsPerUnitFor(`1:${vpRatio}`, 'mm', userUnitVanPagina(getActiveDocument(), currentAnnotation.page));
         currentAnnotation.unit = 'mm';
         currentAnnotation.name = currentAnnotation.name || `1:${vpRatio}`;
         setAnnotProps('viewportScaleRatio', `1:${vpRatio}`);
@@ -1699,7 +1912,7 @@ function applyAnnotProp(key, value) {
     case 'scaleRegionHeight': {
       // Real-world size of the region itself (in its own scale + units) →
       // page-pixel bbox, top-left anchored.
-      const real = parseFloat(String(value).replace(',', '.'));
+      const real = leesGetalBegin(value);
       if (!(real > 0)) break;
       // Elke positieve waarde mag (ook kleiner dan de schermpixel-grens bij
       // slepen: die duwt een al kleiner gebied niet omhoog); alleen technisch
@@ -1712,6 +1925,12 @@ function applyAnnotProp(key, value) {
       recalculateAllMeasurements();
       break;
     }
+    case 'profielType':
+      // Staalprofiel (#697): ander type, dichtstbijzijnde maat, kader op ware
+      // grootte. Eén ongedaan-stap (recordPropertyChange hierboven); het
+      // paneel toont daarna de velden van het nieuwe sjabloon.
+      if (wisselProfielType(currentAnnotation, value)) storeShowProperties(currentAnnotation);
+      break;
     case 'params': {
       // Parametric symbol params (from ParametricSymbolSection). Dynamic-block
       // behaviour: templates with a real-world size (steel profiles) resize
@@ -1775,11 +1994,58 @@ function applyAnnotProp(key, value) {
     endUndoTransaction();
   }
 
-  if (!key.startsWith('tb') && !key.includes('.')) {
+  if (!key.startsWith('tb') && !key.includes('.') && !_EIGEN_STORE_SLEUTELS.has(key)) {
     setAnnotProps(key, value);
+  }
+  // Een open tekst-editor toont een nieuw lettertype, een andere grootte of
+  // kleur meteen (#765), zodat wat je typt al in de gekozen stijl staat.
+  if (key === 'fontFamily' || key === 'textFontSize' || key === 'fontSize' || key === 'textColor') {
+    const ann = currentAnnotation;
+    import('../../tools/text-editing.js')
+      .then(m => m.werkEditorStijlBij && m.werkEditorStijlBij(ann))
+      .catch(() => {});
+  }
+  // Schaalgebied (#611): zonder eigen vulkleur of vul-doorzichtigheid volgt de
+  // vulling de kleur en de doorzichtigheid; het paneel toont wat er staat.
+  if (currentAnnotation.type === 'scaleRegion' && _SCHAALGEBIED_VULSLEUTELS.has(key)) {
+    setAnnotProps({
+      fillColor: schaalgebiedStijl(currentAnnotation).vulKleur,
+      fillOpacity: _vulDoorzichtigheidPct(currentAnnotation),
+    });
   }
 
   redraw();
+}
+
+const _SCHAALGEBIED_VULSLEUTELS = new Set(['color', 'opacity', 'fillColor', 'fillOpacity']);
+
+// Vul-doorzichtigheid in procenten voor het paneel. Een schaalgebied zonder
+// eigen waarde toont wat er getekend wordt (10 % van de doorzichtigheid); een
+// andere soort zonder eigen waarde vult op zijn doorzichtigheid.
+function _vulDoorzichtigheidPct(a) {
+  if (a?.type === 'scaleRegion') return Math.round(schaalgebiedStijl(a).vulAlfa * 100);
+  const v = a?.fillOpacity ?? a?.opacity ?? 1;
+  return Math.round(v * 100);
+}
+
+function _vulDoorzichtigheidUitPct(value) {
+  const n = leesGeheelGetal(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) / 100 : undefined;
+}
+
+// Sleutels waarvan de case hierboven zelf de store bijwerkt (in paginapunten)
+// in plaats van de getypte tekst in de gekozen eenheid (#598).
+const _EIGEN_STORE_SLEUTELS = new Set(['imageWidth', 'imageHeight', 'scaleBarHeight']);
+
+/** Kleinste balkhoogte van een schaalbalk, paginapunten. */
+export const SCHAALBALK_MIN_HOOGTE_PT = 4;
+
+// Balkhoogte in paginapunten (het paneel rekent de gekozen papiereenheid al
+// om, #598). Decimalen blijven staan: 5 mm is 14,17 pt, niet 14.
+function _schaalbalkHoogte(value) {
+  const n = typeof value === 'number' ? value : leesGetalBegin(value ?? '');
+  if (!Number.isFinite(n) || n <= 0) return 14;
+  return Math.max(SCHAALBALK_MIN_HOOGTE_PT, n);
 }
 
 // Apply a STYLE TYPE preset (generic concept — see annotations/style-types.js)
@@ -1905,7 +2171,7 @@ export function resetImageSize() {
 
 // Update opacity with Ctrl-snap support
 export function updateOpacity(value, ctrlKey) {
-  let finalValue = parseInt(value);
+  let finalValue = leesGeheelGetal(value);
   if (ctrlKey) {
     finalValue = Math.round(finalValue / 10) * 10;
   }
@@ -1921,6 +2187,26 @@ export function getLineWidthLabel() {
 }
 
 // Get the current annotation reference
+/**
+ * Keuzelijst "Laag" (#377): de selectie naar een markeringslaag of een laag
+ * van de tekening. Eén undo-stap (annotationLayersStore).
+ * @param {string} waarde  'a:<laag-id>' of 'o:<pdf.js-id>'
+ * @param {{name?: string, visible?: boolean}} [tekeningLaag]  bij 'o:'
+ */
+export async function setAnnotationLayerProp(waarde, tekeningLaag = {}) {
+  const keuze = leesLaagKeuze(waarde);
+  const doc = getActiveDocument();
+  if (!keuze || !doc) return;
+  const selectie = doc.selectedAnnotations?.length ? [...doc.selectedAnnotations]
+    : (currentAnnotation ? [currentAnnotation] : []);
+  const te = selectie.filter(a => !a.locked);
+  if (!te.length) return;
+  const lagen = await import('./annotationLayersStore.js');
+  if (keuze.soort === 'tekening') await lagen.moveAnnotationsToDrawingLayer(te, keuze.id, tekeningLaag);
+  else await lagen.moveAnnotationsToAnnotationLayer(te, keuze.id);
+  setAnnotProps('layer', sharedValue(te, a => laagKeuzeWaarde(a, doc), 'mixed'));
+}
+
 export function getCurrentAnnotation() {
   return currentAnnotation;
 }
@@ -1945,7 +2231,10 @@ export async function showToolDefaults(toolName, overrides = {}, shouldShow = nu
     rectangle: 'box',
     rect: 'box',
   };
-  const annType = TOOL_TO_TYPE[toolName] || toolName;
+  // Markset: the Text tool's defaults are those of plain text, a text box
+  // without border or fill (markset/plain-text.js).
+  const plainText = toolName === PLAIN_TEXT_TOOL;
+  const annType = plainText ? 'textbox' : (TOOL_TO_TYPE[toolName] || toolName);
 
   // Reasonable default annotation shape — applyDefaultStyle() will overlay
   // any saved preferences on top of this.
@@ -1980,6 +2269,7 @@ export async function showToolDefaults(toolName, overrides = {}, shouldShow = nu
     modifiedAt: new Date().toISOString(),
     replies: [],
   };
+  if (plainText) Object.assign(synthetic, { plainText: true, strokeColor: 'none', fillColor: 'none', fontSize: PLAIN_TEXT_FONT_SIZE }); // Markset
 
   try {
     // Lazy-import to avoid load-order cycles (preferences ↔ propertiesStore).

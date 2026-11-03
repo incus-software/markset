@@ -9,6 +9,14 @@ CDP-poort via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…
 de vergelijkings-sweep verwacht CDP op 9222). Vite-dev-server vers gestart
 (een herstart van Vite breekt draaiende vensters — herstart die daarna ook).
 
+Start elke testinstantie headless: `OPDS_HEADLESS=1` naast `OPDS_DETACHED=1`
+(of `--mcp-server`). Het venster staat dan buiten elke monitor, heeft geen
+taakbalkknop, pakt nooit de focus en native dialogen worden geweigerd met een
+logregel (`[headless] … suppressed`); renderen, MCP en CDP-schermafdrukken
+werken gewoon. `OPDS_HEADLESS_SIZE=BxH` (standaard `1200x800`) zet de
+vaste binnenmaat. Een gewone start zonder `--mcp-server`/`OPDS_DETACHED=1`
+negeert de variabele. Zie `open-pdf-studio/src-tauri/src/headless.rs`.
+
 ## 1. Unit-tests
 
 ```bash
@@ -25,6 +33,7 @@ cd open-pdf-studio && npm run test:unit
 | Snelzoom | `node scripts/verify-snelzoom.mjs` | anker houdt bij snelle zoomreeksen |
 | Opslag-rondgang | `node scripts/verify-opslag-rondgang.mjs` | opslaan → heropenen zonder verlies |
 | Opslag-duplicaten | `node scripts/verify-opslag-duplicaten.mjs` | geen verdubbeling bij opslaan of sluiten-met-opslaan |
+| UserUnit-rondgang | `node scripts/verify-userunit-rondgang.mjs` | annotaties op een pagina met /UserUnit blijven op hun plek: bij de eerste keer openen en na drie keer opslaan en heropenen, in het model en in /Rect |
 | Zoeken | `node scripts/verify-zoeken.mjs` | markeringen liggen op het woord (≤ 2 px) in enkele pagina, doorlopend en vectormodus, op zoom 50/100/175 %, na zoom- en weergavewissels, bij /Rotate 90/180/270 en een MediaBox met oorsprong ≠ 0; "x van N", volgende/vorige, de bronvinkjes Tekst/Annotaties en de resultatenlijst per pagina |
 
 ## 3. Vergelijkings-sweep (bij render-/saver-/rotatie-wijzigingen verplicht)

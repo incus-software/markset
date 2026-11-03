@@ -18,11 +18,13 @@ import { hexToRgb } from './utils.js';
 import { ringenRichten, vlakOmhullende } from '../../annotations/vlak-ringen.js';
 import { getHatchLineFamilies } from './hatch-catalog.js';
 import { catmullRomToBezier, splineArrowEndTangent } from '../../annotations/spline-arrow-geometry.js';
+import { calloutLeiderKoppen } from '../../annotations/callout-koppen.js';
 import { toWinAnsiText, winAnsiLiteral } from './pdf-text.js';
 import { maatTekstMarge, leesbareHoek } from '../../annotations/maat-label.js';
 import { maatlijnGeometrie } from '../../annotations/maatlijn-geometrie.js';
 import { inlineMaatlijn, helveticaBreedte, HOOFDLETTER_HOOGTE } from '../../annotations/maatlijn-inline.js';
 import { klemMaat, MIN_VORM_MAAT_PT } from '../../annotations/minimummaat.js';
+import { vlakZijden, zijdeLabel, zijdeTekstBreedte, ZIJDE_TEKST_GROOTTE } from '../../annotations/vlak-zijden.js';
 import {
   rotToWorld as srRotToWorld,
   SYSTEEM_RAVEEL_OFFSET_MM as srRaveelOffsetMm,
@@ -41,8 +43,10 @@ const f = (n) => {
 const escapePdfText = (s) => winAnsiLiteral(s, { newlines: 'space' });
 
 // Dash arrays mirror rendering/decorations.js applyBorderStyle (screen px ==
-// PDF pt at scale 1). Solid → null (no dash operator).
-function dashArrayForStyle(borderStyle) {
+// PDF pt at scale 1). Solid → null (no dash operator). The single source for
+// every saved dash pattern: the appearances here, /BS /D (utils.js
+// buildBorderStyle) and the inline appearances in saver.js.
+export function dashArrayForStyle(borderStyle) {
   switch (borderStyle) {
     case 'dashed':            return [3, 4];
     case 'dotted':            return [2, 4];
@@ -74,7 +78,7 @@ function pathOps(pts, X, Y, close) {
 // emits PDF operators. Works in APP space (matches canvas), converting every
 // endpoint to PDF coords via X()/Y(). The polygon clip path must already be set
 // by the caller (W n) before these ops run.
-function hatchFamilyOps(fam, bounds, scale, rot, center, colorRgb) {
+function hatchFamilyOps(fam, bounds, scale, rot, center, colorRgb, clip) {
   const angleRad = (fam.angle * Math.PI) / 180;
   const cosA = Math.cos(angleRad);
   const sinA = Math.sin(angleRad);
@@ -107,17 +111,56 @@ function hatchFamilyOps(fam, bounds, scale, rot, center, colorRgb) {
     const dotR = Math.max(0.5, 1 * scale);
     const dotSpacing = deltaX || spacing;
     const dotsPerLine = Math.ceil((halfDiag * 2) / dotSpacing) + 2;
+    // Alleen stippen die het knipvlak kunnen raken. Het rooster dekt de hele
+    // opgeblazen omhullende (zijde ~2x de diagonaal plus marge), terwijl W n
+    // bijna alles daarvan wegknipt: een vlak van 250x150 pt met 'concrete'
+    // schreef zo ~140.000 stippen (45 MB). De posities blijven absoluut
+    // (anker + i*spacing + j*dotSpacing), dus het beeld is identiek.
+    let iVan = -numLines, iTot = numLines, jVan = -dotsPerLine, jTot = dotsPerLine;
+    let binnen = () => true;
+    if (clip) {
+      const kMinX = clip.minX - dotR, kMaxX = clip.maxX + dotR;
+      const kMinY = clip.minY - dotR, kMaxY = clip.maxY + dotR;
+      const ax = cx + originX, ay = cy + originY;
+      // Hoeken van het knipvak terug naar het ongedraaide rooster, dan
+      // projecteren op de lijnnormaal n = (-sin, cos) en de lijnrichting d.
+      let pMin = Infinity, pMax = -Infinity, tMin = Infinity, tMax = -Infinity;
+      for (const hx of [kMinX, kMaxX]) {
+        for (const hy of [kMinY, kMaxY]) {
+          let ux = hx, uy = hy;
+          if (rot) {
+            const ddx = hx - center.cx, ddy = hy - center.cy;
+            ux = center.cx + ddx * cr + ddy * sr;
+            uy = center.cy - ddx * sr + ddy * cr;
+          }
+          const X = ux - ax, Y = uy - ay;
+          const p = X * (-sinA) + Y * cosA;
+          const t = X * cosA + Y * sinA;
+          if (p < pMin) pMin = p;
+          if (p > pMax) pMax = p;
+          if (t < tMin) tMin = t;
+          if (t > tMax) tMax = t;
+        }
+      }
+      if (!Number.isFinite(pMin) || !Number.isFinite(tMin)) return '';
+      iVan = Math.max(iVan, Math.floor(pMin / spacing) - 1);
+      iTot = Math.min(iTot, Math.ceil(pMax / spacing) + 1);
+      jVan = Math.max(jVan, Math.floor(tMin / dotSpacing) - 1);
+      jTot = Math.min(jTot, Math.ceil(tMax / dotSpacing) + 1);
+      binnen = (x, y) => x >= kMinX && x <= kMaxX && y >= kMinY && y <= kMaxY;
+    }
     let s = `${f(colorRgb[0])} ${f(colorRgb[1])} ${f(colorRgb[2])} rg\n`;
     const k = 0.5522847498;
-    for (let i = -numLines; i <= numLines; i++) {
+    for (let i = iVan; i <= iTot; i++) {
       const perp = i * spacing;
       const baseX = cx + perp * (-sinA);
       const baseY = cy + perp * cosA;
-      for (let j = -dotsPerLine; j <= dotsPerLine; j++) {
+      for (let j = jVan; j <= jTot; j++) {
         const along = j * dotSpacing;
         let dx = baseX + originX + along * cosA;
         let dy = baseY + originY + along * sinA;
         [dx, dy] = rotate(dx, dy);
+        if (!binnen(dx, dy)) continue;
         // bezier circle radius dotR centered at (dx,dy) in APP space; convert.
         s += `${f(gX(dx))} ${f(gY(dy + dotR))} m\n`;
         s += `${f(gX(dx + k * dotR))} ${f(gY(dy + dotR))} ${f(gX(dx + dotR))} ${f(gY(dy + k * dotR))} ${f(gX(dx + dotR))} ${f(gY(dy))} c\n`;
@@ -156,7 +199,9 @@ let gX = (x) => x, gY = (y) => y;
 
 // Build the full hatch fill (clip to polygon+holes, then all line families).
 // `points`/`holes` are app-space. Returns ops (already includes q/Q).
-function hatchFillOps({ points, holes, hatchPattern, hatchColorRgb, hatchScale, hatchAngle, X, Y }) {
+// `volledigRooster` schrijft het hele stippenrooster zonder te knippen tot het
+// vlak; alleen om in tests het beeld te vergelijken.
+export function hatchFillOps({ points, holes, hatchPattern, hatchColorRgb, hatchScale, hatchAngle, X, Y, volledigRooster = false }) {
   const families = getHatchLineFamilies(hatchPattern);
   if (families === null) return '';
   gX = X; gY = Y;
@@ -182,7 +227,8 @@ function hatchFillOps({ points, holes, hatchPattern, hatchColorRgb, hatchScale, 
     s += ringPathOps(points, holes, X, Y);
     s += 'f\n';
   } else {
-    for (const fam of families) s += hatchFamilyOps(fam, bounds, scale, hatchAngle || 0, center, hatchColorRgb);
+    for (const fam of families) s += hatchFamilyOps(fam, bounds, scale, hatchAngle || 0, center, hatchColorRgb,
+      volledigRooster ? null : { minX, minY, maxX, maxY });
   }
   s += 'Q\n';
   return s;
@@ -332,14 +378,40 @@ export function buildFilledAreaAP({ points, holes, X, Y, fillColorHex, strokeCol
   return { content: s, needsFont: false };
 }
 
-// measureArea: fill + optional hatch + outline + centroid label.
+// Zijdematen van een meetvlak (#536): elke tekst midden op haar zijde, langs
+// de zijde, rechtop en aan de buitenkant — dezelfde plaats als op het scherm
+// (vlak-zijden.js). `zijdeTeksten` is een lijst { index, tekst }; `draaiing`
+// de paginarotatie (radialen), want de punten staan hier in het ongedraaide
+// paginaframe.
+function zijdematenOps({ points, zijdeTeksten, draaiing, colorRgb, X, Y }) {
+  const tekstVan = new Map(zijdeTeksten.map((z) => [z.index, z.tekst]));
+  const fs = ZIJDE_TEKST_GROOTTE;
+  let s = '';
+  for (const zijde of vlakZijden(points)) {
+    const tekst = tekstVan.get(zijde.index);
+    if (!tekst) continue;
+    const l = zijdeLabel(zijde, { fontSize: fs, draaiing });
+    const half = zijdeTekstBreedte(toWinAnsiText(tekst, { newlines: 'space' }), fs) / 2;
+    const bx = l.x - l.richting.x * half;
+    const by = l.y - l.richting.y * half;
+    // App-hoek is y-omlaag, PDF y-omhoog: hoek spiegelen (zoals maatLabelOps).
+    const c = Math.cos(-l.hoek), sn = Math.sin(-l.hoek);
+    s += `BT\n/Helv ${f(fs)} Tf\n${f(colorRgb[0])} ${f(colorRgb[1])} ${f(colorRgb[2])} rg\n`;
+    s += `${f(c)} ${f(sn)} ${f(-sn)} ${f(c)} ${f(X(bx))} ${f(Y(by))} Tm\n`;
+    s += `(${escapePdfText(tekst)}) Tj\nET\n`;
+  }
+  return s;
+}
+
+// measureArea: fill + optional hatch + outline + centroid label, en de
+// zijdematen als `zijdeTeksten` gegeven is (#536).
 // `fillAlpha` (annotation fillOpacity, PDF /ca) applies to the solid fill only,
 // wrapped in q…Q with /GSf so hatch, outline and label stay opaque — the same
 // split as on screen. The result then carries `fillAlpha`, which makes the
 // caller (attachVectorAP) add the /GSf ExtGState to the resources.
 export function buildMeasureAreaAP({ points, holes, X, Y, fillColorHex, strokeColorHex,
   lineWidth, borderStyle, hatchPattern, hatchColorHex, hatchScale, hatchAngle,
-  text, labelX, labelY, fillAlpha, heeftRand = true }) {
+  text, labelX, labelY, fillAlpha, heeftRand = true, zijdeTeksten, draaiing = 0 }) {
   if (!points || points.length < 3) return null;
   const stroke = hexToRgb(strokeColorHex || '#ff0000');
   const alpha = (typeof fillAlpha === 'number' && fillAlpha >= 0 && fillAlpha < 1) ? fillAlpha : undefined;
@@ -365,6 +437,9 @@ export function buildMeasureAreaAP({ points, holes, X, Y, fillColorHex, strokeCo
   cx /= points.length; cy /= points.length;
   s += labelOps({ text, x: labelX != null ? labelX : cx, y: labelY != null ? labelY : cy,
     fontSize: 11, colorRgb: stroke, X, Y });
+  if (Array.isArray(zijdeTeksten) && zijdeTeksten.length > 0) {
+    s += zijdematenOps({ points, zijdeTeksten, draaiing, colorRgb: stroke, X, Y });
+  }
   return filledWithAlpha
     ? { content: s, needsFont: true, fillAlpha: alpha }
     : { content: s, needsFont: true };
@@ -765,7 +840,8 @@ export function buildSysteemrasterAP({ geom, X, Y, strokeColorHex, lineWidth }) 
 
 // cloud / cloudPolyline: scalloped outline (optional fill).
 export function buildCloudAP({ kind, x, y, w, h, points, puff, X, Y,
-  fillColorHex, strokeColorHex, lineWidth, borderStyle, heeftRand = true }) {
+  fillColorHex, strokeColorHex, lineWidth, borderStyle, heeftRand = true,
+  hatchPattern, hatchColorHex, hatchScale, hatchAngle, arceringOps = (ops) => ops }) {
   const outline = kind === 'rect'
     ? cloudRectOutlinePts(x, y, w, h, puff || 15)
     : cloudPolyOutlinePts(points, true);
@@ -774,6 +850,14 @@ export function buildCloudAP({ kind, x, y, w, h, points, puff, X, Y,
   let s = '';
   if (fillColorHex && fillColorHex !== 'none' && fillColorHex !== 'transparent') {
     s += solidFillOps(outline, null, hexToRgb(fillColorHex), X, Y);
+  }
+  // Arcering uit het eigenschappenpaneel (#621), binnen de gebolde omtrek,
+  // tussen vulling en rand zoals het scherm. `arceringOps` mag haar in een
+  // eigen graphics-state zetten (de vul-dekking, #685).
+  if (hatchPattern && hatchPattern !== 'none') {
+    s += arceringOps(hatchFillOps({ points: outline, holes: null, hatchPattern,
+      hatchColorRgb: hexToRgb(hatchColorHex || strokeColorHex || '#000000'),
+      hatchScale, hatchAngle, X, Y }));
   }
   if (heeftRand) {
     s += `${f(stroke[0])} ${f(stroke[1])} ${f(stroke[2])} RG\n${f(lineWidth ?? 1)} w\n${dashOp(borderStyle)}`;
@@ -857,7 +941,7 @@ const _KAPPA = 0.5522847498;
 // drawArrowheadOnCanvas draws it. Filled shapes use the thin (≤1) outline the
 // screen uses so the visual tip stays on the end point. `hol`: a closed shape
 // without a fill (PDF /LE without /IC), only its outline at the full width.
-function lineHeadOps(tx, ty, angle, size, style, strokeRgb, fillRgb, lineWidth, X, Y, { hol = false } = {}) {
+export function lineHeadOps(tx, ty, angle, size, style, strokeRgb, fillRgb, lineWidth, X, Y, { hol = false } = {}) {
   const cos = Math.cos(angle), sin = Math.sin(angle);
   const pt = (lx, ly) => `${f(X(tx + lx * cos - ly * sin))} ${f(Y(ty + lx * sin + ly * cos))}`;
   const poly = (pts, close) => pts.map((p, i) => `${pt(p[0], p[1])} ${i ? 'l' : 'm'}`).join(' ') + (close ? ' h' : '');
@@ -892,6 +976,33 @@ function lineHeadOps(tx, ty, angle, size, style, strokeRgb, fillRgb, lineWidth, 
     case 'slash':          return stroked(poly([[0, -s / 2], [0, s / 2]]));
     default:               return '';
   }
+}
+
+/**
+ * Aanhaallijn van een callout met zijn koppen (#612), zoals rendering.js
+ * ('callout') hem tekent: dezelfde inkorting en hoeken (callout-koppen.js) en
+ * dezelfde kopvormen. Punten in app-ruimte, X/Y zetten om naar PDF. In q/Q,
+ * zodat lijndikte, verbinding en kleur van de koppen het tekstvak niet raken.
+ * @param {{dash?: string}} o  dash: de streepjes-operator van de aanhaallijn
+ */
+export function calloutLeiderOps({ arm, knie, tip, startHead, endHead, headSize, lineWidth, hol = false, gebogen = false,
+  X, Y, strokeRgb, dash = '' }) {
+  const r = calloutLeiderKoppen({ arm, knie, tip, startHead, endHead, headSize, lineWidth, hol, gebogen });
+  const pt = (p) => `${f(X(p.x))} ${f(Y(p.y))}`;
+  let s = `q\n${f(strokeRgb[0])} ${f(strokeRgb[1])} ${f(strokeRgb[2])} RG ${f(lineWidth)} w\n${dash}`;
+  if (gebogen) {
+    s += `${pt(r.lijn[0])} m `;
+    for (const seg of catmullRomToBezier(r.lijn)) {
+      s += `${pt({ x: seg.c1x, y: seg.c1y })} ${pt({ x: seg.c2x, y: seg.c2y })} ${pt({ x: seg.x1, y: seg.y1 })} c `;
+    }
+    s += 'S\n';
+  } else {
+    s += `${pt(r.lijn[0])} m ${pt(r.lijn[1])} l ${pt(r.lijn[2])} l S\n`;
+  }
+  for (const kop of [r.eind, r.begin]) {
+    if (kop) s += lineHeadOps(kop.x, kop.y, kop.hoek, headSize, kop.stijl, strokeRgb, strokeRgb, lineWidth, X, Y, { hol });
+  }
+  return `${s}Q\n`;
 }
 
 const _FILLED_LINE_HEADS = new Set(['closed', 'closedReversed', 'diamond', 'square', 'circle']);

@@ -11,6 +11,7 @@
     "box": "Rectangle",
     "polygon": "Polígon",
     "cloud": "Núvol",
+    "cloudPolyline": "Polilínia de núvol",
     "polyline": "Polilínia",
     "textbox": "Quadre de text",
     "callout": "Crida",
@@ -27,7 +28,9 @@
     "formTextField": "Camp de text de formulari",
     "formCheckbox": "Casella de verificació de formulari",
     "formRadio": "Botó d'opció de formulari",
-    "screenshot": "Captura de pantalla"
+    "screenshot": "Captura de pantalla",
+    "pageLabelPick": "Tria text per a l'etiqueta de pàgina",
+    "proofread": "Revisió"
   },
   "toolLabel": "Eina:",
   "annotationsLabel": "Anotacions:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Aquest document conté camps de formulari interactius. Podeu emplenar el formulari i desar les vostres dades.",
   "enableEditing": "Activa l'edició",
   "pdfAConformance": "Aquest document declara conformitat PDF/A.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "No s'ha pogut canviar el nom del fitxer: {{error}}",
+  "renameInvalidChars": "El nom del fitxer no pot contenir:  / : * ? \" < > |",
+  "renameFileExists": "Ja existeix un fitxer amb aquest nom.",
+  "engineTitle": "Motor de renderització utilitzat per a la vista actual",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vectorial)"
+  },
+  "viewSingle": "Pàgina única",
+  "viewContinuous": "Contínua",
+  "viewBook": "Dues pàgines",
+  "viewFacing": "Dues pàgines costat a costat",
   "viewRotatedTitle": "La vista està girada {{degrees}}° en sentit horari; el document no ha canviat. Feu clic per tornar la vista a la posició original.",
+  "compareTabTitle": "Compara",
   "filledAreaSketch": {
     "undoPoint": "Desfés punt",
     "undoPointTitle": "Elimina l'últim punt (Retrocés)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "A",
   "boxHeightAbbr": "Al",
+  "boxSizeHint": "Escriviu un valor + Enter — o feu clic fora per aplicar-lo",
   "ocr": {
     "progress": {
       "starting": "S'està reconeixent el text...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Resultats ({{count}})",
   "searchResultPage": "Pàgina {{page}}",
   "searchHitsOne": "1 coincidència",
-  "searchHitsMany": "{{count}} coincidències"
+  "searchHitsMany": "{{count}} coincidències",
+  "passwordProtectedBar": "Protegit amb contrasenya: obert només de lectura.",
+  "documentSearch": {
+    "title": "Cerca als documents",
+    "query": "Text de cerca",
+    "scope": "Cerca a",
+    "active": "Document actual",
+    "open": "Documents oberts",
+    "folder": "Carpeta",
+    "choose": "Tria la carpeta",
+    "annotations": "Inclou els comentaris",
+    "search": "Cerca",
+    "cancel": "Cancel·la",
+    "stale": "El document ha canviat. Torneu a executar la cerca.",
+    "folderHint": "Cerca directament als fitxers PDF d'aquesta carpeta, sense obrir pestanyes ni modificar fitxers.",
+    "limited": "S'ha assolit el límit de resultats. Afineu la cerca.",
+    "cancelled": "Cerca cancel·lada; els resultats són incomplets.",
+    "ocrHint": "No hi ha text cercable a les pàgines {{pages}}. Obriu el document i executeu l'OCR explícitament si cal.",
+    "status": {
+      "searching": "S'està cercant",
+      "complete": "Completada",
+      "needs_ocr": "Conté pàgines sense text cercable",
+      "encrypted": "Cal una contrasenya",
+      "unreadable": "No s'ha pogut cercar",
+      "changed": "El document ha canviat; torneu a cercar",
+      "cancelled": "Cancel·lada",
+      "limited": "S'ha assolit el límit de resultats"
+    },
+    "failed": "La cerca ha fallat. Comproveu la consulta i la carpeta i torneu-ho a provar.",
+    "prepareOcr": "Obre per a l'OCR…"
+  },
+  "symbolSearch": "Cerca símbols",
+  "findMoreOptions": "Més opcions de cerca",
+  "watchActive": "Supervisant {{folder}}",
+  "watchFailed": "Error de supervisió: {{folder}}",
+  "watchTitle": "El flux de treball de documents supervisa {{input}} i escriu a {{output}}. Feu clic per deixar de supervisar.",
+  "renderDiagnostics": {
+    "title": "Ves a la següent incidència de renderització. No tenir incidències no garanteix una renderització completa.",
+    "count": "Incidències de renderització: {{count}}",
+    "detail": "Pàgina {{page}}: {{code}}. Proveu un zoom més baix o torneu a obrir el document; la completesa no està garantida."
+  },
+  "mcpSignal": {
+    "label": "Connexió d'IA (MCP)",
+    "connected": "Assistent d'IA connectat",
+    "idle": "Servidor MCP engegat, en repòs",
+    "off": "Servidor MCP aturat",
+    "port": "Port: {{port}}",
+    "lastTool": "Última eina: {{tool}} a les {{time}}",
+    "noTool": "Encara no hi ha crides a eines"
+  }
 }

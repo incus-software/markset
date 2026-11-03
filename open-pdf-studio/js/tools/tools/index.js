@@ -9,6 +9,7 @@ import { eraserTool } from './eraser-tool.js';
 import { shapeTool } from './shape-tool.js';
 import { lineTool } from './line-tool.js';
 import { polylineTool, cloudPolylineTool } from './polyline-tool.js';
+import { polygonTool } from './polygon-tool.js';
 import { arcTool } from './arc-tool.js';
 import { splineTool } from './spline-tool.js';
 import { splineArrowTool } from './spline-arrow-tool.js';
@@ -16,9 +17,10 @@ import { measureDistanceTool, measureAreaTool, measurePerimeterTool, addHoleTool
 import { filledAreaTool } from './filled-area-tool.js';
 import { systeemrasterTool, systeemplafondTool } from './systeemraster-tool.js';
 import { measureAngleTool } from './angle-tool.js';
-import { commentTool, textTool, stampTool, signatureTool, editTextTool } from './text-tool.js';
+import { commentTool, fileAttachmentTool, textTool, stampTool, signatureTool, editTextTool } from './text-tool.js';
 import { calibrationPickTool } from './calibration-pick-tool.js';
 import { scaleMeasureTool } from './scale-measure-tool.js';
+import { labelGebiedTool, LABEL_GEBIED_TOOL } from './label-gebied-tool.js';
 import { pluginClickTool } from './plugin-tool.js';
 import { viewportTool } from './viewport-tool.js';
 import { scaleRegionTool } from './scale-region-tool.js';
@@ -28,10 +30,17 @@ import { trimTool } from './trim-tool.js';
 import { extendTool } from './extend-tool.js';
 import { arrayTool } from './array-tool.js';
 import { removeImageTool } from './remove-image-tool.js';
+import { scanTextTool } from './scan-text-tool.js';
+import { proofreadTool, PROOFREAD_TOOL } from '../proofreading-mode.js';
 import { splitTool, breakTool } from './split-tool.js';
 import { lengthenTool } from './lengthen-tool.js';
+import { offsetTool } from './offset-tool.js';
+import { stretchTool } from './stretch-tool.js';
+import { enlargeTool } from './enlarge-tool.js';
 import { dimChainAddTool, dimChainRemoveTool } from './dimension-chain-tool.js';
 import { radiusTool, diameterTool } from './dimension-radius-tool.js';
+import { filletTool, chamferTool } from './corner-tools.js';
+import { spotCoordTool } from './spot-coord-tool.js';
 
 export function registerAllTools() {
   // Navigation / selection
@@ -51,9 +60,9 @@ export function registerAllTools() {
   registerTool('ellipse', shapeTool);
   registerTool('highlight', shapeTool);
   registerTool('cloud', shapeTool);
-  registerTool('polygon', shapeTool);
   registerTool('redaction', shapeTool);
   registerTool('textbox', shapeTool);
+  registerTool('plainText', shapeTool); // Markset: Text tool, a text box without border (markset/plain-text.js)
   registerTool('callout', shapeTool);
   registerTool('parametricSymbol', shapeTool);
   registerTool('count', shapeTool);
@@ -80,6 +89,9 @@ export function registerAllTools() {
 
   // Multi-click tools
   registerTool('polyline', polylineTool);
+  // Veelhoek: hoek voor hoek, zoals de polylijn maar gesloten (#622); een
+  // sleep vóór het eerste hoekpunt tekent de regelmatige zeshoek.
+  registerTool('polygon', polygonTool);
   registerTool('cloudPolyline', cloudPolylineTool);
 
   // Measurements
@@ -109,11 +121,15 @@ export function registerAllTools() {
   // Temporary 2-click distance pick for scale regions ("Meet op tekening")
   registerTool('scaleMeasure', scaleMeasureTool);
 
+  // Vak slepen voor de naambouwer van de paginalabels (#580)
+  registerTool(LABEL_GEBIED_TOOL, labelGebiedTool);
+
   // Scale bar
   registerTool('scaleBar', scaleBarTool);
 
   // Single-click placement
   registerTool('comment', commentTool);
+  registerTool('fileAttachment', fileAttachmentTool);
   registerTool('text', textTool);
   registerTool('stamp', stampTool);
   registerTool('signature', signatureTool);
@@ -131,6 +147,9 @@ export function registerAllTools() {
 
   // Remove an image that is embedded in the PDF page content (issue #184)
   registerTool('removeImage', removeImageTool);
+  registerTool('scanText', scanTextTool);
+  // Proofreading mode (#508): keyboard-driven text corrections (F2).
+  registerTool(PROOFREAD_TOOL, proofreadTool);
 
   // CAD tools
   registerTool('trim', trimTool);
@@ -139,8 +158,17 @@ export function registerAllTools() {
   registerTool('split', splitTool);
   registerTool('break', breakTool);
   registerTool('lengthen', lengthenTool);
+  // CAD-stijl: parallel kopieën, hoekpunten uitrekken, uniform schalen
+  registerTool('offset', offsetTool);
+  registerTool('stretch', stretchTool);
+  registerTool('enlarge', enlargeTool);
 
   // Radius / diameter dimensioning (measureDistance with a prefixed label)
   registerTool('radius', radiusTool);
   registerTool('diameter', diameterTool);
+
+  // Hoekbewerkingen (CAD-stijl fillet / chamfer) en spot-coördinaat
+  registerTool('fillet', filletTool);
+  registerTool('chamfer', chamferTool);
+  registerTool('spotCoord', spotCoordTool);
 }

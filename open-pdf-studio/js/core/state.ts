@@ -137,6 +137,7 @@ export interface AppState {
   textEditElement: HTMLElement | null;
   isEditingPdfText: boolean;
   pdfTextEditState: any;
+  pdfTekstEditorCanvas: any;
 
   // Document delegation
   pdfDoc: any;
@@ -311,6 +312,8 @@ export const state = createMutable<AppState>({
   set isEditingPdfText(v) { editingState.isEditingPdfText = v; },
   get pdfTextEditState() { return editingState.pdfTextEditState; },
   set pdfTextEditState(v) { editingState.pdfTextEditState = v; },
+  get pdfTekstEditorCanvas() { return editingState.pdfTekstEditorCanvas; },
+  set pdfTekstEditorCanvas(v) { editingState.pdfTekstEditorCanvas = v; },
 
 } as any);
 
@@ -328,7 +331,11 @@ export function hasOpenDocuments(): boolean {
 }
 
 export function findDocumentByPath(filePath: string): number {
-  return state.documents.findIndex(doc => doc.filePath === filePath);
+  // Een met een wachtwoord geopende PDF rendert uit een werkkopie; hij hoort
+  // ook bij zijn originele pad (js/pdf/wachtwoord-pdf.js), zodat het origineel
+  // nogmaals openen het bestaande tabblad toont.
+  return state.documents.findIndex(doc => doc.filePath === filePath
+    || (!!doc.originalFilePath && doc.originalFilePath === filePath));
 }
 
 export function getPageRotation(pageNum: number): number {

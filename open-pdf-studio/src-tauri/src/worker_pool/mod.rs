@@ -8,6 +8,7 @@ pub mod state;
 pub mod routing;
 pub mod spawn;
 pub mod recovery;
+pub mod shm_files;
 
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
@@ -42,6 +43,91 @@ fn now_ms() -> u64 {
 /// voor ALLE volgende requests wedged raakt en de pagina blanco blijft. Bij
 /// timeout -> Err -> in-proc-PDFium-fallback + respawn van de worker.
 const WORKER_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Grace period for workers to exit on stdin EOF at shutdown before they are
+/// killed. Short on purpose: the app is closing.
+const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_millis(250);
+/// Upper bound on the whole pool shutdown at app exit.
+const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Is process `pid` still running? Errs on the side of "alive" when it cannot
+/// tell, so the stale-file sweep never removes a file of a live instance.
+#[cfg(windows)]
+pub(crate) fn process_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    const STILL_ACTIVE: u32 = 259;
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if h.is_null() {
+            // No such process -> ERROR_INVALID_PARAMETER. Anything else
+            // (access denied for an elevated or protected process) means it
+            // exists.
+            return GetLastError() != ERROR_INVALID_PARAMETER;
+        }
+        let mut code = 0u32;
+        let ok = GetExitCodeProcess(h, &mut code) != 0;
+        CloseHandle(h);
+        !ok || code == STILL_ACTIVE
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) fn process_alive(pid: u32) -> bool {
+    std::path::Path::new(&format!("/proc/{pid}")).exists()
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "android")))]
+pub(crate) fn process_alive(pid: u32) -> bool {
+    // `kill -0` succeeds for a live process we may signal. EPERM (someone
+    // else's process) also means alive, but then stderr mentions it; the
+    // per-user temp dir on macOS makes that case theoretical.
+    match std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+    {
+        Ok(s) => s.success(),
+        Err(_) => true,
+    }
+}
+
+/// Remove `pdfium-worker-<pid>-<slot>.shm` files in the temp dir left behind
+/// by app processes that no longer run (crash, kill, forced exit). Files of
+/// live processes (another instance, a detached document window) and of this
+/// process are never touched. Blocking; call it from a background thread.
+pub fn sweep_stale_shm_files() {
+    let dir = std::env::temp_dir();
+    let stats = shm_files::sweep_dir(
+        &dir,
+        std::process::id(),
+        &mut process_alive,
+        shm_files::MAX_SCANNED_ENTRIES,
+    );
+    if stats.removed > 0 || stats.skipped > 0 {
+        eprintln!(
+            "[pool] removed {} stale worker SHM file(s) ({} MB), {} still in use",
+            stats.removed,
+            stats.bytes / (1024 * 1024),
+            stats.skipped
+        );
+    }
+}
+
+/// App exit: shut the pool down if it was initialised. Blocks for at most
+/// `SHUTDOWN_TIMEOUT`.
+pub fn shutdown_on_exit(pool: &tokio::sync::OnceCell<WorkerPool>) {
+    if let Some(pool) = pool.get() {
+        // The timeout must be created INSIDE the runtime: tokio::time needs a
+        // reactor at construction, and RunEvent::Exit runs outside one.
+        let _ = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(SHUTDOWN_TIMEOUT, pool.shutdown()).await
+        });
+    }
+}
 
 /// Pad naar de pdfium-worker-sidecar naast de hoofdbinary. Platform-correct
 /// (`.exe` alleen op Windows) zodat respawn ook op Linux/macOS de juiste naam
@@ -102,6 +188,41 @@ impl WorkerPool {
         }
     }
 
+    /// Stop all workers and remove this process's SHM files. Order matters on
+    /// Windows, where a file cannot be removed while it is mapped or open:
+    /// drop our mapping, stop the worker process (it removes its own file on
+    /// stdin EOF; otherwise it is killed and reaped), then remove whatever is
+    /// left. Workers are marked so no recovery respawns them afterwards.
+    pub async fn shutdown(&self) {
+        for worker in &self.workers {
+            worker.shutting_down.store(true, Ordering::Release);
+            worker.set_status(Status::DeadPermanent);
+        }
+        // Close every stdin first so all workers start exiting together.
+        for worker in &self.workers {
+            *worker.shm.lock().await = None;
+            *worker.stdin.lock().await = None;
+        }
+        for worker in &self.workers {
+            recovery::release_worker_handles(worker, SHUTDOWN_GRACE).await;
+        }
+        let mut left = 0;
+        for worker in &self.workers {
+            let path = shm_files::own_path(worker.slot);
+            let removed = tokio::task::spawn_blocking(move || {
+                shm_files::remove_with_retry(&path, 5, std::time::Duration::from_millis(40))
+            })
+            .await
+            .unwrap_or(false);
+            if !removed {
+                left += 1;
+            }
+        }
+        if left > 0 {
+            eprintln!("[pool] shutdown: {} worker SHM file(s) could not be removed; the next start sweeps them", left);
+        }
+    }
+
     /// Returns true if at least one worker is Ready.
     pub fn is_ready(&self) -> bool {
         self.workers.iter().any(|w| w.status() == Status::Ready)
@@ -122,6 +243,7 @@ impl WorkerPool {
         page_index: u32,
         scale: f32,
         rotation: i32,
+        thin_lines: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         // First attempt. Pinned: al het werk voor dezelfde (path, page) —
         // volledige render, thumbnail, tegels — blijft op één worker, ook
@@ -133,7 +255,7 @@ impl WorkerPool {
         let worker = self.workers[slot].clone();
         self.touch(&worker);
         worker.queue_depth.fetch_add(1, Ordering::Release);
-        let result = self.render_on_worker(worker.clone(), path, page_index, scale, rotation).await;
+        let result = self.render_on_worker(worker.clone(), path, page_index, scale, rotation, thin_lines).await;
         worker.queue_depth.fetch_sub(1, Ordering::Release);
 
         if result.is_ok() {
@@ -153,7 +275,7 @@ impl WorkerPool {
         let worker2 = self.workers[slot2].clone();
         self.touch(&worker2);
         worker2.queue_depth.fetch_add(1, Ordering::Release);
-        let result2 = self.render_on_worker(worker2.clone(), path, page_index, scale, rotation).await;
+        let result2 = self.render_on_worker(worker2.clone(), path, page_index, scale, rotation, thin_lines).await;
         worker2.queue_depth.fetch_sub(1, Ordering::Release);
         result2
     }
@@ -165,6 +287,7 @@ impl WorkerPool {
         page_index: u32,
         scale: f32,
         rotation: i32,
+        thin_lines: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         // Eén request tegelijk per worker: het draadprotocol heeft geen id-demux
         // en de SHM-regio wordt per response overschreven.
@@ -175,14 +298,7 @@ impl WorkerPool {
         let _plog = PoolTrace::new(worker.slot, "render", path, page_index, scale, _t_queue, _t_run);
         let id = self.next_request_id.fetch_add(1, Ordering::Release);
 
-        let req = json!({
-            "op": "render",
-            "id": id,
-            "path": path,
-            "page_index": page_index,
-            "scale": scale,
-            "rotation": rotation,
-        });
+        let req = render_request(id, path, page_index, scale, rotation, thin_lines);
         let req_line = format!("{}\n", req);
 
         // Write request
@@ -257,6 +373,7 @@ impl WorkerPool {
         region_w_pt: f32,
         region_h_pt: f32,
         spread: bool,
+        thin_lines: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         let depths = self.depths();
         // Salt de affiniteit met de regio-coördinaten wanneer spreiding gewenst
@@ -275,7 +392,7 @@ impl WorkerPool {
         worker.queue_depth.fetch_add(1, Ordering::Release);
         let result = self.render_region_on_worker(
             worker.clone(), path, page_index, scale, rotation,
-            region_x_pt, region_y_pt, region_w_pt, region_h_pt,
+            region_x_pt, region_y_pt, region_w_pt, region_h_pt, thin_lines,
         ).await;
         worker.queue_depth.fetch_sub(1, Ordering::Release);
         // Geen retry (de aanroeper valt terug op in-proc PDFium), maar een
@@ -299,6 +416,7 @@ impl WorkerPool {
         region_y_pt: f32,
         region_w_pt: f32,
         region_h_pt: f32,
+        thin_lines: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         // Zelfde volledige-round-trip-serialisatie als render_on_worker.
         let request_lock = worker.request_lock.clone();
@@ -308,18 +426,10 @@ impl WorkerPool {
         let _plog = PoolTrace::new(worker.slot, "region", path, page_index, scale, _t_queue, _t_run);
         let id = self.next_request_id.fetch_add(1, Ordering::Release);
 
-        let req = json!({
-            "op": "render_region",
-            "id": id,
-            "path": path,
-            "page_index": page_index,
-            "scale": scale,
-            "rotation": rotation,
-            "region_x_pt": region_x_pt,
-            "region_y_pt": region_y_pt,
-            "region_w_pt": region_w_pt,
-            "region_h_pt": region_h_pt,
-        });
+        let req = render_region_request(
+            id, path, page_index, scale, rotation,
+            region_x_pt, region_y_pt, region_w_pt, region_h_pt, thin_lines,
+        );
         let req_line = format!("{}\n", req);
 
         {
@@ -368,6 +478,64 @@ impl WorkerPool {
         let rgba = mmap[HEADER..HEADER + shm_bytes].to_vec();
 
         Ok((w, h, rgba))
+    }
+}
+
+/// Worker-request voor een volledige pagina (zie pdfium-worker/src/protocol.rs).
+/// `thin_lines` = Thin Lines-weergave (#595): de worker tekent elke lijn als
+/// haarlijn.
+fn render_request(id: u64, path: &str, page_index: u32, scale: f32, rotation: i32, thin_lines: bool) -> serde_json::Value {
+    json!({
+        "op": "render",
+        "id": id,
+        "path": path,
+        "page_index": page_index,
+        "scale": scale,
+        "rotation": rotation,
+        "thin_lines": thin_lines,
+    })
+}
+
+/// Worker-request voor een pagina-regio (tegel), zie `render_request`.
+#[allow(clippy::too_many_arguments)]
+fn render_region_request(
+    id: u64,
+    path: &str,
+    page_index: u32,
+    scale: f32,
+    rotation: i32,
+    region_x_pt: f32,
+    region_y_pt: f32,
+    region_w_pt: f32,
+    region_h_pt: f32,
+    thin_lines: bool,
+) -> serde_json::Value {
+    json!({
+        "op": "render_region",
+        "id": id,
+        "path": path,
+        "page_index": page_index,
+        "scale": scale,
+        "rotation": rotation,
+        "region_x_pt": region_x_pt,
+        "region_y_pt": region_y_pt,
+        "region_w_pt": region_w_pt,
+        "region_h_pt": region_h_pt,
+        "thin_lines": thin_lines,
+    })
+}
+
+#[cfg(test)]
+mod request_tests {
+    use super::*;
+
+    #[test]
+    fn both_render_requests_carry_thin_lines() {
+        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, true)["thin_lines"], json!(true));
+        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, false)["thin_lines"], json!(false));
+        let region = render_region_request(2, "a.pdf", 3, 2.0, 0, 0.0, 0.0, 10.0, 10.0, true);
+        assert_eq!(region["thin_lines"], json!(true));
+        assert_eq!(region["op"], json!("render_region"));
     }
 }
 

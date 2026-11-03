@@ -1,4 +1,5 @@
 import { HANDLE_SIZE, HANDLE_TYPES } from '../core/constants.js';
+import { kanDraaipunt, heeftEigenDraaipunt, draaipuntLokaal } from './draaipunt.js';
 import { annotationCtx } from '../ui/dom-elements.js';
 import { state, getActiveDocument } from '../core/state.js';
 import { isStramien, stramienAs, slotStatus, UITEINDEN } from './stramien-koppeling.js';
@@ -10,8 +11,9 @@ import { betonbalkTagAnchor } from './betonbalk.js';
 import { betonbalkHalfWidthPx } from './betonbalk-scale.js';
 import { buildSysteemraster, segmentPoint, rotToWorld } from './systeemraster.js';
 import { systeemrasterBuildOpts } from './systeemraster-scale.js';
-import { spreidMaatgrepen, kiesGreep } from './greep-keuze.js';
+import { spreidMaatgrepen, kiesGreep, MIN_GREEPKADER_PX } from './greep-keuze.js';
 import { RECHTHOEK_VORMEN } from './minimummaat.js';
+import { isBewerkbareVeelhoek, veelhoekPunten } from './veelhoek-punten.js';
 
 // Het vak waar de acht maatgrepen omheen staan (lokale, ongedraaide ruimte),
 // of null voor vormen zonder zo'n vak. Dient voor het uitwijken van de grepen
@@ -122,6 +124,7 @@ function getAnnotationCenter(annotation) {
     case 'count':
       return { x: annotation.x, y: annotation.y };
     case 'comment':
+    case 'fileAttachment':
       const cw = annotation.width || 24;
       const ch = annotation.height || 24;
       return {
@@ -141,13 +144,68 @@ function getAnnotationCenter(annotation) {
   }
 }
 
+// Waar een punt uit de lokale (ongedraaide) ruimte van de vorm op het scherm
+// staat: om het midden gedraaid, precies zoals getAnnotationHandles hieronder
+// de grepen draait. Zonder rotatie of zonder draaipunt (vormen die niet
+// meedraaien) komt het punt ongewijzigd terug. Het slepen van een greep
+// (greep-strek.js) rekent er snap en meetlijn mee vanaf de greep die je ziet.
+export function greepOpScherm(annotation, x, y) {
+  if (!annotation || !annotation.rotation) return { x, y };
+  const center = getAnnotationCenter(annotation);
+  if (!center) return { x, y };
+  return rotatePoint(x, y, center.x, center.y, annotation.rotation);
+}
+
+// Eigen draaipunt (#826): een vizier op het draaipunt, standaard het midden.
+// Lokaal (ongedraaid) geplaatst; draait in getAnnotationHandles mee met het
+// vak. Vooraan in de lijst: ligt het draaipunt precies op een andere greep,
+// dan blijft het te pakken (bij gelijke afstand wint de eerste). Staat het in
+// het midden, dan vervalt de verplaatsgreep daar: die lag er precies onder en
+// zou altijd winnen. De vorm blijft verplaatsbaar aan zijn lijf of rand; is
+// het draaipunt verplaatst, dan staat de verplaatsgreep weer in het midden.
+// Een piepkleine vorm op het scherm krijgt geen standaard-draaipunt: het vizier
+// zou de hele vorm bedekken, zodat slepen aan de vorm niet meer verplaatst
+// (zie greep-keuze.js). Inzoomen maakt het weer bereikbaar.
+function _draaipuntGreep(annotation, hs, handles, scale) {
+  // Vergrendeld: niet draaien of schalen, dus ook geen draaipunt om te zetten.
+  if (!kanDraaipunt(annotation) || annotation.locked) return;
+  const eigen = heeftEigenDraaipunt(annotation);
+  const schermMaat = Math.max(annotation.width, annotation.height) * scale;
+  if (!eigen && schermMaat < MIN_GREEPKADER_PX) return;
+  if (!eigen) {
+    for (let i = handles.length - 1; i >= 0; i--) {
+      const t = handles[i].type;
+      if (t === HANDLE_TYPES.RECT_CENTER || t === HANDLE_TYPES.CIRCLE_CENTER) handles.splice(i, 1);
+    }
+  }
+  const dp = draaipuntLokaal(annotation);
+  handles.unshift({ type: HANDLE_TYPES.PIVOT, x: dp.x - hs / 2, y: dp.y - hs / 2, isPivot: true });
+}
+
 // Get handles for an annotation based on its type
 // scale parameter ensures handles stay the same screen size at any zoom level
 export function getAnnotationHandles(annotation, scale = 1) {
   const handles = [];
   const hs = HANDLE_SIZE / scale;
 
-  switch (annotation.type) {
+  // Veelhoek met eigen hoekpunten (#622): een greep op elk hoekpunt (slepen
+  // verschuift dat hoekpunt), de verplaatsgreep in het midden en de
+  // draaigreep. Geen maatgrepen op het vak: die zouden op de hoekpunten
+  // vallen die op de rand van het vak liggen. Ongedraaid geplaatst; de
+  // draaiing hieronder zet ze waar het scherm de hoekpunten tekent.
+  if (isBewerkbareVeelhoek(annotation)) {
+    veelhoekPunten(annotation).forEach((p, i) => {
+      handles.push({ type: HANDLE_TYPES.POLYLINE_NODE, x: p.x - hs/2, y: p.y - hs/2, nodeIndex: i });
+    });
+    handles.push({
+      type: HANDLE_TYPES.RECT_CENTER,
+      x: annotation.x + annotation.width/2 - hs/2,
+      y: annotation.y + annotation.height/2 - hs/2,
+      isGrip: true,
+      isCenterGrip: true,
+    });
+    handles.push({ type: HANDLE_TYPES.ROTATE, x: annotation.x + annotation.width/2 - hs/2, y: annotation.y - 25 / scale - hs/2 });
+  } else switch (annotation.type) {
     case 'box':
     case 'mask':
     case 'highlight':
@@ -366,6 +424,7 @@ export function getAnnotationHandles(annotation, scale = 1) {
       break;
 
     case 'comment':
+    case 'fileAttachment':
     case 'count':
       // No resize/rotation handles — fixed-size marker, move only
       break;
@@ -692,6 +751,8 @@ export function getAnnotationHandles(annotation, scale = 1) {
       break;
   }
 
+  _draaipuntGreep(annotation, hs, handles, scale);
+
   // Piepkleine vorm op het scherm: laat de maatgrepen uitwijken naar een kader
   // van vaste schermmaat, zodat ze elkaar en de vorm niet bedekken en slepen
   // aan het lijf verplaatsen blijft (zie greep-keuze.js). Gebeurt hier, vóór de
@@ -734,16 +795,42 @@ export function findHandleAt(x, y, annotation, scale = 1) {
   const bestHandle = kiesGreep(handles, x, y, hs, hitPad);
 
   if (!bestHandle) return null;
+  return _greepNaam(bestHandle);
+}
+
+// Naam van een greep zoals findHandleAt hem teruggeeft en het slepen hem
+// kent (state.activeHandle).
+function _greepNaam(handle) {
   // For polyline nodes, encode the index in the type string
-  if (bestHandle.type === HANDLE_TYPES.POLYLINE_NODE) {
-    return `${bestHandle.type}_${bestHandle.nodeIndex}`;
+  if (handle.type === HANDLE_TYPES.POLYLINE_NODE) {
+    return `${handle.type}_${handle.nodeIndex}`;
   }
   // For hole node handles (type = "polyline_node_hole_<holeIdx>"), append the nodeIndex
-  if (typeof bestHandle.type === 'string' && bestHandle.type.startsWith(HANDLE_TYPES.POLYLINE_NODE + '_hole_')) {
-    return `${bestHandle.type}_${bestHandle.nodeIndex}`;
+  if (typeof handle.type === 'string' && handle.type.startsWith(HANDLE_TYPES.POLYLINE_NODE + '_hole_')) {
+    return `${handle.type}_${handle.nodeIndex}`;
   }
   // Edge-midpoint handles already encode the index in the type string at build time
-  return bestHandle.type;
+  return handle.type;
+}
+
+/**
+ * Waar de greep met deze naam (zoals findHandleAt hem noemt) op de pagina
+ * staat: het midden van de greep zoals getAnnotationHandles hem tekent, met
+ * de draaiing van de vorm. Uit dezelfde geometrie als het tekenen, dus ook
+ * voor vormen die hun vak niet als x/width/height voeren: plugin-vormen met
+ * {x, y, w, h}, een tekst (basislijn en gemeten tekstbreedte) en een
+ * vrijehandlijn (omhullende van het pad). Het punt op de vorm zelf, los van
+ * de zoom en zonder het uitwijken van de grepen van een piepkleine vorm
+ * (greep-keuze.js). Null als de vorm zo'n greep niet heeft.
+ * Het slepen van een greep (greep-strek.js) rekent er snap en meetlijn mee.
+ */
+export function greepPunt(annotation, naam) {
+  if (!annotation || typeof naam !== 'string') return null;
+  // Oneindige schaal: de greepmaat en alle schermvaste afstanden worden 0 en
+  // spreidMaatgrepen doet niets, dus x/y is precies het greepmidden.
+  const greep = getAnnotationHandles(annotation, Infinity).find((g) => _greepNaam(g) === naam);
+  if (!greep || !Number.isFinite(greep.x) || !Number.isFinite(greep.y)) return null;
+  return { x: greep.x, y: greep.y };
 }
 
 // Cache for generated cursor SVG data URIs
@@ -844,6 +931,8 @@ export function getCursorForHandle(handleType, rotation, annotation) {
       return 'move';
     case HANDLE_TYPES.ROTATE:
       return 'grab';
+    case HANDLE_TYPES.PIVOT:
+      return 'move';
     case HANDLE_TYPES.CALLOUT_MOVE:
     case HANDLE_TYPES.LABEL_MOVE:
       return 'move';

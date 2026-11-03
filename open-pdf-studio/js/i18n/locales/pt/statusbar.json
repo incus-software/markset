@@ -11,6 +11,7 @@
     "box": "Retângulo",
     "polygon": "Polígono",
     "cloud": "Nuvem",
+    "cloudPolyline": "Polilinha em nuvem",
     "polyline": "Polilinha",
     "textbox": "Caixa de texto",
     "callout": "Balão",
@@ -27,7 +28,9 @@
     "formTextField": "Campo de texto de formulário",
     "formCheckbox": "Caixa de seleção de formulário",
     "formRadio": "Botão de opção de formulário",
-    "screenshot": "Captura de tela"
+    "screenshot": "Captura de tela",
+    "pageLabelPick": "Escolher texto para o rótulo da página",
+    "proofread": "Revisão"
   },
   "toolLabel": "Ferramenta:",
   "annotationsLabel": "Anotações:",
@@ -36,6 +39,7 @@
   "previousPage": "Página anterior",
   "nextPage": "Próxima página",
   "lastPage": "Última página",
+  "page": "Página",
   "zoomOut": "Reduzir",
   "zoomIn": "Ampliar",
   "noDocumentsOpen": "Nenhum documento aberto",
@@ -51,14 +55,21 @@
   "formFieldsMessage": "Este documento contém campos de formulário interativos. Você pode preencher o formulário e salvar seus dados.",
   "enableEditing": "Ativar edição",
   "pdfAConformance": "Este documento declara conformidade com PDF/A.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Falha ao renomear o arquivo: {{error}}",
+  "renameInvalidChars": "O nome do arquivo não pode conter:  / : * ? \" < > |",
+  "renameFileExists": "Já existe um arquivo com este nome.",
+  "engineTitle": "Mecanismo de renderização usado na visualização atual",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vetorial)"
+  },
+  "viewSingle": "Página única",
+  "viewContinuous": "Contínua",
+  "viewBook": "Duas páginas",
+  "viewFacing": "Duas páginas lado a lado",
   "viewRotatedTitle": "A visualização está girada {{degrees}}° no sentido horário; o documento não foi alterado. Clique para voltar a visualização.",
+  "compareTabTitle": "Comparar",
   "filledAreaSketch": {
     "undoPoint": "Desfazer ponto",
     "undoPointTitle": "Remover último ponto (Backspace)",
@@ -81,6 +92,7 @@
   },
   "boxWidthAbbr": "L",
   "boxHeightAbbr": "A",
+  "boxSizeHint": "Digite um valor + Enter — ou clique fora para aplicar",
   "ocr": {
     "progress": {
       "starting": "Reconhecendo texto...",
@@ -96,5 +108,54 @@
   "searchResultsTitle": "Resultados ({{count}})",
   "searchResultPage": "Página {{page}}",
   "searchHitsOne": "1 correspondência",
-  "searchHitsMany": "{{count}} correspondências"
+  "searchHitsMany": "{{count}} correspondências",
+  "passwordProtectedBar": "Protegido por senha: aberto somente para leitura.",
+  "documentSearch": {
+    "title": "Pesquisar documentos",
+    "query": "Texto da pesquisa",
+    "scope": "Pesquisar em",
+    "active": "Documento atual",
+    "open": "Documentos abertos",
+    "folder": "Pasta",
+    "choose": "Escolher pasta",
+    "annotations": "Incluir comentários",
+    "search": "Pesquisar",
+    "cancel": "Cancelar",
+    "stale": "O documento foi alterado. Execute a pesquisa novamente.",
+    "folderHint": "Pesquisa arquivos PDF diretamente nesta pasta, sem abrir abas nem alterar arquivos.",
+    "limited": "Limite de resultados atingido. Refine sua pesquisa.",
+    "cancelled": "Pesquisa cancelada; os resultados estão incompletos.",
+    "ocrHint": "Nenhum texto pesquisável nas páginas {{pages}}. Abra o documento e execute o OCR explicitamente, se necessário.",
+    "status": {
+      "searching": "Pesquisando",
+      "complete": "Concluída",
+      "needs_ocr": "Contém páginas sem texto pesquisável",
+      "encrypted": "Senha obrigatória",
+      "unreadable": "Não foi possível pesquisar",
+      "changed": "Documento alterado; pesquise novamente",
+      "cancelled": "Cancelada",
+      "limited": "Limite de resultados atingido"
+    },
+    "failed": "A pesquisa falhou. Verifique a consulta e a pasta e tente novamente.",
+    "prepareOcr": "Abrir para OCR…"
+  },
+  "symbolSearch": "Localizar símbolos",
+  "findMoreOptions": "Mais opções de pesquisa",
+  "watchActive": "Monitorando {{folder}}",
+  "watchFailed": "Erro de monitoramento: {{folder}}",
+  "watchTitle": "O fluxo de trabalho de documentos está monitorando {{input}} e gravando em {{output}}. Clique para parar o monitoramento.",
+  "renderDiagnostics": {
+    "title": "Ir para o próximo aviso de renderização. A ausência de avisos não garante uma renderização completa.",
+    "count": "Avisos de renderização: {{count}}",
+    "detail": "Página {{page}}: {{code}}. Tente um zoom menor ou reabra o documento; a completude não é garantida."
+  },
+  "mcpSignal": {
+    "label": "Conexão de IA (MCP)",
+    "connected": "Assistente de IA conectado",
+    "idle": "Servidor MCP ligado, inativo",
+    "off": "Servidor MCP desligado",
+    "port": "Porta: {{port}}",
+    "lastTool": "Última ferramenta: {{tool}} às {{time}}",
+    "noTool": "Ainda não há chamadas de ferramentas"
+  }
 }

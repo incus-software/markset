@@ -2,7 +2,7 @@ export type AnnotationType =
   | 'highlight' | 'textHighlight' | 'textStrikethrough' | 'textUnderline' | 'textSquiggly'
   | 'caret'
   | 'draw' | 'line' | 'arrow' | 'box' | 'circle'
-  | 'textbox' | 'callout' | 'comment' | 'stamp' | 'image' | 'signature'
+  | 'textbox' | 'callout' | 'comment' | 'fileAttachment' | 'stamp' | 'image' | 'signature'
   | 'polygon' | 'cloud' | 'cloudPolyline' | 'polyline' | 'text'
   | 'arc' | 'spline' | 'splineArrow' | 'redaction'
   | 'measureDistance' | 'measureArea' | 'measurePerimeter' | 'measureAngle'
@@ -20,6 +20,10 @@ export interface Point {
 }
 
 export interface AnnotationBase {
+  /** Named spatial zone on an existing polygon/box; coordinates remain in page space. */
+  spatialZone?: { version: 1; id: string; name: string; parentId: string };
+  /** Absent means computed; an empty string is an explicit empty override. */
+  locationOverride?: string;
   id: string;
   type: AnnotationType;
   page: number;
@@ -41,6 +45,13 @@ export interface AnnotationBase {
   rotation?: number;
   /** Annotatielaag (#468): id uit doc.annotationLayers; ontbreekt = standaardlaag. */
   layer?: string;
+  // Gedeelde eigenschappen die opslaan overleven (#619, saver/annotatie-algemeen.js)
+  nm?: string;                 // /NM: naam, per pagina uniek
+  pdfSubject?: string;         // /Subj van een soort die zijn onderwerp in /Contents houdt
+  altText?: string;            // /OPS_AltText
+  ifcCategory?: string;        // /OPS_IfcCategory
+  inReplyTo?: string;          // /IRT: id van de annotatie waar deze bij hoort
+  replyType?: string;          // 'reply' (/RT /R) of 'group' (/RT /Group)
 }
 
 export interface RectAnnotation extends AnnotationBase {
@@ -65,6 +76,14 @@ export interface LineAnnotation extends AnnotationBase {
 
 export interface DrawAnnotation extends AnnotationBase {
   path: Point[];
+  /** Pen pressure 0..1 per point of path (pen strokes only, #385). */
+  pressures?: number[];
+  /** Width at pressure 0, in percent of lineWidth (5..100). */
+  inkMinWidth?: number;
+  /** Stroke smoothing 0..100; 0 draws the raw polyline. */
+  inkSmoothing?: number;
+  /** false: ignore pressures and draw a constant width. */
+  inkPressure?: boolean;
 }
 
 export interface PolylineAnnotation extends AnnotationBase {
@@ -150,6 +169,10 @@ export type Annotation = AnnotationBase & {
   endX?: number;
   endY?: number;
   path?: Point[];
+  pressures?: number[];  // Freehand: pen pressure per path point (#385)
+  inkMinWidth?: number;
+  inkSmoothing?: number;
+  inkPressure?: boolean;
   points?: Point[];
   controlPoints?: Point[];  // Spline control points
   holes?: Point[][];  // Cutout polygons for measureArea
@@ -196,6 +219,10 @@ export type Annotation = AnnotationBase & {
   measureScale?: number;
   measurePrecision?: number;
   measureName?: string;
+  // Meetvlak: de lengte van elke rechte zijde tonen (#536)
+  measureShowEdgeLengths?: boolean;
+  /** Depth in the measurement's unit (#311): length × depth, area × depth. */
+  measureDepth?: number;
   // Label position override (absolute coords; defaults to centroid if unset)
   labelX?: number;
   labelY?: number;
@@ -225,6 +252,8 @@ export type Annotation = AnnotationBase & {
   count?: number;              // aantal staven (= poten/punten)
   diameter?: number;           // staafdiameter in mm (6..40)
   barLengthMm?: number;        // staaflengte in mm (0 = onbekend)
+  barMark?: string;            // staafnummer in de buigstaat ('' = automatisch)
+  steelGrade?: string;         // staalkwaliteit ('' = B500B)
   legDir?: 'down-left' | 'down-right' | 'up-left' | 'up-right';
   legLength?: number;          // pootlengte in px (canvas)
   lineTail?: number;           // uitloop van de aanhaallijn voorbij de laatste poot (px)

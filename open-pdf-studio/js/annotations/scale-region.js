@@ -1,3 +1,4 @@
+import { tekenDocument as getActiveDocument } from './rendering/document-context.js';
 /**
  * Scale Region — rectangular calibration viewport that overrides the
  * document-global scale for any annotation whose centroid falls inside.
@@ -11,38 +12,11 @@
  *   1. innermost (smallest area) scaleRegion containing the point
  *   2. existing scaleBar / viewport / doc.measureScale fallbacks
  */
-import { getActiveDocument } from '../core/state.js';
 import { createAnnotation } from './factory.js';
 import { schaalgebiedenOpPagina } from './schaal-op-punt.js';
 import { schaalBronnenInDoorloop, vergeetSchaalBronnen } from './schaal-bronnen.js';
-
-// Parse "1:100" → 100 (the denominator of the drawing-to-world ratio)
-export function parseScaleString(s) {
-  if (!s) return null;
-  const m = String(s).match(/1\s*[:/]\s*(\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const denom = parseFloat(m[1]);
-  if (!denom || denom <= 0) return null;
-  return denom;
-}
-
-// Compute pixelsPerUnit for a scale region given its scaleString + units.
-// PDF user units = 1/72 inch. We keep this consistent with the viewport tool:
-//   1 mm at 1:N maps to (72 / 25.4) / N pixels.
-//   1 cm = 10mm; 1 m = 1000mm; 1 in = 25.4mm; 1 ft = 304.8mm.
-export function pixelsPerUnitFor(scaleString, units) {
-  const denom = parseScaleString(scaleString);
-  if (!denom) return 1;
-  const ppmm = (72 / 25.4) / denom;
-  switch (units) {
-    case 'mm': return ppmm;
-    case 'cm': return ppmm * 10;
-    case 'm':  return ppmm * 1000;
-    case 'in': return ppmm * 25.4;
-    case 'ft': return ppmm * 304.8;
-    default:   return ppmm;
-  }
-}
+import { pixelsPerUnitFor, userUnitVanPagina } from './scale-region-scale.js';
+export { parseScaleString, pixelsPerUnitFor, userUnitVanPagina } from './scale-region-scale.js';
 
 // Per-redraw cache keyed by document instance.
 // Map<doc, Map<pageNum, scaleRegion[] sorted by area asc>>
@@ -103,7 +77,8 @@ export function getScaleRegionAt(pageNum, x, y) {
 export function getScaleFromRegion(pageNum, x, y) {
   const r = getScaleRegionAt(pageNum, x, y);
   if (!r) return null;
-  const ppu = pixelsPerUnitFor(r.scaleString || '1:100', r.units || 'mm');
+  // In page units of THIS page: a /UserUnit page has bigger units (#884).
+  const ppu = pixelsPerUnitFor(r.scaleString || '1:100', r.units || 'mm', userUnitVanPagina(getActiveDocument(), pageNum));
   return {
     pixelsPerUnit: ppu,
     unit: r.units || 'mm',
@@ -121,9 +96,13 @@ export function getScaleFromRegion(pageNum, x, y) {
 const _PPU_1_100 = 72 / (25.4 * 100);
 export function getRegionScaleFactor(pageNum, x, y) {
   if (pageNum == null || x == null || y == null) return 1;
-  const region = getScaleFromRegion(pageNum, x, y);
-  if (!region || !region.pixelsPerUnit) return 1;
-  return region.pixelsPerUnit / _PPU_1_100;
+  const r = getScaleRegionAt(pageNum, x, y);
+  if (!r) return 1;
+  // The ratio of the region itself, without the page's /UserUnit: the hatch
+  // is drawn in page units and only follows the drawing scale.
+  const ppu = pixelsPerUnitFor(r.scaleString || '1:100', r.units || 'mm');
+  if (!ppu) return 1;
+  return ppu / _PPU_1_100;
 }
 
 /**

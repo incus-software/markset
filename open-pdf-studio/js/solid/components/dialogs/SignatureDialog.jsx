@@ -10,6 +10,7 @@ import { updateStatusMessage } from '../../../ui/chrome/status-bar.js';
 import { generateImageId } from '../../../utils/helpers.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { createSignaturePad } from '../../../annotations/signature-pad.js';
+import { leesOpslagJson, schrijfOpslagJson } from '../../../core/opslag.js';
 
 const STORAGE_KEY = 'pdfEditorSignatures';
 const MAX_SAVED = 5;
@@ -19,8 +20,8 @@ const MAX_PLACE_WIDTH = 200;
 
 function getSavedSignatures() {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
+    const saved = leesOpslagJson(STORAGE_KEY, []);
+    return Array.isArray(saved) ? saved : [];
   } catch {
     return [];
   }
@@ -30,13 +31,13 @@ function saveSignatureToStorage(dataUrl) {
   const signatures = getSavedSignatures();
   signatures.push({ dataUrl, createdAt: new Date().toISOString() });
   while (signatures.length > MAX_SAVED) signatures.shift();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(signatures));
+  schrijfOpslagJson(STORAGE_KEY, signatures);
 }
 
 function deleteSavedSignature(index) {
   const signatures = getSavedSignatures();
   signatures.splice(index, 1);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(signatures));
+  schrijfOpslagJson(STORAGE_KEY, signatures);
 }
 
 function getCroppedDataUrl(canvas) {
@@ -157,8 +158,13 @@ export default function SignatureDialog(props) {
     return [e.clientX - rect.left, e.clientY - rect.top];
   }
 
+  // Pointer events, so a finger or pen draws as well as the mouse (#671). The
+  // capture keeps the stroke going when the pointer leaves the pad.
   function startDraw(e) {
     if (!pad.canvas) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     const [x, y] = padPoint(e);
     pad.begin(x, y, strokeColor());
   }
@@ -206,7 +212,8 @@ export default function SignatureDialog(props) {
   }
 
   function onKeyDown(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    // Ook met Caps Lock aan (e.key is dan 'Z', #577).
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key || '').toLowerCase() === 'z') {
       e.preventDefault();
       e.stopPropagation();
       pad.undo();
@@ -281,10 +288,11 @@ export default function SignatureDialog(props) {
             ref={(el) => pad.attach(el)}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            onMouseDown={startDraw}
-            onMouseMove={continueDraw}
-            onMouseUp={endDraw}
-            onMouseLeave={endDraw}
+            style={{ 'touch-action': 'none' }}
+            onPointerDown={startDraw}
+            onPointerMove={continueDraw}
+            onPointerUp={endDraw}
+            onPointerCancel={endDraw}
           />
         </div>
       </Show>

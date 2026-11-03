@@ -2,6 +2,7 @@ import { For, onMount } from 'solid-js';
 import { pageCount, selectAllPages, clearPageSelection, getSelectedPagesArray, formatPageRangeString, setContainerRef } from '../../../stores/panels/thumbnailStore.js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import ThumbnailItem from '../ThumbnailItem.jsx';
+import { identityOrder, gapForDrop, moveGroupToGap } from '../../../../pdf/page-order.js';
 import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 export default function ThumbnailsPanel() {
@@ -16,20 +17,20 @@ export default function ThumbnailsPanel() {
     import('../../../../pdf/renderer.js').then(m => m.goToPage(pageNum));
   };
 
+  // Dragging a selected page takes the whole selection along (#763).
   const handleReorder = async (fromPage, toPage, dropBefore) => {
     const { reorderPages } = await import('../../../../pdf/page-manager.js');
-    const numPages = pageCount();
-    const currentOrder = Array.from({ length: numPages }, (_, i) => i + 1);
-    const fromIdx = currentOrder.indexOf(fromPage);
-    currentOrder.splice(fromIdx, 1);
-    let toIdx = currentOrder.indexOf(toPage);
-    if (!dropBefore) toIdx++;
-    currentOrder.splice(toIdx, 0, fromPage);
-    await reorderPages(currentOrder);
+    const order = identityOrder(pageCount());
+    const selected = getSelectedPagesArray();
+    const group = selected.includes(fromPage) ? selected : [fromPage];
+    const gap = gapForDrop(order, toPage, dropBefore ? 'before' : 'after');
+    if (gap < 0) return;
+    await reorderPages(moveGroupToGap(order, group, gap));
   };
 
   const handleKeyDown = async (e) => {
-    if (e.ctrlKey && e.key === 'a') {
+    // Ook met Caps Lock aan (e.key is dan 'A', #577).
+    if (e.ctrlKey && !e.shiftKey && (e.key || '').toLowerCase() === 'a') {
       e.preventDefault();
       selectAllPages();
     } else if (e.key === 'Escape') {
@@ -52,6 +53,18 @@ export default function ThumbnailsPanel() {
     <div class={`left-panel-content${activeTab() === 'thumbnails' ? ' active' : ''}`} id="thumbnails-panel">
       <div class="left-panel-header">
         <span>{t('leftPanel.thumbnails')}</span>
+        {/* Paginalabels: de naambouwer leest de bladnamen uit de onderhoek (#580). */}
+        <button
+          class="thumbnails-header-btn"
+          title={t('leftPanel.pageLabels')}
+          disabled={!pageCount()}
+          onClick={async () => {
+            const { openDialog } = await import('../../../stores/dialogStore.js');
+            openDialog('page-labels');
+          }}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1.5 3.5h8l4.5 4.5-4.5 4.5h-8z"/><path d="M4 6.5h4M4 9.5h5"/></svg>
+        </button>
       </div>
       <div class="thumbnails-container" id="thumbnails-container" ref={setContainerRef} tabIndex={0} onKeyDown={handleKeyDown}>
         <For each={pages()}>

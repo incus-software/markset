@@ -19,9 +19,16 @@ import { ruimteTagTemplate } from './templates/ruimtetag.js';
 import { houtBalkTemplate } from './templates/hout-balk.js';
 import { paalType1Template, paalType2Template } from './templates/paal-aanzicht.js';
 import { boutTemplate } from './templates/bout.js';
+import { ankerTemplate } from './templates/ankers.js';
 import { wapeningskorfTemplate } from './templates/wapeningskorf.js';
 import { wapeningsstaafTemplate, netwapeningTemplate } from './templates/wapening-lijn.js';
 import { sonderingTemplate } from './templates/sondering.js';
+// Constructieve tekengereedschappen (#312): wapening en staalverbindingen.
+import { wapeningsdetailTemplate } from './templates/wapeningsdetail.js';
+import { wapeningsnetTemplate } from './templates/wapeningsnet.js';
+import { staafPlattegrondTemplate } from './templates/staaf-plattegrond.js';
+import { vloerVorstrandTemplate } from './templates/vloer-vorstrand.js';
+import { kopplaatTemplate, voetplaatTemplate } from './templates/staalverbindingen.js';
 import { paalpuntniveauTemplate } from './templates/paalpuntniveau.js';
 import { overspanningspijlVloerTemplate } from './templates/overspanningspijl-vloer.js';
 import { stenenrijTemplate } from './templates/stenenrij.js';
@@ -29,6 +36,9 @@ import {
   opleggingTemplate, puntlastTemplate, qlastTemplate,
   beddingsverenTemplate, windverbandTemplate, scharnierVerbindingTemplate,
 } from './templates/constructie-symbolen.js';
+import {
+  staafTemplate, knoopTemplate, verdeeldeLastTemplate, momentTemplate,
+} from './templates/schematisering.js';
 import {
   bouwkraanTemplate, draaicirkelTemplate, parkeervakTemplate, bouwkeetTemplate,
 } from './templates/bouwplaats-symbolen.js';
@@ -64,9 +74,16 @@ register(houtBalkTemplate);
 register(paalType1Template);
 register(paalType2Template);
 register(boutTemplate);
+register(ankerTemplate);
 register(wapeningskorfTemplate);
 register(wapeningsstaafTemplate);
 register(netwapeningTemplate);
+register(wapeningsdetailTemplate);
+register(wapeningsnetTemplate);
+register(staafPlattegrondTemplate);
+register(vloerVorstrandTemplate);
+register(kopplaatTemplate);
+register(voetplaatTemplate);
 register(sonderingTemplate);
 register(paalpuntniveauTemplate);
 register(overspanningspijlVloerTemplate);
@@ -77,6 +94,11 @@ register(qlastTemplate);
 register(beddingsverenTemplate);
 register(windverbandTemplate);
 register(scharnierVerbindingTemplate);
+// Constructieve schematisering: staaf, knoop, q-last (lijn) en moment.
+register(staafTemplate);
+register(knoopTemplate);
+register(verdeeldeLastTemplate);
+register(momentTemplate);
 register(bouwkraanTemplate);
 register(draaicirkelTemplate);
 register(parkeervakTemplate);
@@ -138,10 +160,11 @@ export function normalizeListParam(def, raw, params = {}) {
 /**
  * Alle lijst-parameters van een template genormaliseerd (de rest blijft zoals
  * hij is). Voor de MCP-kant: wat de assistent aanmaakt of bijwerkt, staat er
- * daarna precies zo in als het getekend wordt.
+ * daarna precies zo in als het getekend wordt. Waarden in een oudere
+ * schrijfwijze (een kokermaat "Koker 100x100x5") worden eerst bijgewerkt.
  */
 export function normalizeParams(template, params = {}) {
-  const out = { ...(params || {}) };
+  const out = { ...migrateParams(template, params || {}) };
   if (!template || !Array.isArray(template.params)) return out;
   for (const def of template.params) {
     if (def.type !== 'list' || !(def.key in out)) continue;
@@ -150,6 +173,31 @@ export function normalizeParams(template, params = {}) {
     else delete out[def.key];
   }
   return out;
+}
+
+/**
+ * Parameters uit een ouder bestand naar de huidige waarden van het template
+ * (bijvoorbeeld een kokermaat "Koker 100x100x5" → "K100/5"). Een template
+ * zonder migrateParams laat ze ongemoeid.
+ */
+export function migrateParams(template, params) {
+  if (!template || typeof template.migrateParams !== 'function' || !params) return params;
+  return template.migrateParams(params);
+}
+
+/**
+ * Extra zoektermen van een parametrisch symbool voor het symbolenpalet: de
+ * maten uit de keuzelijst `maat` plus wat het template zelf opgeeft
+ * (`zoektermen`, zoals de oude schrijfwijze van een kokermaat).
+ */
+export function searchTermsFor(templateId) {
+  const tpl = getTemplate(templateId);
+  if (!tpl) return [];
+  const termen = [];
+  const maat = (tpl.params || []).find(p => p.key === 'maat');
+  for (const o of maat?.options || []) termen.push(typeof o === 'string' ? o : (o?.label || o?.value));
+  if (Array.isArray(tpl.zoektermen)) termen.push(...tpl.zoektermen);
+  return termen.filter(t => typeof t === 'string' && t);
 }
 
 export function listCategories() {

@@ -19,12 +19,13 @@
 // opzoekt, verzamelt één keer en vraagt dan schaalOpPuntUitBronnen; zie
 // schaal-bronnen.js voor de doorloop die dat voor de app regelt.
 //
-// Geen app-state: importeert alleen pdf-viewports.js (pdf-lib), zodat de
-// regel onder node te testen is en de bruggen hem zonder importcyclus kunnen
-// gebruiken.
+// Geen app-state: importeert alleen pdf-viewports.js (pdf-lib) en de zuivere
+// omrekening in scale-region-scale.js, zodat de regel onder node te testen is
+// en de bruggen hem zonder importcyclus kunnen gebruiken.
 
 import { viewportOp } from '../pdf/pdf-viewports.js';
 import { pageScaleAt } from '../../markset/page-scale.js'; // Markset
+import { documentSchaalOpPagina } from './scale-region-scale.js';
 
 /**
  * @typedef {object} SchaalBronnen
@@ -126,8 +127,8 @@ export function schaalOpPuntUitBronnen(bronnen, doc, pageNum, x, y) {
   const vp = viewportOp(doc.pdfViewports?.[pageNum], x, y);
   if (vp) return { pixelsPerUnit: vp.pixelsPerUnit, unit: vp.unit, method: 'pdfViewport' };
 
-  const docSchaal = doc.measureScale;
-  if (docSchaal && docSchaal.pixelsPerUnit > 0) {
+  const docSchaal = documentSchaalOpPagina(doc, pageNum);
+  if (docSchaal) {
     return { pixelsPerUnit: docSchaal.pixelsPerUnit, unit: docSchaal.unit || 'mm', method: 'document' };
   }
 
@@ -149,4 +150,25 @@ export function schaalOpPuntUitBronnen(bronnen, doc, pageNum, x, y) {
 export function schaalOpPunt(doc, pageNum, x, y) {
   if (!doc) return null;
   return schaalOpPuntUitBronnen(verzamelSchaalBronnen(doc), doc, pageNum, x, y);
+}
+
+/**
+ * Heeft het document ergens een schaalbron (#554)? Een schaalgebied,
+ * schaalbalk of viewport-annotatie, een viewport uit de PDF zelf (/VP) of de
+ * documentschaal (kalibratie, snelle schaal, schaal uit de titelhoek). Een
+ * nieuwe meting neemt dan haar schaal uit die bronnen (getMeasureScale); de
+ * handmatige voorkeursschaal van een meetgereedschap geldt alleen als het
+ * document er geen enkele heeft.
+ * @param {{annotations?:Array<object>, pdfViewports?:Record<number, Array<object>>,
+ *   measureScale?:{pixelsPerUnit:number} | null} | null | undefined} doc
+ * @returns {boolean}
+ */
+export function documentHeeftSchaal(doc) {
+  if (!doc) return false;
+  if (doc.measureScale && doc.measureScale.pixelsPerUnit > 0) return true;
+  if (doc.pdfViewports && Object.values(doc.pdfViewports).some((lijst) => Array.isArray(lijst) && lijst.length > 0)) {
+    return true;
+  }
+  const annotaties = Array.isArray(doc.annotations) ? doc.annotations : [];
+  return annotaties.some((a) => a.type === 'scaleRegion' || a.type === 'scaleBar' || a.type === 'viewport');
 }

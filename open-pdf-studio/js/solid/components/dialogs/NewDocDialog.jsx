@@ -4,6 +4,7 @@ import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { createBlankPDF, createDocFromTemplate } from '../../../pdf/loader.js';
 import { scanFrames, openFramesFolder } from '../../../pdf/frames.js';
+import { frameStyleLabel, framePreviewText } from '../../../pdf/frame-labels.js';
 import { scanTitleBlocks, openTitleBlocksFolder, addTitleBlockFile, composeFrameWithTitleBlock }
   from '../../../pdf/titleblocks.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
@@ -20,8 +21,6 @@ const DEFAULT_ORIENTATION = 'landscape';
 // system's paper size (ARCH D in US units). Frames and title blocks the user
 // adds to the app-data folders stay available in the lists.
 const MARKSET_BLANK_DEFAULT = true;
-
-const _cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 const PAPER_SIZES = {
   a0:      { width: 2384, height: 3370, label: 'A0', widthMm: 841, heightMm: 1189 },
@@ -254,10 +253,7 @@ export default function NewDocDialog() {
   });
 
   const previewText = createMemo(() => {
-    const dims = getDimensions();
-    const base = `${dims.widthMm} x ${dims.heightMm} mm (${dims.label})`;
-    const f = resolvedFrame();
-    return f ? `${base} — ${f.fileName}` : base;
+    return framePreviewText({ dims: getDimensions(), frame: resolvedFrame(), orientation: orientation(), t });
   });
 
   // Eigen onderhoek toevoegen: kies een PDF, kopieer hem naar de
@@ -325,7 +321,7 @@ export default function NewDocDialog() {
           >
             <option value="">{t('newDoc.noFrame')}</option>
             <For each={frameIndex()?.stijlen || []}>{(s) => (
-              <option value={s}>{_cap(s)}</option>
+              <option value={s}>{frameStyleLabel(s, t)}</option>
             )}</For>
           </select>
           <button
@@ -416,7 +412,7 @@ export default function NewDocDialog() {
           <div class="new-doc-row new-doc-custom-row">
             <label class="new-doc-label">{t('newDoc.widthMm')}</label>
             <input
-              type="number"
+              type="text" inputmode="decimal" data-getal
               class="new-doc-input"
               value={customWidth()}
               min="10"
@@ -426,7 +422,7 @@ export default function NewDocDialog() {
             />
             <label class="new-doc-label new-doc-label-inline">{t('newDoc.heightMm')}</label>
             <input
-              type="number"
+              type="text" inputmode="decimal" data-getal
               class="new-doc-input"
               value={customHeight()}
               min="10"
@@ -464,7 +460,7 @@ export default function NewDocDialog() {
         <div class="new-doc-row" style={stijl() ? 'opacity:0.45;pointer-events:none' : ''}>
           <label class="new-doc-label">{t('newDoc.pagesCount')}</label>
           <input
-            type="number"
+            type="text" inputmode="decimal" data-getal
             class="new-doc-input"
             value={numPages()}
             min="1"

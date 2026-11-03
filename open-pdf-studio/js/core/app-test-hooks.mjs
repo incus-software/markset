@@ -51,6 +51,8 @@ const STUBS = [
   '/js/ui/panels/left-panel.js',
   '/js/ui/panels/bookmarks.js',
   '/js/annotations/stamp-line-width.js',
+  '/js/tools/tool-context.js',
+  '/js/tools/manager.js',
 ];
 
 const pad = (url) => fileURLToPath(url).split('\\').join('/');
@@ -131,6 +133,9 @@ export function buildSchedule(...args) {
 /** Het kleine stukje browser dat de app-modules bij het laden aanraken. */
 export function installeerBrowserStubs() {
   globalThis.window ??= globalThis;
+  // Modules die bij het laden een venster-luisteraar zetten (split-haken.js).
+  globalThis.window.addEventListener ??= () => {};
+  globalThis.window.removeEventListener ??= () => {};
   globalThis.document ??= {
     querySelector: () => null,
     querySelectorAll: () => [],

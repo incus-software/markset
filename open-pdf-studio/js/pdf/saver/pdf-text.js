@@ -4,7 +4,10 @@
 //    bladwijzertitels). pdf-lib's PDFString.of schrijft van elk teken alleen
 //    de lage byte: '€' (U+20AC) werd 0xAC en kwam terug als '¬'. Pure ASCII
 //    blijft een PDFString, byte-identiek aan eerdere versies; al het andere
-//    gaat als UTF-16BE met BOM (PDFHexString.fromText).
+//    gaat als UTF-16BE met BOM (PDFHexString.fromText). PDFString.of zet de
+//    tekst ook zonder escapes tussen '( )': ASCII die zo geen geldige literal
+//    string is (los haakje, backslash voor een haakje of aan het eind) gaat
+//    daarom ook als hex (#555).
 // 2. Tekst in appearance-streams: '(...) Tj' met een font in /WinAnsiEncoding.
 //    context.stream(string) houdt ook alleen de lage byte over. winAnsiLiteral
 //    levert de inhoud van zo'n literal string in puur ASCII: WinAnsi-codes
@@ -22,7 +25,8 @@ const ALLEEN_ASCII = /^[\x00-\x7F]*$/;
 
 /**
  * Tekst-string voor een PDF-woordenboek.
- * ASCII -> PDFString (zoals voorheen), anders UTF-16BE-hex met BOM.
+ * ASCII die als literal string veilig is -> PDFString (zoals voorheen),
+ * anders UTF-16BE-hex met BOM.
  * Niet-strings worden eerst naar tekst omgezet (PDFString.of(getal) schreef
  * een kapotte string).
  * @param {unknown} text
@@ -30,23 +34,25 @@ const ALLEEN_ASCII = /^[\x00-\x7F]*$/;
  */
 export function pdfTextString(text) {
   const s = String(text ?? '');
-  // Markset: PDFString.of writes the text between ( ) without escaping. An
-  // unbalanced ")" ("1) Confirm ...") ended the string early and corrupted
-  // the object (and the object stream it was in), and so did a "\" before a
-  // parenthesis or at the end. Such text goes as hex, which needs no
-  // escaping and reads back exactly (decodePdfTextObject).
   return ALLEEN_ASCII.test(s) && veiligeLiteral(s) ? PDFString.of(s) : PDFHexString.fromText(s);
 }
 
-// Markset: can `s` be written as ( ... ) without escapes? No backslash right
-// before a parenthesis or at the end (it would escape it), and every ")"
-// closes an earlier "(" with none left open.
+/**
+ * Kan `s` ongewijzigd tussen '( )' staan? PDFString.of escapet niets: een
+ * los ')' sluit de string te vroeg, een los '(' of een '\' voor een haakje of
+ * aan het eind sluit hem te laat. Dan is de rest van het object ongeldig en
+ * in een objectstroom ook de objecten erna (#555). Hex heeft geen escapes
+ * nodig en decodeert exact; gebalanceerde tekst en JSON met '\"' houden zo
+ * hun bytes van eerdere versies (decodePdfTextObject leest die rauw).
+ * @param {string} s
+ * @returns {boolean}
+ */
 function veiligeLiteral(s) {
   if (/\\(?=[()]|$)/.test(s)) return false;
   let diepte = 0;
-  for (const ch of s) {
-    if (ch === '(') diepte++;
-    else if (ch === ')' && --diepte < 0) return false;
+  for (const teken of s) {
+    if (teken === '(') diepte++;
+    else if (teken === ')' && --diepte < 0) return false;
   }
   return diepte === 0;
 }
@@ -101,6 +107,16 @@ export function toWinAnsiText(text, { newlines = 'keep' } = {}) {
     else uit += sanitizeWinAnsiText(ch).text;
   }
   return uit;
+}
+
+/**
+ * Bevat de tekst tekens die een WinAnsi-font niet kan tonen (bijv. Chinees)?
+ * @param {unknown} text
+ * @returns {boolean}
+ */
+export function heeftNietWinAnsi(text) {
+  const s = String(text ?? '');
+  return toWinAnsiText(s) !== s;
 }
 
 /**

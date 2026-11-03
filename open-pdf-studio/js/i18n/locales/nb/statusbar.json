@@ -11,6 +11,7 @@
     "box": "Rektangel",
     "polygon": "Polygon",
     "cloud": "Sky",
+    "cloudPolyline": "Skypolylinje",
     "polyline": "Polylinje",
     "textbox": "Tekstboks",
     "callout": "Bildeforklaring",
@@ -27,7 +28,9 @@
     "formTextField": "Skjema-tekstfelt",
     "formCheckbox": "Skjema-avkrysningsboks",
     "formRadio": "Skjema-radioknapp",
-    "screenshot": "Skjermbilde"
+    "screenshot": "Skjermbilde",
+    "pageLabelPick": "Velg tekst for sideetikett",
+    "proofread": "Korrektur"
   },
   "toolLabel": "Verktøy:",
   "annotationsLabel": "Merknader:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Dette dokumentet inneholder interaktive skjemafelt. Du kan fylle ut skjemaet og lagre dataene dine.",
   "enableEditing": "Aktiver redigering",
   "pdfAConformance": "Dette dokumentet hevder PDF/A-konformitet.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Kunne ikke gi filen nytt navn: {{error}}",
+  "renameInvalidChars": "Filnavnet kan ikke inneholde:  / : * ? \" < > |",
+  "renameFileExists": "Det finnes allerede en fil med dette navnet.",
+  "engineTitle": "Gjengivelsesmotor som brukes for gjeldende visning",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vektor)"
+  },
+  "viewSingle": "Enkeltside",
+  "viewContinuous": "Kontinuerlig",
+  "viewBook": "To sider",
+  "viewFacing": "To sider side om side",
   "viewRotatedTitle": "Visningen er rotert {{degrees}}° med klokken; dokumentet er uendret. Klikk for å rotere visningen tilbake.",
+  "compareTabTitle": "Sammenlign",
   "filledAreaSketch": {
     "undoPoint": "Angre punkt",
     "undoPointTitle": "Fjern siste punkt (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "B",
   "boxHeightAbbr": "H",
+  "boxSizeHint": "Skriv en verdi + Enter — eller klikk utenfor for å bruke",
   "ocr": {
     "progress": {
       "starting": "Gjenkjenner tekst...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Resultater ({{count}})",
   "searchResultPage": "Side {{page}}",
   "searchHitsOne": "1 treff",
-  "searchHitsMany": "{{count}} treff"
+  "searchHitsMany": "{{count}} treff",
+  "passwordProtectedBar": "Beskyttet med passord: åpnet skrivebeskyttet.",
+  "documentSearch": {
+    "title": "Søk i dokumenter",
+    "query": "Søketekst",
+    "scope": "Søk i",
+    "active": "Gjeldende dokument",
+    "open": "Åpne dokumenter",
+    "folder": "Mappe",
+    "choose": "Velg mappe",
+    "annotations": "Ta med kommentarer",
+    "search": "Søk",
+    "cancel": "Avbryt",
+    "stale": "Dokumentet er endret. Kjør søket på nytt.",
+    "folderHint": "Søker i PDF-filer direkte i denne mappen uten å åpne faner eller endre filer.",
+    "limited": "Resultatgrensen er nådd. Avgrens søket.",
+    "cancelled": "Søket ble avbrutt; resultatene er ufullstendige.",
+    "ocrHint": "Ingen søkbar tekst på sidene {{pages}}. Åpne dokumentet og kjør OCR eksplisitt ved behov.",
+    "status": {
+      "searching": "Søker",
+      "complete": "Fullført",
+      "needs_ocr": "Inneholder sider uten søkbar tekst",
+      "encrypted": "Passord kreves",
+      "unreadable": "Kunne ikke søke",
+      "changed": "Dokumentet er endret; søk på nytt",
+      "cancelled": "Avbrutt",
+      "limited": "Resultatgrensen er nådd"
+    },
+    "failed": "Søket mislyktes. Kontroller søket og mappen, og prøv på nytt.",
+    "prepareOcr": "Åpne for OCR…"
+  },
+  "symbolSearch": "Finn symboler",
+  "findMoreOptions": "Flere søkealternativer",
+  "watchActive": "Overvåker {{folder}}",
+  "watchFailed": "Overvåkingsfeil: {{folder}}",
+  "watchTitle": "Dokumentarbeidsflyten overvåker {{input}} og skriver til {{output}}. Klikk for å stoppe overvåkingen.",
+  "renderDiagnostics": {
+    "title": "Gå til neste gjengivelsesfunn. Ingen funn garanterer ikke en fullstendig gjengivelse.",
+    "count": "Gjengivelsesfunn: {{count}}",
+    "detail": "Side {{page}}: {{code}}. Prøv lavere zoom, eller åpne dokumentet på nytt; fullstendigheten er ikke garantert."
+  },
+  "mcpSignal": {
+    "label": "KI-tilkobling (MCP)",
+    "connected": "KI-assistent tilkoblet",
+    "idle": "MCP-server på, inaktiv",
+    "off": "MCP-server av",
+    "port": "Port: {{port}}",
+    "lastTool": "Siste verktøy: {{tool}} kl. {{time}}",
+    "noTool": "Ingen verktøykall ennå"
+  }
 }
