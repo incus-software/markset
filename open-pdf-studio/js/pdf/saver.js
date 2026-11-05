@@ -1902,9 +1902,11 @@ async function _savePDFNu(saveAsPath, activeDoc, { alleenAnnotaties = false, mom
               CA: opacity,
               T: pdfTextString(ann.author || 'User'),
               M: PDFString.fromDate(new Date()),
-              NM: PDFString.of('stamp_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 6)),
               F: computeAnnotFlags(ann)
             };
+            // Markset: a stamp keeps the name it was opened with (written below by
+            // schrijfAlgemeneSleutels), so other PDF apps see the same markup.
+            if (!ann.nm) stampDictObj.NM = PDFString.of('stamp_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 6));
             stampDictObj.IT = PDFName.of('Stamp');
 
             if (ann.stampName) stampDictObj.OPS_StampName = pdfTextString(ann.stampName);

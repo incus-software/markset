@@ -38,6 +38,18 @@ test('every markup gets its page and a unique, stable name', async () => {
   assert.equal(c.get(PDFName.of('NM')).asString(), 'kept-from-another-app');
 });
 
+test('no markup is given a fresh random name on every save', () => {
+  // A new /NM each save makes other PDF apps see a new markup (found on stamps
+  // after the 2026.44.8 merge): a made-up name is only for a markup without one.
+  const dir = path.join(here, '../js/pdf');
+  const files = ['saver.js', ...readdirSync(path.join(dir, 'saver')).filter((f) => f.endsWith('.js')).map((f) => `saver/${f}`)];
+  for (const f of files) {
+    const src = readFileSync(path.join(dir, f), 'utf8');
+    assert.ok(!/\bNM:\s*PDFString\.of\([^\n]*(Math\.random|Date\.now)/.test(src), `${f} writes a random /NM unconditionally`);
+  }
+  assert.match(readFileSync(path.join(dir, 'saver.js'), 'utf8'), /if \(!ann\.nm\) stampDictObj\.NM = /);
+});
+
 test('placing an appearance onto its Rect', () => {
   assert.deepEqual(placementMatrix([0, 0, 100, 50], null, [10, 20, 110, 70]), [1, 0, 0, 1, 10, 20]);
   // Markset's own appearances: absolute BBox with a Matrix that moves it to the origin.
