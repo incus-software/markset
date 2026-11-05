@@ -16,3 +16,13 @@ export function sheetSymbolHeight(paperHeightIn, pageW, pageH) {
   const inches = Math.max(MIN_HEIGHT_IN, (paperHeightIn * longEdgeIn) / REFERENCE_LONG_EDGE_IN);
   return Math.round(inches * 72 * 100) / 100;
 }
+
+/**
+ * Stamp tool overrides with the sheet height in place of the default height,
+ * for the placement and the ghost under the cursor alike. `maat` is the page
+ * size ({breedte, hoogte} in points, from paginaMaat).
+ */
+export function withSheetHeight(overrides, maat) {
+  const h = sheetSymbolHeight(overrides?.stampPaperHeightIn, maat?.breedte, maat?.hoogte);
+  return h ? { ...overrides, stampHeight: h } : overrides;
+}
