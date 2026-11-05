@@ -42,7 +42,13 @@ export function leesPlattegrondMeta(annotDict, context) {
     const rol = String(context.lookup(rolRaw) || rolRaw).replace(/^\//, '');
     if (rol === 'chain' || rol === 'total') uit.opsDimRole = rol;
   }
+  const diepteRaw = annotDict.get(PDFName.of('OPS_Depth'));
+  if (diepteRaw) {
+    const d = pdfNum(context.lookup(diepteRaw) || diepteRaw);
+    if (d !== null && d > 0) uit.opsDepth = d;
+  }
   if (waar(context, annotDict.get(PDFName.of('OPS_NoLabel')))) uit.opsNoLabel = true;
+  if (waar(context, annotDict.get(PDFName.of('OPS_EdgeLengths')))) uit.opsEdgeLengths = true;
   const zaadRaw = annotDict.get(PDFName.of('OPS_RuimteZaad'));
   if (zaadRaw) {
     const arr = context.lookup(zaadRaw) || zaadRaw;
@@ -79,7 +85,10 @@ export function plattegrondUitExtra(extra, naarApp) {
   if (e.opsDimOvershootEnds) uit.dimOvershootEnds = e.opsDimOvershootEnds;
   if (e.opsDimChain) uit.opsKettingId = e.opsDimChain;
   if (e.opsDimRole) uit.opsMaatRol = e.opsDimRole;
+  if (Number.isFinite(e.opsDepth) && e.opsDepth > 0) uit.measureDepth = e.opsDepth;
   if (e.opsNoLabel) uit.measureShowLabel = false;
+  // Zijdematen van een meetvlak (#536); zonder sleutel blijven ze uit.
+  if (e.opsEdgeLengths) uit.measureShowEdgeLengths = true;
   if (e.opsRuimteZaadPdf && typeof naarApp === 'function') {
     const [x, y] = naarApp(e.opsRuimteZaadPdf.x, e.opsRuimteZaadPdf.y);
     if (Number.isFinite(x) && Number.isFinite(y)) uit.opsRuimteZaad = { x, y };

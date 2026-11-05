@@ -19,6 +19,8 @@ export const HANDLE_TYPES = {
   LINE_END: 'line_end',
   RADIUS: 'radius',
   ROTATE: 'rotate',
+  // Eigen draaipunt van afbeelding/stempel/handtekening (#826, draaipunt.js).
+  PIVOT: 'pivot',
   CALLOUT_ARROW: 'callout_arrow',
   CALLOUT_KNEE: 'callout_knee',
   CALLOUT_MOVE: 'callout_move',
@@ -46,6 +48,7 @@ export const HANDLE_TYPES = {
 export const DEFAULT_PREFERENCES: Preferences = {
   // Theme
   theme: 'light', // Markset: Light for new installs (upstream: 'default', a dark theme with low-contrast text)
+  uiScale: 100,
 
   // Enkelpagina is de standaard-weergavemodus; opgeslagen 'continuous'
   // (de kortstondige oude default, nergens instelbaar in de UI) wordt bij
@@ -80,6 +83,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   snapToEndpoints: true,
   snapToMidpoints: true,
   snapToCenters: true,
+  // Vertex = elk tussenpunt van een polylijn/veelhoek (los van de
+  // eindpunten). Start point = het eerste punt waarmee het object is
+  // getekend (lijnstart, eerste polylijnpunt, eerste hoek).
+  snapToVertices: true,
+  snapToStartPoints: true,
   snapToEdges: false,
   snapToIntersections: true,
   snapToPerpendicular: false,
@@ -94,6 +102,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // guide lines); while resizing, its width/height snaps to another image's
   // width/height ("equal width"). Uses objectSnapRadius as its tolerance.
   enableImageAlignSnap: true,
+  // Move inference (#519, G / mv): tracking lines through points of other
+  // geometry (and acquired points), extension lines of lines / wall faces,
+  // and parallel / perpendicular guides. Polar during a move follows the
+  // polar-tracking settings above.
+  moveInferenceTracking: true,
+  moveInferenceExtension: true,
+  moveInferenceParallel: true,
   // CAD behavior — keep drawing tool active after committing one annotation
   // so the user can place multiple in a row without re-selecting the tool.
   // Esc returns to select.
@@ -127,6 +142,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
   textboxBorderStyle: 'solid',
   textboxOpacity: 100,
   textboxFontSize: 8,
+  textboxFontFamily: 'Arial',
+
+  // Markset: Text tool defaults (plain text, markset/plain-text.js)
+  plainTextFontSize: 10,
+  plainTextFontFamily: 'Arial',
+  plainTextOpacity: 100,
 
   // Callout defaults
   calloutFillColor: '#FFFBEB',
@@ -136,6 +157,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   calloutBorderStyle: 'solid',
   calloutOpacity: 100,
   calloutFontSize: 14,
+  calloutFontFamily: 'Arial',
 
   // Rectangle defaults
   rectFillColor: '#FFFBEB',
@@ -168,6 +190,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
   drawStrokeColor: '#FF0000',
   drawLineWidth: 2,
   drawOpacity: 100,
+  // Drukgevoelige inkt (#385): pendruk stuurt de breedte (een muis blijft
+  // vast), minimale breedte in % van de lijndikte, gladheid 0..100, en
+  // alleen de pen tekent (aanraking genegeerd).
+  drawPressure: true,
+  drawPressureMinWidth: 30,
+  drawSmoothing: 50,
+  drawPenOnly: false,
 
   // Line defaults
   lineStrokeColor: '#FF0000',
@@ -242,6 +271,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   measureAreaDimScale: 1,
   measureAreaDimUnit: 'mm',
   measureAreaDimPrecision: 2,
+  // Lengte van elke rechte zijde tonen (#536); standaard uit.
+  measureAreaShowEdgeLengths: false,
 
   // Filled Area defaults (user-drawn contour with arcs + holes, solid + hatch fill)
   filledAreaStrokeColor: '#000000',
@@ -271,6 +302,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autoSelectAfterCreate: true,
   confirmBeforeDelete: true,
   wheelZoomWithoutCtrl: false,
+  // Dubbelklik met de middelste muisknop = huidige pagina passend (#767).
+  middleDoubleClickFit: true,
+  // Muiswiel boven het lint wisselt van tabblad (#852).
+  ribbonWheelSwitchesTabs: true,
 
   // Startup
   restoreLastSession: false,
@@ -279,6 +314,14 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Screenshot annotate: intercept the system PrtScn key as a global hotkey
   // (opt-in; off by default because a global hotkey is intrusive).
   interceptPrintScreen: false,
+
+  // Home → Screenshot: the last choices in the capture dialog (resolution
+  // 'screen' = what the view shows, or a dpi; copy or save on Enter).
+  screenshotResolution: 'screen',
+  screenshotCustomDpi: 300,
+  screenshotFormat: 'png',
+  screenshotJpegQuality: 90,
+  screenshotDefaultAction: 'copy',
 
   // AI-koppeling (MCP): standaard aan, zodat een AI-assistent meteen kan
   // koppelen. De koppeling luistert alleen op deze computer (127.0.0.1) en is
@@ -292,12 +335,39 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   // View
   thinLines: false,
+  // Read aloud (#384): voice id ('' = the engine's default) and rate (1 = normal).
+  readAloudVoice: '',
+  readAloudRate: 1,
+  // Online voices send the text being read to an online speech service:
+  // only after the user opts in.
+  readAloudAllowOnline: false,
   showScrollbars: false,
+  // Background color around and between the pages in the document view
+  // (#859): '' = the default (light grey #e0e0e0, the theme around continuous
+  // pages), or '#rrggbb'. Display only: never the page, print or export.
+  pageBackgroundColor: '',
   // Zware raster-pagina's (grote content-stream, bv. CAD-tekeningen met
   // miljoenen segmenten) progressief tegel-voor-tegel invullen via de
   // multi-proces worker-pool: parallelle eerste render (sneller), geen
   // zwart scherm, hoofdthread blijft vrij. Uitzetbaar in Voorkeuren.
   progressiveRender: true,
+  // Schermkalibratie voor Werkelijke grootte (#520): CSS-pixels per inch per
+  // schermschaal ({ "1.25": 120.5 }). Gekalibreerd scherm: 100% is de echte
+  // papiermaat. Leeg = niet gekalibreerd, dan bepaalt zoomDpi wat 100% is.
+  screenCalibration: {},
+  // Screen resolution (dpi) that defines 100% zoom on a screen without a
+  // calibration (screenCalibration wins when this screen has one).
+  zoomDpi: 110,
+  // Page text sharpening 0-4 (0 = as rendered).
+  pageSharpen: 2,
+  // Unit for paper sizes in the properties panel (image width/height, scale
+  // bar height): 'mm' | 'cm' | 'in' | 'pt' (#598). Display only — the model
+  // stays in page points.
+  paperSizeUnit: 'pt',
+  // Keyboard shortcuts changed by the user (#714): only the commands whose
+  // shortcuts differ from the defaults, { 'view.fitPage': ['Ctrl+K'] }.
+  // See core/keybindings/registry.js.
+  keyboardShortcuts: {},
 
   // Panels
   propertiesPanelVisible: true,
@@ -347,6 +417,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   cadImportSettings: null,
   cadImportPresets: null,
 
+  // PDF/X export (#422) — last chosen output profile and rendering intent
+  // (null = sRGB without conversion, relative colorimetric)
+  pdfxSettings: null,
   // Markset: new installs start on the Black markup color scheme; this
   // overrides the red stroke defaults above (markset/color-schemes.js).
   ...schemeValues(SCHEME_DEFAULT_COLOR),

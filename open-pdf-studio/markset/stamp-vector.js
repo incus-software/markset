@@ -15,13 +15,14 @@ const FONTS = { F1: 'Helvetica', F2: 'Helvetica-Bold' };
  * @param {object} o.annotDict   the stamp's annotation dictionary
  * @param {object} o.context     pdf-lib PDFContext
  * @param {object} o.pdf         { PDFName, PDFHexString } from pdf-lib
- * @param {{prefix: string, visW: number, visH: number}} o.compensation
- *        pageCompensationForAp(width, height, pageRotation)
+ * @param {{prefix: string, clip: string, visW: number, visH: number, bboxW: number, bboxH: number}} o.placement
+ *        stempelAppearance(...) from js/pdf/saver/stempel-draaiing.js: the
+ *        page /Rotate and the stamp's own rotation, as for the PNG
  * @returns {boolean} true when the vector appearance was written
  */
-export function writeVectorStampAppearance({ ann, annotDict, context, pdf, compensation }) {
+export function writeVectorStampAppearance({ ann, annotDict, context, pdf, placement }) {
   if (!ann?.stampSvg || ann.stampText) return false;
-  const { prefix = '', visW, visH } = compensation || {};
+  const { prefix = '', clip = '', visW = ann.width, visH = ann.height, bboxW = ann.width, bboxH = ann.height } = placement || {};
   const ap = svgToPdfAppearance(ann.stampSvg, visW, visH);
   if (!ap) return false;
 
@@ -37,9 +38,9 @@ export function writeVectorStampAppearance({ ann, annotDict, context, pdf, compe
   if (Object.keys(fonts).length) resources.Font = context.obj(fonts);
   if (Object.keys(extG).length) resources.ExtGState = context.obj(extG);
 
-  const content = `q\n${alpha < 1 ? '/GSA gs\n' : ''}${prefix}${ap.ops}Q\n`;
+  const content = `q\n${alpha < 1 ? '/GSA gs\n' : ''}${prefix}${clip}${ap.ops}Q\n`;
   const stream = context.stream(content, {
-    Type: 'XObject', Subtype: 'Form', BBox: [0, 0, ann.width, ann.height],
+    Type: 'XObject', Subtype: 'Form', BBox: [0, 0, bboxW, bboxH],
     Resources: context.obj(resources),
   });
   annotDict.set(pdf.PDFName.of('AP'), context.obj({ N: context.register(stream) }));

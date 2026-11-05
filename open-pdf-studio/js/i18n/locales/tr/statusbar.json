@@ -11,6 +11,7 @@
     "box": "Dikdörtgen",
     "polygon": "Çokgen",
     "cloud": "Bulut",
+    "cloudPolyline": "Bulut Çoklu Çizgi",
     "polyline": "Çoklu Çizgi",
     "textbox": "Metin Kutusu",
     "callout": "Açıklama Balonu",
@@ -27,7 +28,9 @@
     "formTextField": "Form Metin Alanı",
     "formCheckbox": "Form Onay Kutusu",
     "formRadio": "Form Seçenek Düğmesi",
-    "screenshot": "Ekran Görüntüsü"
+    "screenshot": "Ekran Görüntüsü",
+    "pageLabelPick": "Sayfa Etiketi için Metin Seç",
+    "proofread": "Düzelti"
   },
   "toolLabel": "Araç:",
   "annotationsLabel": "Açıklamalar:",
@@ -36,6 +39,7 @@
   "previousPage": "Önceki Sayfa",
   "nextPage": "Sonraki Sayfa",
   "lastPage": "Son Sayfa",
+  "page": "Sayfa",
   "zoomOut": "Uzaklaştır",
   "zoomIn": "Yakınlaştır",
   "noDocumentsOpen": "Açık belge yok",
@@ -51,14 +55,21 @@
   "formFieldsMessage": "Bu belge etkileşimli form alanları içermektedir. Formu doldurabilir ve verilerinizi kaydedebilirsiniz.",
   "enableEditing": "Düzenlemeyi Etkinleştir",
   "pdfAConformance": "Bu belge PDF/A uyumluluğu bildirmektedir.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Dosya yeniden adlandırılamadı: {{error}}",
+  "renameInvalidChars": "Dosya adı şunları içeremez:  / : * ? \" < > |",
+  "renameFileExists": "Bu adda bir dosya zaten var.",
+  "engineTitle": "Geçerli görünüm için kullanılan işleme motoru",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vektör)"
+  },
+  "viewSingle": "Tek Sayfa",
+  "viewContinuous": "Sürekli",
+  "viewBook": "İki Sayfa",
+  "viewFacing": "Yan Yana İki Sayfa",
   "viewRotatedTitle": "Görünüm saat yönünde {{degrees}}° döndürülmüş; belge değişmedi. Görünümü geri döndürmek için tıklayın.",
+  "compareTabTitle": "Karşılaştır",
   "filledAreaSketch": {
     "undoPoint": "Noktayı geri al",
     "undoPointTitle": "Son noktayı kaldır (Backspace)",
@@ -81,6 +92,7 @@
   },
   "boxWidthAbbr": "G",
   "boxHeightAbbr": "Y",
+  "boxSizeHint": "Bir değer yazıp Enter'a basın — veya uygulamak için başka yere tıklayın",
   "ocr": {
     "progress": {
       "starting": "Metin tanınıyor...",
@@ -96,5 +108,54 @@
   "searchResultsTitle": "Sonuçlar ({{count}})",
   "searchResultPage": "Sayfa {{page}}",
   "searchHitsOne": "1 eşleşme",
-  "searchHitsMany": "{{count}} eşleşme"
+  "searchHitsMany": "{{count}} eşleşme",
+  "passwordProtectedBar": "Parola ile korunuyor: salt okunur açıldı.",
+  "documentSearch": {
+    "title": "Belgelerde ara",
+    "query": "Arama metni",
+    "scope": "Arama yeri",
+    "active": "Geçerli belge",
+    "open": "Açık belgeler",
+    "folder": "Klasör",
+    "choose": "Klasör seç",
+    "annotations": "Yorumları dahil et",
+    "search": "Ara",
+    "cancel": "İptal",
+    "stale": "Belge değişti. Aramayı yeniden çalıştırın.",
+    "folderHint": "Sekme açmadan veya dosyaları değiştirmeden doğrudan bu klasördeki PDF dosyalarında arar.",
+    "limited": "Sonuç sınırına ulaşıldı. Aramanızı daraltın.",
+    "cancelled": "Arama iptal edildi; sonuçlar eksik.",
+    "ocrHint": "{{pages}} sayfalarında aranabilir metin yok. Gerekirse belgeyi açın ve OCR'yi açıkça çalıştırın.",
+    "status": {
+      "searching": "Aranıyor",
+      "complete": "Tamamlandı",
+      "needs_ocr": "Aranabilir metin içermeyen sayfalar var",
+      "encrypted": "Parola gerekli",
+      "unreadable": "Aranamadı",
+      "changed": "Belge değişti; yeniden arayın",
+      "cancelled": "İptal edildi",
+      "limited": "Sonuç sınırına ulaşıldı"
+    },
+    "failed": "Arama başarısız oldu. Sorguyu ve klasörü kontrol edip yeniden deneyin.",
+    "prepareOcr": "OCR için aç…"
+  },
+  "symbolSearch": "Sembol bul",
+  "findMoreOptions": "Daha fazla arama seçeneği",
+  "watchActive": "{{folder}} izleniyor",
+  "watchFailed": "İzleme hatası: {{folder}}",
+  "watchTitle": "Belge iş akışı {{input}} klasörünü izliyor ve {{output}} klasörüne yazıyor. İzlemeyi durdurmak için tıklayın.",
+  "renderDiagnostics": {
+    "title": "Sonraki görüntüleme bulgusuna git. Bulgu olmaması görüntülemenin eksiksiz olduğunu garanti etmez.",
+    "count": "Görüntüleme bulguları: {{count}}",
+    "detail": "Sayfa {{page}}: {{code}}. Daha düşük bir yakınlaştırma deneyin veya belgeyi yeniden açın; eksiksizlik garanti edilmez."
+  },
+  "mcpSignal": {
+    "label": "Yapay zekâ bağlantısı (MCP)",
+    "connected": "Yapay zekâ asistanı bağlı",
+    "idle": "MCP sunucusu açık, boşta",
+    "off": "MCP sunucusu kapalı",
+    "port": "Bağlantı noktası: {{port}}",
+    "lastTool": "Son araç: {{tool}}, {{time}}",
+    "noTool": "Henüz araç çağrısı yok"
+  }
 }

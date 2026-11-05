@@ -12,7 +12,9 @@ import { viewportNaarPagina } from '../pdf/weergave-rotatie.js';
 import { weergaveNaarPagina } from '../pdf/weergave-ruimte.js';
 import { cancelParametricSymbolInput } from './parametric-symbol-editing.js';
 import { clearPluginHover } from './tools/plugin-tool.js';
+import { syncSymbolInsertSession } from '../symbols/symbol-insert-format-store.js';
 import { applyOverlayPointerEvents } from '../pdf/link-layer.js';
+import { endToolSetSession } from './tool-set-session.js';
 import {
   doorvalVoorSelectie, staatBovenTekst, klikDoelSoort, heftKlikSelectieOp,
 } from './select-doorval.js';
@@ -31,6 +33,7 @@ export function getCursorForTool(tool = state.currentTool) {
     case 'hand':
       return 'grab';
     case 'text':
+    case 'plainText': // Markset
     case 'editText':
       return 'text';
     default: {
@@ -263,7 +266,7 @@ function setAnnotationCanvasForTextAccess(enabled) {
 
 // Some tools call setTool('select') after committing one annotation. With
 // `keepToolActive=true` (default) the tool stays active so the user can place
-// multiple shapes in a row without re-clicking the toolbar. AutoCAD-style.
+// multiple shapes in a row without re-clicking the toolbar, as in CAD programs.
 // Esc returns to select-tool. Tools should call this helper instead of setTool('select') directly.
 export function maybeRevertToSelect() {
   if (state.preferences?.keepToolActive !== false) return;
@@ -276,6 +279,10 @@ export function setTool(tool) {
   if (isPdfAReadOnly() && !READONLY_ALLOWED_TOOLS.has(tool)) {
     return;
   }
+
+  // Any tool choice ends an active tool set item (#311); the Tool Sets panel
+  // makes its item active again right after choosing the item's tool.
+  endToolSetSession();
 
   // Deactivate the current tool via lifecycle
   if (state.currentTool !== tool) {
@@ -309,6 +316,24 @@ export function setTool(tool) {
   // SymbolPalette sets them (stamp SVG / wall material+dikte) before setTool.
   if (tool !== 'stamp' && tool !== 'wall') {
     state.toolOverrides = null;
+  }
+  // Invoegmodus voor symbolen (#587): hetzelfde of een ander symbool houdt
+  // de gekozen opmaak vast, elk ander gereedschap zet haar terug.
+  syncSymbolInsertSession(tool, state.toolOverrides);
+  // Het Opmaak-tabblad volgt het gereedschap (#668): het verschijnt bij een
+  // tekengereedschap met een stijl en verdwijnt weer, ook als er daarna
+  // niets hertekend wordt.
+  import('../annotations/rendering/ui-state.js')
+    .then((m) => m.updateContextualTabs())
+    .catch(() => { /* lint nog niet geladen */ });
+
+  // Activate the new tool via lifecycle — also when it is the same tool,
+  // because choosing it again (ribbon, library) is a new activation. Only
+  // tools that define onActivate are affected (systeemplafond, #567).
+  const newToolObj = getTool(tool);
+  if (newToolObj && newToolObj.onActivate) {
+    const redraw = () => { if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous(); else redrawAnnotations(); };
+    newToolObj.onActivate({ state, redraw, redrawAnnotations, redrawContinuous });
   }
 
   // Reset hover state so a stale hover from the previous tool doesn't keep

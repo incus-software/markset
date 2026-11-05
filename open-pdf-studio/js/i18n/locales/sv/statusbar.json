@@ -11,6 +11,7 @@
     "box": "Rektangel",
     "polygon": "Polygon",
     "cloud": "Moln",
+    "cloudPolyline": "Molnpolylinje",
     "polyline": "Polylinje",
     "textbox": "Textruta",
     "callout": "Pratbubbla",
@@ -27,7 +28,9 @@
     "formTextField": "Formulärtextfält",
     "formCheckbox": "Formulärkryssruta",
     "formRadio": "Formuläralternativknapp",
-    "screenshot": "Skärmbild"
+    "screenshot": "Skärmbild",
+    "pageLabelPick": "Välj text för sidetikett",
+    "proofread": "Korrektur"
   },
   "toolLabel": "Verktyg:",
   "annotationsLabel": "Anteckningar:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Detta dokument innehåller interaktiva formulärfält. Du kan fylla i formuläret och spara dina uppgifter.",
   "enableEditing": "Aktivera redigering",
   "pdfAConformance": "Detta dokument hävdar PDF/A-överensstämmelse.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Det gick inte att byta namn på filen: {{error}}",
+  "renameInvalidChars": "Filnamnet får inte innehålla  / : * ? \" < > |",
+  "renameFileExists": "Det finns redan en fil med det här namnet.",
+  "engineTitle": "Renderingsmotor som används för den aktuella vyn",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vektor)"
+  },
+  "viewSingle": "Enkel sida",
+  "viewContinuous": "Kontinuerlig",
+  "viewBook": "Två sidor",
+  "viewFacing": "Två sidor sida vid sida",
   "viewRotatedTitle": "Vyn är roterad {{degrees}}° medurs; dokumentet är oförändrat. Klicka för att rotera tillbaka vyn.",
+  "compareTabTitle": "Jämför",
   "filledAreaSketch": {
     "undoPoint": "Ångra punkt",
     "undoPointTitle": "Ta bort senaste punkten (Backsteg)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "B",
   "boxHeightAbbr": "H",
+  "boxSizeHint": "Skriv ett värde + Enter — eller klicka utanför för att tillämpa",
   "ocr": {
     "progress": {
       "starting": "Känner igen text...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Resultat ({{count}})",
   "searchResultPage": "Sida {{page}}",
   "searchHitsOne": "1 träff",
-  "searchHitsMany": "{{count}} träffar"
+  "searchHitsMany": "{{count}} träffar",
+  "passwordProtectedBar": "Skyddad med lösenord: öppnad skrivskyddad.",
+  "documentSearch": {
+    "title": "Sök i dokument",
+    "query": "Söktext",
+    "scope": "Sök i",
+    "active": "Aktuellt dokument",
+    "open": "Öppna dokument",
+    "folder": "Mapp",
+    "choose": "Välj mapp",
+    "annotations": "Inkludera kommentarer",
+    "search": "Sök",
+    "cancel": "Avbryt",
+    "stale": "Dokumentet har ändrats. Kör sökningen igen.",
+    "folderHint": "Söker i PDF-filer direkt i den här mappen utan att öppna flikar eller ändra filer.",
+    "limited": "Resultatgränsen har nåtts. Förfina sökningen.",
+    "cancelled": "Sökningen avbröts; resultaten är ofullständiga.",
+    "ocrHint": "Ingen sökbar text på sidorna {{pages}}. Öppna dokumentet och kör OCR uttryckligen vid behov.",
+    "status": {
+      "searching": "Söker",
+      "complete": "Klar",
+      "needs_ocr": "Innehåller sidor utan sökbar text",
+      "encrypted": "Lösenord krävs",
+      "unreadable": "Kunde inte söka",
+      "changed": "Dokumentet ändrat; sök igen",
+      "cancelled": "Avbruten",
+      "limited": "Resultatgränsen nådd"
+    },
+    "failed": "Sökningen misslyckades. Kontrollera sökfrågan och mappen och försök igen.",
+    "prepareOcr": "Öppna för OCR…"
+  },
+  "symbolSearch": "Hitta symboler",
+  "findMoreOptions": "Fler sökalternativ",
+  "watchActive": "Bevakar {{folder}}",
+  "watchFailed": "Bevakningsfel: {{folder}}",
+  "watchTitle": "Dokumentarbetsflödet bevakar {{input}} och skriver till {{output}}. Klicka för att sluta bevaka.",
+  "renderDiagnostics": {
+    "title": "Gå till nästa renderingsanmärkning. Inga anmärkningar garanterar inte en fullständig rendering.",
+    "count": "Renderingsanmärkningar: {{count}}",
+    "detail": "Sida {{page}}: {{code}}. Prova en lägre zoom eller öppna dokumentet igen; fullständigheten är inte garanterad."
+  },
+  "mcpSignal": {
+    "label": "AI-anslutning (MCP)",
+    "connected": "AI-assistent ansluten",
+    "idle": "MCP-server på, inaktiv",
+    "off": "MCP-server av",
+    "port": "Port: {{port}}",
+    "lastTool": "Senaste verktyg: {{tool}} kl. {{time}}",
+    "noTool": "Inga verktygsanrop ännu"
+  }
 }

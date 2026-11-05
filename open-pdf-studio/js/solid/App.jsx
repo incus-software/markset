@@ -8,8 +8,11 @@ import LeftPanel from './components/left-panel/LeftPanel.jsx';
 import ElementVisibilityPanel from './components/left-panel/ElementVisibilityPanel.jsx';
 import AnnotationLayersPanel from './components/left-panel/AnnotationLayersPanel.jsx';
 import FindBar from './components/FindBar.jsx';
+import ReadAloudBar from './components/ReadAloudBar.jsx';
 import FormFieldsBar from './components/FormFieldsBar.jsx';
 import PdfABar from './components/PdfABar.jsx';
+import ThreeDView, { ThreeDSnapshotBar } from './components/ThreeDLazy.jsx';
+import BeveiligdBar from './components/BeveiligdBar.jsx';
 import HandtekeningBar from './components/HandtekeningBar.jsx';
 import NotificationBar from './components/NotificationBar.jsx';
 import PropertiesPanel from './components/properties-panel/PropertiesPanel.jsx';
@@ -23,20 +26,22 @@ import KeystrokeOverlay from './components/KeystrokeOverlay.jsx';
 import BoxSizeOverlay from './components/BoxSizeOverlay.jsx';
 import SketchModeBar from './components/SketchModeBar.jsx';
 import CompareView from './components/compare/CompareView.jsx';
+import SplitPane from './components/SplitPane.jsx';
 import { DockedToolPalette, FloatingToolPalette, DockTargets, PaletteContextMenu } from './components/ToolPalette.jsx';
 import { DockedExtPalette, FloatingExtPalette, ExtDockTargets } from './components/ExtensionToolPalette.jsx';
 import { DockedSymbolPalette, FloatingSymbolPalette, SymbolSettingsDialog } from './components/SymbolPalette.jsx';
 import SchedulePanel from './components/SchedulePanel.jsx';
 import SymbolTypeEditor from './components/symbol-edit/SymbolTypeEditor.jsx';
 import MiniLog from './components/MiniLog.jsx';
-import AssistantPanel from './components/AssistantPanel.jsx';
 import { getRegisteredPalettes } from '../plugins/palette-registry.js';
 import { leftOrder, rightOrder } from './stores/paletteOrder.js';
 import { useTranslation } from '../i18n/useTranslation.js';
 import { isTauri } from '../core/platform.js';
 import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../core/sessie-herstel.js';
+import { For, ErrorBoundary, Show, createEffect, onCleanup } from 'solid-js';
+import { state } from '../core/state.js';
+import { pasUiSchaalToe, haalUiSchaalWeg } from '../core/ui-scale.js';
 import StartRecent from '../../markset/StartRecent.jsx'; // Markset
-import { For, ErrorBoundary, Show } from 'solid-js';
 
 function OrderedDockedPalettes(props) {
   const order = () => props.side === 'left' ? leftOrder() : rightOrder();
@@ -70,6 +75,9 @@ function OrderedDockedPalettes(props) {
 }
 
 function DesktopApp() {
+  // Interface size for low vision (#883): stylesheet sizes follow --ui-scale.
+  createEffect(() => pasUiSchaalToe(state.preferences.uiScale));
+  onCleanup(() => haalUiSchaalWeg());
   const { t } = useTranslation('common');
   const extPalettes = () => getRegisteredPalettes();
 
@@ -96,6 +104,7 @@ function DesktopApp() {
             {(p) => <ExtDockTargets descriptor={p} />}
           </For>
           <FindBar />
+          <ReadAloudBar />
 
           <div id="placeholder">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -115,21 +124,29 @@ function DesktopApp() {
           <FormFieldsBar />
 
           <PdfABar />
+          <ThreeDSnapshotBar />
+          <BeveiligdBar />
 
           <HandtekeningBar />
 
-          <div id="pdf-container">
-            <div id="canvas-wrapper">
-              <div id="canvas-container" class="single-page-container">
-                <canvas id="pdf-canvas"></canvas>
-                <canvas id="text-highlight-canvas"></canvas>
-                <canvas id="annotation-canvas"></canvas>
+          {/* Gesplitste weergave (#715): zonder splitsing is #split-host
+              `display: contents` en staat #pdf-container gewoon in .main-view. */}
+          <div id="split-host" class="split-host">
+            <div id="pdf-container">
+              <div id="canvas-wrapper">
+                <div id="canvas-container" class="single-page-container">
+                  <canvas id="pdf-canvas"></canvas>
+                  <canvas id="text-highlight-canvas"></canvas>
+                  <canvas id="annotation-canvas"></canvas>
+                </div>
+                <div id="continuous-container" class="continuous-container"></div>
               </div>
-              <div id="continuous-container" class="continuous-container"></div>
+              <CanvasScrollbars />
+              <CompareView />
             </div>
-            <CanvasScrollbars />
-            <CompareView />
+            <SplitPane />
           </div>
+          <ThreeDView />
         </div>
 
         <OrderedDockedPalettes side="right" />
@@ -150,7 +167,6 @@ function DesktopApp() {
       <SymbolSettingsDialog />
       <SymbolTypeEditor />
       <SchedulePanel />
-      <AssistantPanel />
       {/* MiniLog floating engine-log overlay removed per user request. */}
       <LoadingOverlay />
       <TypeLengthHUD />

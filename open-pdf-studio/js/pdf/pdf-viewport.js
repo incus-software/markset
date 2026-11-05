@@ -2,6 +2,7 @@
 // Modeled after Open2D Studio's CADRenderer pattern.
 // The ONLY render path for PDF pages. No fallback, no CSS-scale, no debounce.
 
+import { nextScaleStep } from '../core/zoom-display.js';
 import { renderVectorPage } from './vector-renderer.js';
 import { state, getActiveDocument } from '../core/state.js';
 import { findAnnotationAt as _findAnnotationAt } from '../annotations/geometry.js';
@@ -11,10 +12,14 @@ import {
   getBestAvailableBitmap,
   ensureBitmap,
   getCachedBitmap,
+  registreerGetoondeBitmaps,
+  ruimUitgesteldOp,
 } from './page-bitmap-cache.js';
 import { tileCoversViewport } from './tile-coverage.js';
 import { bepaalOverlayMaat, pasOverlayMaatToe } from './overlay-canvas-size.js';
 import { maakWielScroller } from './wiel-scroll.js';
+import { zoomNaDprWissel } from './schermkalibratie.js';
+import { maakFramePlanner, bewaakSchrijven } from './frame-planner.js';
 import {
   normaliseerRotatie,
   vermenigvuldig,
@@ -23,6 +28,8 @@ import {
   viewportNaarScherm,
   viewportZichtbaar,
 } from './weergave-rotatie.js';
+import { maakWeergaveStand, weergaveGeheugen, wisselWeergave } from './weergave-per-document.js';
+import { achtergrondKleur } from './pagina-achtergrond.js';
 
 // ─── Viewport State (singleton via window to survive HMR/dynamic imports) ───
 if (!window.__pdfViewport) {
@@ -53,20 +60,83 @@ if (!window.__pdfViewport) {
 }
 export const viewport = window.__pdfViewport;
 
+// ─── Render-lus op aanvraag: dirty en active als accessors ─────────────────
+// Elke schrijver (ook rechtstreeks via window.__pdfViewport) blijft gewoon
+// `viewport.dirty = true` schrijven; de setter vraagt dan hooguit één frame
+// aan bij de render-lus (zie _startLoop). Zonder werk vraagt de lus geen
+// frames meer, zodat een stilstaand venster niets kost. De lus die het
+// canvas bezit (laatste initViewport) staat op window, net als de viewport
+// zelf: een tweede module-instantie (HMR) maakt de accessors opnieuw, met
+// behoud van de waarden, en wekt nog steeds de lus die echt tekent.
+const _volgers = window.__pdfViewportVolgers || (window.__pdfViewportVolgers = new Set());
+bewaakSchrijven(viewport, 'dirty', () => _wekLus());
+bewaakSchrijven(viewport, 'active', (nieuw, oud) => {
+  if (!nieuw !== !oud) _meldVolgers();
+  _wekLus();
+});
+
+function _wekLus() {
+  window.__pdfViewportLus?.plan();
+}
+
+// De paginabitmapcache sluit nooit wat de viewport nu tekent (#715): een
+// verdrongen of ongeldig gemaakte getoonde bitmap blijft open tot hij hier
+// niet meer staat.
+registreerGetoondeBitmaps(() => [viewport.currentBitmap, viewport.currentTile]);
+
+// Een gesloten ImageBitmap heeft breedte 0; drawImage gooit er dan elk frame
+// "the image source is detached" op. Zo'n bitmap (of tegel) laat de viewport
+// los en hij vraagt een nieuwe aan, in plaats van hem te tekenen.
+function _laatGeslotenBeeldenLos() {
+  let los = false;
+  if (viewport.currentBitmap && !(viewport.currentBitmap.width > 0)) {
+    viewport.currentBitmap = null;
+    los = true;
+  }
+  if (viewport.currentTile && !(viewport.currentTile.width > 0)) {
+    viewport.currentTile = null;
+    viewport.currentTileMeta = null;
+    los = true;
+  }
+  if (los) _kickOrchestratorAfterZoom();
+  return los;
+}
+
+/**
+ * Volg de viewport: fn() draait na elke render en bij elke wissel van
+ * viewport.active (bijv. de canvas-scrollbalken, die zo niet elk frame
+ * hoeven te pollen). Geeft een functie terug die het volgen stopt.
+ */
+export function volgViewport(fn) {
+  _volgers.add(fn);
+  return () => { _volgers.delete(fn); };
+}
+
+function _meldVolgers() {
+  for (const fn of _volgers) {
+    try { fn(); } catch (e) { console.warn('[viewport] volger faalde:', e); }
+  }
+}
+
 let _canvas = null;
 let _ctx = null;
-let _rafId = 0;
 let _annotationRedraw = null; // callback for annotation overlay
+// Tekent na de pagina nog iets op het paginacanvas zelf, op devicepixels:
+// (ctx, pageNum) met ctx in de paginaruimte. Voor de tekstbewerkingen
+// (#669): de annotatie-overlay heeft de maat in CSS-pixels en rekt op een
+// scherm met devicePixelRatio > 1, waardoor nieuwe tekst daar wazig werd.
+let _paginaSchilder = null;
 let _resizeObserver = null;
 
 // ─── Init / Teardown ────────────────────────────────────────────────────────
 
-export function initViewport(canvas, annotationRedrawFn) {
+export function initViewport(canvas, annotationRedrawFn, paginaSchilderFn = null) {
   // Stop previous loop if re-initializing
-  if (_rafId) cancelAnimationFrame(_rafId);
+  _lus.stop();
   _canvas = canvas;
   _ctx = canvas.getContext('2d');
   _annotationRedraw = annotationRedrawFn || null;
+  _paginaSchilder = typeof paginaSchilderFn === 'function' ? paginaSchilderFn : null;
   _resizeCanvas();
   window.removeEventListener('resize', _resizeCanvas);
   window.addEventListener('resize', _resizeCanvas);
@@ -97,7 +167,7 @@ export function initViewport(canvas, annotationRedrawFn) {
 
 export function destroyViewport() {
   viewport.active = false;
-  cancelAnimationFrame(_rafId);
+  _lus.stop();
   window.removeEventListener('resize', _resizeCanvas);
   if (_resizeObserver) {
     _resizeObserver.disconnect();
@@ -187,7 +257,7 @@ function _resizeCanvas() {
     // out, because zoomStepAtPoint anchors at the centered point and never
     // refits). Once the user has anchored (zoom-to-cursor or pan), preserve
     // their zoom and just re-anchor the world center.
-    if (!_anchorActive && viewport.pageW > 0) {
+    if ((!_anchorActive || _fitWacht) && viewport.pageW > 0) {
       fitToViewport();
     } else if (worldCenterX !== null) {
       viewport.offsetX = w / 2 - worldCenterX * viewport.zoom;
@@ -213,8 +283,13 @@ function _resizeCanvas() {
 // threshold is baked into the query, so we re-arm at the new ratio after every
 // change. Stored on window so an HMR reload can remove the stale listener.
 let _dprDebounce = null;
+// Schermschaal van VOOR een (reeks) dpr-wissel(s), voor de schermkalibratie
+// van Werkelijke grootte (#520). Blijft staan tot de debounce afloopt, zodat
+// een trage sleep over meerdere tussenstappen met de echte begin-dpr rekent.
+let _dprVoorWissel = null;
 
 function _onDprChanged() {
+  if (_dprVoorWissel == null) _dprVoorWissel = window.__pdfDprMql?.dpr ?? null;
   // Re-arm immediately at the new ratio so a further jump mid-drag isn't
   // missed while the debounce below is still pending.
   _armDprWatcher();
@@ -237,11 +312,34 @@ function _armDprWatcher() {
   const dpr = window.devicePixelRatio || 1;
   const mql = window.matchMedia(`(resolution: ${dpr}dppx)`);
   mql.addEventListener('change', _onDprChanged);
-  window.__pdfDprMql = { mql, handler: _onDprChanged };
+  window.__pdfDprMql = { mql, handler: _onDprChanged, dpr };
 }
 
 async function _applyDprChange() {
   _dprDebounce = null;
+  const oudeDpr = _dprVoorWissel;
+  _dprVoorWissel = null;
+  await _herschaalNaarNieuweDpr();
+  await _werkelijkeGrootteNaDprWissel(oudeDpr);
+}
+
+// Stond de weergave op Werkelijke grootte voor het vorige scherm en zijn beide
+// schermen gekalibreerd, dan krijgt het nieuwe scherm zijn eigen werkelijke
+// grootte (#520). In alle andere gevallen blijft de zoom zoals hij was.
+async function _werkelijkeGrootteNaDprWissel(oudeDpr) {
+  if (oudeDpr == null) return;
+  try {
+    const doc = getActiveDocument();
+    if (!doc?.pdfDoc) return;
+    const zoomNu = viewport.active && doc.filePath ? viewport.zoom : doc.scale;
+    const doel = zoomNaDprWissel(zoomNu, oudeDpr, window.devicePixelRatio || 1, state.preferences?.screenCalibration);
+    if (doel == null) return;
+    const m = await import('./renderer.js');
+    await m.actualSize();
+  } catch { /* zoomherstel is best-effort */ }
+}
+
+async function _herschaalNaarNieuweDpr() {
   const doc = getActiveDocument();
   if (doc && doc.viewMode === 'continuous') {
     // Continuous/book/facing mode paints per-page canvases sized at
@@ -481,25 +579,40 @@ export function kickRedactAnts() {
   _redactAntsRafId = requestAnimationFrame(_redactAntsTick);
 }
 
-function _startLoop() {
-  function tick() {
-    if (viewport.active) {
-      // Wieluitloop vóór de dirty-check: zolang hij loopt verschuift hij de
-      // pagina (en zet hij dirty) naar rato van de verstreken tijd.
-      if (_wielScroll.actief) _wielScroll.pomp(performance.now());
-      if (viewport.dirty) {
-        viewport.dirty = false;
-        _render();
-      }
-    } else if (_wielScroll.actief) {
-      // Doorlopende weergave zet de viewport direct uit (renderer.js). Een
-      // uitloop die blijft staan zou bij terugkomst in één keer het restant
-      // springen: hier gewoon laten vallen.
-      _wielScroll.stop();
+// Eén frame van de render-lus.
+function _tick() {
+  if (viewport.active) {
+    // Wieluitloop vóór de dirty-check: zolang hij loopt verschuift hij de
+    // pagina (en zet hij dirty) naar rato van de verstreken tijd.
+    if (_wielScroll.actief) _wielScroll.pomp(performance.now());
+    if (viewport.dirty) {
+      viewport.dirty = false;
+      _render();
     }
-    _rafId = requestAnimationFrame(tick);
+  } else if (_wielScroll.actief) {
+    // Doorlopende weergave zet de viewport direct uit (renderer.js). Een
+    // uitloop die blijft staan zou bij terugkomst in één keer het restant
+    // springen: hier gewoon laten vallen.
+    _wielScroll.stop();
   }
-  _rafId = requestAnimationFrame(tick);
+}
+
+// De lus vraagt alleen een frame bij werk: dirty bij een actieve viewport, of
+// een lopende wieluitloop (die elk frame verder moet tot hij klaar is, en bij
+// een inactieve viewport nog één frame om hem te laten vallen). Na een frame
+// zonder resterend werk volgt geen nieuw frame; de volgende schrijfactie op
+// dirty of active wekt hem weer (zie bewaakSchrijven bovenaan).
+const _lus = maakFramePlanner({
+  heeftWerk: () => _wielScroll.actief || (viewport.active && viewport.dirty),
+  frame: _tick,
+});
+
+function _startLoop() {
+  // Nooit twee lussen: die van een andere module-instantie (HMR) stopt.
+  const vorige = window.__pdfViewportLus;
+  if (vorige && vorige !== _lus) vorige.stop();
+  window.__pdfViewportLus = _lus;
+  _lus.start();
 }
 
 // Maat van de getoonde pagina in punten, zoals hij op het scherm ligt: na de
@@ -643,9 +756,95 @@ let _anchorActive = false;
 // this false so the page stays fully visible.
 let _strictAnchor = false;
 export function clearAnchor() { _anchorActive = false; _strictAnchor = false; }
+// Een fit die op een verborgen viewer (canvas 0×0) niet kon (#675). De
+// eerstvolgende _resizeCanvas() met een echte maat past dan alsnog in, ook als
+// de vorige pagina verankerd was.
+let _fitWacht = false;
 export function markAnchored() { _anchorActive = true; }
 
+// ── Gesplitste weergave (#715) ─────────────────────────────────────────────
+// De viewport is één singleton: alleen het actieve paneel heeft hem. Bij het
+// wisselen van paneel bewaart de regelaar (split-view/split-view.js) de stand
+// van het vertrekkende paneel en zet hij die van het aankomende terug.
+
+/** De ankervlaggen: heeft de gebruiker zelf gezoomd/gepand? */
+export function leesAnkers() {
+  return { verankerd: _anchorActive, strikt: _strictAnchor };
+}
+
+/** CSS-maat van het viewportcanvas. */
+export function viewportCanvasMaat() {
+  const dpr = _getDpr();
+  return { cssW: _canvas ? _canvas.width / dpr : 0, cssH: _canvas ? _canvas.height / dpr : 0 };
+}
+
+/** Maak het canvas meteen even groot als #pdf-container (na een lay-outwissel). */
+export function pasViewportMaatAan() {
+  _resizeCanvas();
+}
+
+// Een tabwissel tussen een gesplitst en een niet-gesplitst document verandert
+// de maat van de viewer vóór het renderen, terwijl de viewport nog het
+// vertrekkende document toont. setPage bewaarde die stand (#539) pas daarna:
+// met de nieuwe canvasmaat en een al herankerde verschuiving, zodat de
+// terugkeer niet meer exact was. De regelaar van de gesplitste weergave legt
+// de stand daarom vast vóór hij de maat wijzigt; setPage slaat het bewaren dan
+// over voor dat document.
+let _vertrekAlBewaard = null;
+
+/**
+ * Bewaar de weergavestand van het document dat de viewport nu toont, als dat
+ * niet `nieuwPad` is (er komt een ander document voor). Aanroepen vóór een
+ * lay-outwijziging die de viewer van maat verandert. Geeft true als er iets
+ * bewaard is.
+ */
+export function bewaarStandVoorLayoutwissel(nieuwPad) {
+  if (!viewport.active || !viewport.filePath || viewport.filePath === nieuwPad) return false;
+  const openPaden = (state.documents || []).map((d) => d && d.filePath).filter(Boolean);
+  if (!openPaden.includes(viewport.filePath)) return false;
+  const stand = maakWeergaveStand(viewport, {
+    verankerd: _anchorActive,
+    strikt: _strictAnchor,
+    ...viewportCanvasMaat(),
+  });
+  if (!stand) return false;
+  weergaveGeheugen().bewaar(stand);
+  _vertrekAlBewaard = stand.filePath;
+  return true;
+}
+
+/**
+ * Zet zoom, verschuiving en ankervlaggen van een bewaarde paneelstand terug
+ * (dezelfde pagina staat dan al in de viewport via setPage).
+ */
+export function zetViewportStand({ zoom, offsetX, offsetY, verankerd = true, strikt = false }) {
+  if (!(zoom > 0)) return;
+  if (_zoomFreezeTimer) clearTimeout(_zoomFreezeTimer);
+  _zoomFreezeTimer = null;
+  _zoomFreezeBitmap = null;
+  stopPanMomentum();
+  viewport.zoom = zoom;
+  viewport.offsetX = offsetX;
+  viewport.offsetY = offsetY;
+  _anchorActive = !!verankerd;
+  _strictAnchor = !!strikt;
+  viewport.dirty = true;
+  _kickOrchestratorAfterZoom();
+}
+
+// Eén render: tekenen en daarna de volgers (scrollbalken) bijwerken. Ook na
+// een vroege terugkeer (geen pagina, zoom-snapshot) of als het tekenen faalt:
+// zoom en verschuiving kunnen dan toch veranderd zijn. De fout zelf gaat
+// gewoon door naar de frame-planner (geen foutlus per frame).
 function _render() {
+  try {
+    _tekenViewport();
+  } finally {
+    _meldVolgers();
+  }
+}
+
+function _tekenViewport() {
   if (!_ctx || !_canvas || !viewport.filePath) return;
   // CSS-pixel viewport (backing is dpr-scaled). All math below stays in CSS px;
   // the dpr multiplier is folded into the canvas transform so output
@@ -661,7 +860,7 @@ function _render() {
   // render fires once when the debounce timer releases.
   if (_zoomFreezeBitmap) {
     _ctx.setTransform(1, 0, 0, 1, 0, 0);
-    _ctx.fillStyle = '#e0e0e0';
+    _ctx.fillStyle = achtergrondKleur();
     _ctx.fillRect(0, 0, _canvas.width, _canvas.height);
     // The snapshot was captured at (_zoomFreezeZoom, _zoomFreezeOffsetX/Y).
     // For a world point W, its snapshot-pixel was:
@@ -700,12 +899,17 @@ function _render() {
   // page nav, etc.).
   clampAndCenter();
 
+  _laatGeslotenBeeldenLos();
+  // Een vervangen bitmap die bij het ongeldig maken nog getoond werd, mag nu
+  // dicht (niets te doen als er geen wacht).
+  ruimUitgesteldOp();
+
   // Reset transform and clear (in device-pixel space)
   _ctx.setTransform(1, 0, 0, 1, 0, 0);
   _ctx.clearRect(0, 0, _canvas.width, _canvas.height);
 
   // Background (outside page area)
-  _ctx.fillStyle = '#e0e0e0';
+  _ctx.fillStyle = achtergrondKleur();
   _ctx.fillRect(0, 0, _canvas.width, _canvas.height);
 
   // Maten en transform van de pagina. Paginaruimte = na de eigen /Rotate en
@@ -752,7 +956,10 @@ function _render() {
     _ctx.setTransform(
       paginaNaarDevice[0] / pxPerPt, paginaNaarDevice[1] / pxPerPt,
       paginaNaarDevice[2] / pxPerPt, paginaNaarDevice[3] / pxPerPt,
-      paginaNaarDevice[4], paginaNaarDevice[5],
+      // Whole device pixels: a bitmap drawn at a fractional offset is
+      // bilinearly blended with its neighbours, which softens every glyph
+      // even when the bitmap is already at the exact screen resolution.
+      Math.round(paginaNaarDevice[4]), Math.round(paginaNaarDevice[5]),
     );
   };
 
@@ -834,6 +1041,20 @@ function _render() {
     _ctx.restore();
   }
 
+  // Op de pagina getekende lagen (tekstbewerkingen): dezelfde device-
+  // pixeltransform als de bitmap, met de oorsprong op een hele pixel.
+  if (_paginaSchilder) {
+    _ctx.save();
+    zetPaginaPixelTransform();
+    _ctx.scale(pxPerPt, pxPerPt);
+    try {
+      _paginaSchilder(_ctx, viewport.pageNum);
+    } catch (e) {
+      console.warn('[viewport] paginaschilder faalde:', e);
+    }
+    _ctx.restore();
+  }
+
   // Status bar
   state.renderEngine = viewport.pageType === 'raster' ? 'Raster (PDFium)' : 'Vector';
 
@@ -884,13 +1105,14 @@ function _render() {
     // The tool manager sets pointer-events based on active tool (text select = auto, other = none)
     textLayer.style.opacity = '1';
 
-    // Set up selection highlight styles (once)
+    // Spans altijd onzichtbaar (eenmalig). De selectiekleur komt alleen uit
+    // styles/text-layer.css (#506): een tweede regel hier liep er eerder mee
+    // uiteen en tekende de geselecteerde tekst in een vervangend lettertype.
     if (!textLayer._selectionStyled) {
       textLayer._selectionStyled = true;
       const style = document.createElement('style');
       style.textContent = `
         .textLayer span { color: transparent !important; }
-        .textLayer ::selection { background: #b8d8ff !important; color: #171c25 !important; }
       `;
       textLayer.prepend(style);
     }
@@ -970,6 +1192,48 @@ function _render() {
 let _suppressNextFit = false;
 export function suppressNextFit() { _suppressNextFit = true; }
 
+// Het getoonde document kreeg een ander bestandspad, met dezelfde inhoud:
+// Opslaan als, na een herlaad uit een werkkopie (#673). De viewport tekent
+// voortaan uit het nieuwe pad, zonder opnieuw in te passen (geen setPage:
+// dat ziet een ander pad als een ander document). De oude werkkopie gaat
+// daarna van schijf; bleef de viewport die aanvragen, dan faalde elke
+// nieuwe bitmap en hield de pagina zijn laatste, grove bitmap op elke zoom.
+// De huidige bitmap blijft tot de nieuwe binnen is (zelfde pixels); de
+// scherpe tegel hoort bij het oude pad en vervalt.
+// Geeft true als de viewport dit document toonde en nu het nieuwe pad volgt.
+export function wisselBestandspad(oudPad, nieuwPad) {
+  if (!oudPad || !nieuwPad || oudPad === nieuwPad || viewport.filePath !== oudPad) return false;
+  viewport.filePath = nieuwPad;
+  viewport.currentTile = null;
+  viewport.currentTileMeta = null;
+  viewport.dirty = true;
+  _kickOrchestratorAfterZoom();
+  return true;
+}
+
+// De PDF-weergave is leeggemaakt (clearPdfView): die sluit alle bitmaps in de
+// caches, ook de getoonde. Bleef de viewport ze vasthouden, dan tekende elk
+// frame bij terugkomst op hetzelfde pad een gesloten bitmap ("the image source
+// is detached") tot er een nieuwe binnen was. Het pad blijft staan, zodat een
+// tabwissel via een leeg tabblad de bewaarde zoom niet kwijtraakt.
+export function laatBitmapsLos() {
+  viewport.currentBitmap = null;
+  viewport.currentTile = null;
+  viewport.currentTileMeta = null;
+  ruimUitgesteldOp();
+}
+
+// Het laatste tabblad is dicht: de viewport vergeet ook het document, zodat
+// hetzelfde bestand opnieuw openen als nieuw document telt en passend begint.
+export function vergeetGetoondDocument() {
+  viewport.active = false;
+  viewport.filePath = null;
+  laatBitmapsLos();
+}
+
+// Geeft true terug als de bewaarde weergavestand van een eerder getoond
+// document is teruggezet (tabwissel, #539); de aanroeper haalt dan ook de
+// gecachte scherpe tegel erbij.
 export function setPage(filePath, pageNum, pageW, pageH, originX, originY, rotation, viewRotation = 0) {
   // Detect "first time loading this document" vs "navigating to a different
   // page within the same document". The first case should fit-to-viewport
@@ -991,6 +1255,40 @@ export function setPage(filePath, pageNum, pageW, pageH, originX, originY, rotat
   // net als bij een paginarotatie (de afmeting op het scherm wisselt).
   const nieuweWeergave = normaliseerRotatie(viewRotation);
   const isViewRotationChange = normaliseerRotatie(viewport.viewRotation) !== nieuweWeergave;
+
+  // Documentwissel (tabblad, #539): bewaar hoe het vertrekkende document erbij
+  // lag en zoek de bewaarde stand van het aankomende. Vroeger werd elk
+  // document bij terugkomst opnieuw passend gemaakt; wie twee tekeningen met
+  // Ctrl+Tab om en om toont om verschillen te zien, verloor zo bij elke wissel
+  // zijn zoom en uitsnede. MOET vóór het overschrijven van de velden
+  // hieronder: de viewport toont op dit moment nog het vertrekkende document.
+  let herstel = null;
+  if (isNewDocument || isPageChange || isRotationChange || isViewRotationChange) {
+    // A zoom snapshot belongs to the departing page/orientation (including
+    // the view rotation, #200: the snapshot is in screen space). It must
+    // never cover the incoming page, including a synchronous cache hit.
+    if (_zoomFreezeTimer) clearTimeout(_zoomFreezeTimer);
+    _zoomFreezeTimer = null;
+    _zoomFreezeBitmap = null;
+  }
+  if (isNewDocument) {
+    const dpr = _getDpr();
+    const canvasMaat = {
+      cssW: _canvas ? _canvas.width / dpr : 0,
+      cssH: _canvas ? _canvas.height / dpr : 0,
+    };
+    // Al bewaard vóór een lay-outwissel (bewaarStandVoorLayoutwissel): die
+    // stand is exact, de huidige waarden zijn al naar de nieuwe maat herankerd.
+    const alBewaard = _vertrekAlBewaard === viewport.filePath;
+    herstel = wisselWeergave(weergaveGeheugen(), {
+      vertrek: alBewaard ? null : maakWeergaveStand(viewport, { verankerd: _anchorActive, strikt: _strictAnchor, ...canvasMaat }),
+      openPaden: (state.documents || []).map((d) => d && d.filePath).filter(Boolean),
+      aankomst: { filePath, pageNum, rotation: (rotation || 0) % 360, viewRotation: nieuweWeergave, pageW, pageH },
+      canvas: canvasMaat,
+    });
+  }
+  // Eenmalig: geldt alleen voor de eerstvolgende setPage na het vastleggen.
+  _vertrekAlBewaard = null;
 
   // Clear stale raster state on page, document OR rotation change so the
   // unified render loop doesn't keep painting the PREVIOUS bitmap (stretched
@@ -1015,7 +1313,20 @@ export function setPage(filePath, pageNum, pageW, pageH, originX, originY, rotat
   viewport.viewRotation = nieuweWeergave;
   viewport.active = true;
 
-  if (_suppressNextFit) {
+  let hersteld = false;
+  if (herstel && !herstel.opnieuwPassend) {
+    // Terug naar een eerder getoond document: zoom, verschuiving en
+    // ankervlaggen exact zoals de gebruiker het verliet.
+    _suppressNextFit = false;
+    stopPanMomentum();
+    viewport.zoom = herstel.zoom;
+    viewport.offsetX = herstel.offsetX;
+    viewport.offsetY = herstel.offsetY;
+    _anchorActive = herstel.verankerd;
+    _strictAnchor = herstel.strikt;
+    viewport.dirty = true;
+    hersteld = true;
+  } else if (_suppressNextFit) {
     _suppressNextFit = false;
     // suppressNextFit() is used by wheel-driven page nav, which then calls
     // alignPageToTop/Bottom to set its own offset → keep anchor active so
@@ -1039,6 +1350,23 @@ export function setPage(filePath, pageNum, pageW, pageH, originX, originY, rotat
     _strictAnchor = false;
     viewport.dirty = true;
   }
+
+  // Restore the incoming page synchronously for document switches AND page
+  // navigation. A prefetched/previously viewed raster should paint in the
+  // first frame at the current zoom/pan, without waiting for the async
+  // orchestrator import. Match its 4096 px cap and rotation-specific key.
+  if (isNewDocument || isPageChange || isRotationChange) {
+    const maxAsPt = Math.max(pageW, pageH);
+    if (maxAsPt > 0) {
+      const schaal = Math.min(viewport.zoom * _getDpr(), 4096 / maxAsPt);
+      const gecacht = getBestAvailableBitmap(filePath, pageNum, viewport.rotation, computeZoomBucket(schaal));
+      if (gecacht && gecacht.bitmap) {
+        viewport.currentBitmap = gecacht.bitmap;
+        viewport.dirty = true;
+      }
+    }
+  }
+  return hersteld;
 }
 
 /// Compute the zoom factor needed to fit a page into a canvas under one of
@@ -1072,6 +1400,17 @@ export function fitToViewport(mode = 'page') {
   const dpr = _getDpr();
   const cssW = _canvas.width / dpr;
   const cssH = _canvas.height / dpr;
+  // Verborgen viewer (laatste tabblad gesloten: #pdf-container display:none,
+  // canvas 0×0): geen ruimte om in te passen. computeFitZoom klemt die op
+  // 1 px en gaf zoom = 1/paginahoogte, die _render() in doc.scale overnam en
+  // waarmee het volgende document zijn lagen opbouwde (#675). De vorige zoom
+  // laten staan; _resizeCanvas() past opnieuw in zodra de viewer een maat
+  // krijgt.
+  if (!(cssW > 0 && cssH > 0)) {
+    _fitWacht = true;
+    return;
+  }
+  _fitWacht = false;
   // Fit on the POST-ROTATION extent so a 90°/270° (e.g. landscape) page is
   // sized and centred correctly instead of using the un-swapped dimensions.
   // "Post-rotation" = paginarotatie én weergaverotatie (#200): zoals de
@@ -1139,18 +1478,8 @@ const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 // counts as past it (otherwise repeated wheel ticks at e.g. 1.0 would never
 // move because 1.0 is technically not strictly less than 1.0).
 function nextZoomStep(current, direction) {
-  const eps = current * 1e-4;
-  if (direction > 0) {
-    for (let i = 0; i < ZOOM_STEPS.length; i++) {
-      if (ZOOM_STEPS[i] > current + eps) return ZOOM_STEPS[i];
-    }
-    return ZOOM_MAX;
-  } else {
-    for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
-      if (ZOOM_STEPS[i] < current - eps) return ZOOM_STEPS[i];
-    }
-    return ZOOM_MIN;
-  }
+  const next = nextScaleStep(current, direction);
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
 }
 
 // Re-anchor pan offsets so the world point under (screenX, screenY) stays

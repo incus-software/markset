@@ -23,8 +23,19 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 // Core modules
+// Snellere pdf-lib-standaarden voor elke load en save (#581); als eerste,
+// vóór elk module dat pdf-lib gebruikt.
+import './pdf/pdf-lib-snelheid.js';
+// Polyfills voor oudere Android-WebViews (#596): vóór PDF.js en de rest van
+// de app (pdf-lib hierboven heeft ze niet nodig).
+import './core/oude-webview-start.js';
+// Gesplitste weergave (#715): vroeg, zodat zijn capture-luisteraar op window
+// vóór die van de gereedschappen staat (die pas bij hun init komen); zie
+// split-haken.js. Zonder afhankelijkheden.
+import './pdf/split-view/split-haken.js';
 import { state } from './core/state.js';
 import { loadPreferences, savePreferences } from './core/preferences.js';
+import { verwijderOpslag } from './core/opslag.js';
 import { initDomElements } from './ui/dom-elements.js';
 import { initPropertiesPanel } from './ui/panels/properties-panel.js';
 import { initToolPalette } from './solid/components/ToolPalette.jsx';
@@ -76,7 +87,9 @@ import { initFontDropdowns } from './utils/fonts.js';
 import { initMcpBridge } from './mcp-bridge.js';
 
 // i18n
-import './i18n/config.js';
+import i18next from './i18n/config.js';
+import { language } from './i18n/useTranslation.js';
+import { installeerGetalVelden, herformatteerGetalVelden } from './ui/getal-veld.js';
 
 // Solid.js
 import { render } from 'solid-js/web';
@@ -86,8 +99,18 @@ import App from './solid/App.jsx';
 import { addRecentFile } from './mobile/recent-files.js';
 
 // Tauri API
-import { isTauri, isMobile, isDevMode, getOpenedFiles, loadSession, saveSession, fileExists, isDefaultPdfApp, openDefaultAppsSettings, extractFileName } from './core/platform.js';
+import { isTauri, isMobile, isDevMode, getOpenedFiles, loadSession, saveSession, fileExists, defaultPdfAppStatus, openDefaultAppsSettings, extractFileName, invoke } from './core/platform.js';
+import { moetBalkTonen } from './core/standaard-pdf-app.js';
+import { instantieRol, taakToegestaan } from './core/instantie-rol.js';
+import { volgendeTaak } from './core/volgende-taak.js';
+import { meldSchoonAfsluiten } from './herstel/haken.js';
 import { sessieHerstelBeleid } from './core/sessie-herstel.js';
+import { sessieBestanden, bronPad } from './pdf/wachtwoord-pdf.js';
+// De brug naar de gastpagina (#694): alleen in de gehoste bouw.
+import { startHostBrug } from './core/host-brug-start.js';
+import { installeerWorkerShim } from './core/blob-worker.js';
+import { installeerWerkmapDialogen } from './core/openaec-omgeving.js';
+import { sneltoetsActief } from './core/keybindings/app-shortcuts.js';
 
 // Open PDF files: tabs created instantly, loads serialized through ONE global
 // queue - also across separate openFiles() calls (the Windows single-instance
@@ -98,7 +121,17 @@ const openFiles = createFileOpenQueue({
   createTab,
   switchToTab,
   loadPDF,
-  onLoaded: (filePath) => addRecentFile(filePath, extractFileName(filePath)),
+  // Only a file that really opened: not one whose password dialog was
+  // cancelled (its tab is closed again) or that failed to load.
+  onLoaded: (filePath) => {
+    if (state.documents.some(d => d.pdfDoc && bronPad(d) === filePath)) {
+      addRecentFile(filePath, extractFileName(filePath));
+    }
+    // Op een telefoon past de pagina in het scherm, net als bij Openen in de
+    // mobiele weergave; "Openen met" uit een andere app komt hier binnen (#593).
+    const actief = state.documents[state.activeDocumentIndex];
+    if (isMobile() && actief?.pdfDoc && bronPad(actief) === filePath) fitPage();
+  },
 });
 
 // Register open-files listener immediately (before init) so events from the
@@ -148,16 +181,20 @@ function disableBrowserShortcuts() {
     // preventDefault that already suppresses the other accelerators above.
     if (e.key.toLowerCase() === 'p' && !e.shiftKey && !e.altKey && !e.target.matches('input, textarea')) {
       e.preventDefault();
+      // De afdrukdialoog van de WebView blijft altijd weg; de onze opent
+      // alleen zolang Ctrl+P bij Afdrukken hoort. Gaf de gebruiker Ctrl+P aan
+      // een andere opdracht, dan handelt de gewone toetsafhandeling hem af (#714).
+      if (!sneltoetsActief('file.print', 'Ctrl+P')) return;
       e.stopImmediatePropagation();
       import('./ui/chrome/dialogs.js').then(({ showPrintDialog }) => showPrintDialog());
       return;
     }
     // Ctrl+Shift+I (DevTools), Ctrl+Shift+J (Console), Ctrl+Shift+C (Inspect element)
-    if (e.shiftKey && ['I', 'J', 'C'].includes(e.key)) {
+    if (e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase())) {
       e.preventDefault();
     }
     // F5 refresh, Ctrl+R refresh (allow in dev mode)
-    if ((e.key === 'r' || e.key === 'R') && !window.__devMode) {
+    if (e.key.toLowerCase() === 'r' && !window.__devMode) {
       e.preventDefault();
     }
   }, true);
@@ -172,6 +209,21 @@ function disableBrowserShortcuts() {
 
 // Initialize application
 async function init() {
+  // Gehoste bouw in een iframe met `#ouder=…`: het opslagcontract met de
+  // gastpagina neerzetten vóór iets het leest (core/host-brug.js, #694). De
+  // gewone bouw kent deze regel niet: Vite vult de modus in en de tak valt weg.
+  if (import.meta.env.MODE === 'hosted') {
+    // Elke worker uit een blob: in de werkplek (opaque origin) start een
+    // worker van een http-adres niet (core/blob-worker.js, #704).
+    installeerWorkerShim(window);
+    startHostBrug();
+  }
+  // OpenAEC Linux (#863): open- en opslagdialogen starten in OPENAEC_MAP.
+  installeerWerkmapDialogen(window);
+  // Getalvelden accepteren komma én punt; ze tonen het decimaalteken van de
+  // app-taal en schakelen mee bij een taalwissel (ui/getal-veld.js).
+  installeerGetalVelden({ taal: () => language() });
+  i18next.on('languageChanged', () => queueMicrotask(() => herformatteerGetalVelden()));
   // Dev: versienummer live uit package.json zodat de titelbalk na een
   // versie-bump klopt zonder Vite-herstart.
   import('./core/app-version.js').then((m) => m.initDevVersionSync()).catch(() => {});
@@ -207,8 +259,23 @@ async function init() {
 
   // Load user preferences (before render so theme is applied)
   await loadPreferences();
+  // De ingebouwde assistent is verwijderd. Een persoonlijke sleutel die hij
+  // ooit in de browseropslag zette, wordt hier opgeruimd; staat er niets, dan
+  // doet dit niets.
+  verwijderOpslag('opds-anthropic-key');
+  // Hoofdinstantie of tweede instantie (losgemaakt tabblad)? Een tweede
+  // instantie laat sessie, AI-koppeling, printwachtrij en PrtScn aan de
+  // hoofdinstantie over (core/instantie-rol.js).
+  const rol = isTauri() ? await instantieRol(invoke) : { tweede: false };
   // AI-koppeling volgens de instelling (niet wachten: bindt alleen een poort).
-  import('./core/mcp-koppeling.js').then(m => m.pasMcpInstellingToe());
+  if (taakToegestaan('mcp-koppeling', rol)) {
+    import('./core/mcp-koppeling.js').then(m => m.pasMcpInstellingToe());
+  }
+
+  // In de browser liep alles tot hier (de modules laden) en het opbouwen van
+  // het venster als één lange taak: eerst de beurt teruggeven (#707). Op het
+  // bureaublad gaf loadPreferences() die beurt al terug.
+  if (!isTauri()) await volgendeTaak();
 
   // Single render call — mounts the entire UI tree
   // render() is synchronous, so DOM elements exist immediately after
@@ -234,9 +301,11 @@ async function init() {
 
   // Screenshot-annotate mode: wire the PrtScn hotkey event and apply the
   // (opt-in) preference. No-op outside Tauri. Lazy so it never blocks startup.
-  import('./tools/screenshot-annotate.js')
-    .then(m => m.initScreenshotAnnotate())
-    .catch(() => {});
+  if (taakToegestaan('prtscn', rol)) {
+    import('./tools/screenshot-annotate.js')
+      .then(m => m.initScreenshotAnnotate())
+      .catch(() => {});
+  }
 
   // Wire the MCP <-> WebView bridge early. The bridge is just
   // event-listener registration on window.__TAURI__.event — it does not need
@@ -248,9 +317,16 @@ async function init() {
   // "Open PDF Printer" job queue: watch the spool so prints from ANY
   // application pop the in-app sort/merge dialog. No-op when the virtual
   // printer isn't installed.
-  import('./solid/stores/printQueueStore.js')
-    .then(m => m.startPrintQueueWatcher())
-    .catch(() => {});
+  if (taakToegestaan('printwachtrij', rol)) {
+    import('./solid/stores/printQueueStore.js')
+      .then(m => m.startPrintQueueWatcher())
+      .catch(() => {});
+    // The printer window ("Open printer settings") asks this window to show
+    // the Virtual printer tab of the preferences.
+    import('./solid/stores/printQueueStore.js')
+      .then(m => m.listenForPrinterSettingsRequests())
+      .catch(() => {});
+  }
 
   // Lazy-load printer enumeration so the print dialog shows the OS default
   // printer instantly (Ctrl+P) instead of waiting on PowerShell/lpstat.
@@ -337,6 +413,14 @@ async function init() {
   pendingOpenFiles = [];
   appReady = true;
 
+  // Als gast in de OpenAEC-site: het document dat de site meegeeft openen
+  // via het opslagcontract van de site (#546). Zonder contract gebeurt niets.
+  if (!hasCommandLineFile) {
+    import('./pdf/host-document.js')
+      .then(m => m.startMetGastsite())
+      .catch(e => console.warn('[gast] openen via de site mislukt:', e));
+  }
+
   // Detached-window mode: a detached document window is its OWN app process,
   // launched by `spawn_window_with_pdf` with the PDF path as a command-line
   // argument and `OPDS_DETACHED=1` in its env. The PDF therefore arrives via
@@ -349,7 +433,16 @@ async function init() {
     // the whole app FEEL frozen until every previously-open tab finished
     // reloading. Tabs still appear and load the same way, just without
     // blocking "ready" on it. restoreLastSession() has its own try/catch.
-    restoreLastSession();
+    if (taakToegestaan('sessie-herstellen', rol)) restoreLastSession();
+  }
+
+  // Herstel van niet-opgeslagen werk (js/herstel/): momentopnamen in elke
+  // instantie, het aanbod na een onverwachte afsluiting alleen in de
+  // hoofdinstantie (een losgemaakt tabblad toont het niet nog eens).
+  if (isTauri()) {
+    import('./herstel/herstel.js')
+      .then((m) => m.startHerstel({ hoofd: taakToegestaan('herstel-aanbieden', rol) }))
+      .catch((e) => console.warn('[herstel] start failed:', e));
   }
 
   // Dev convenience: ALWAYS have Desktop\test.pdf open on boot — the standing
@@ -385,7 +478,17 @@ async function init() {
 
   // Desktop-only: check default PDF app (deferred to avoid blocking startup)
   if (!mobile) {
-    setTimeout(() => checkDefaultPdfApp(), 3000);
+    if (taakToegestaan('standaard-app', rol)) setTimeout(() => checkDefaultPdfApp(), 3000);
+    // Draagbaar (#881): melden als de map naast het programma niet
+    // beschrijfbaar is en de gegevens dus toch in het gebruikersprofiel staan.
+    import('./core/draagbaar.js')
+      .then((m) => m.leesDraagbaar())
+      .then(async (s) => {
+        if (!s.dataDirError) return;
+        const { showMessage } = await import('./solid/stores/dialogStore.js');
+        showMessage(i18next.t('common:portable.notWritable', { dir: s.exeDir || '' }));
+      })
+      .catch(() => {});
     // Geen automatische update-check meer bij het opstarten: het update-venster
     // verscheen ongevraagd. Updaten kan nog handmatig via Help → Controleren op
     // updates (checkForUpdates(false)).
@@ -431,6 +534,9 @@ function setupSessionSaveOnClose() {
               return;
             }
           }
+          // Alles opgeslagen of bewust verworpen: een nette afsluiting, de
+          // herstelmomentopnamen en de markering "draait" mogen weg.
+          await meldSchoonAfsluiten();
           await saveSessionData();
         });
       }
@@ -447,11 +553,14 @@ function setupSessionSaveOnClose() {
 // Save session data to disk
 async function saveSessionData() {
   try {
+    // Een tweede instantie (losgemaakt tabblad) schrijft de sessie niet: ze
+    // zou de tabbladen van de hoofdinstantie overschrijven.
+    if (!taakToegestaan('sessie-bewaren', await instantieRol(invoke))) return;
     // Skip untitled docs: their filePath is a temp file that gets deleted on
     // close — restoring it next launch would open a dangling/empty path.
-    const openFiles = state.documents
-      .filter(doc => doc.filePath && !doc.isUntitled)
-      .map(doc => doc.filePath);
+    // A PDF opened with a password is stored by its ORIGINAL path, never by
+    // its decrypted working copy: the next launch asks the password again.
+    const openFiles = sessieBestanden(state.documents);
 
     const sessionData = {
       openFiles: openFiles,
@@ -527,14 +636,19 @@ async function restoreLastSession() {
   }
 }
 
-// Check if this app is the default PDF handler and show info bar if not
+// Check if this app is the default PDF handler and show info bar if not.
+// Only when another app is known to be the default and this one can change
+// that: in a Flatpak/Snap (or without xdg-mime) it cannot be checked, and
+// asking at every start would lead nowhere (standaard-pdf-app.js).
 async function checkDefaultPdfApp() {
   if (!isTauri()) return;
   if (state.preferences.dontAskDefaultPdf) return;
+  // Draagbaar (#881): niet bij Windows geregistreerd, dus niet vragen.
+  const { leesDraagbaar, functieBeschikbaar } = await import('./core/draagbaar.js');
+  if (!functieBeschikbaar('defaultAppPrompt', await leesDraagbaar())) return;
 
   try {
-    const isDefault = await isDefaultPdfApp();
-    if (isDefault) return;
+    if (!moetBalkTonen(await defaultPdfAppStatus())) return;
 
     const { showDefaultAppBar } = await import('./solid/stores/defaultAppBarStore.js');
     showDefaultAppBar();

@@ -3,7 +3,7 @@ import Dialog from '../Dialog.jsx';
 import PrefSelect from '../preferences/PrefSelect.jsx';
 import { closeDialog, openDialog } from '../../stores/dialogStore.js';
 import { getActiveDocument, clearSelection, addToSelection } from '../../../core/state.js';
-import { invalidateScaleRegionCache } from '../../../annotations/scale-region.js';
+import { invalidateScaleRegionCache, userUnitVanPagina } from '../../../annotations/scale-region.js';
 import { recalculateAllMeasurements } from '../../../annotations/measurement.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
 import { pointsToPaperMm, scaleStringFromMeasurement } from '../../../annotations/scale-from-measurement.js';
@@ -13,6 +13,7 @@ import { cloneAnnotation } from '../../../annotations/factory.js';
 import { recordBulkModify } from '../../../core/undo-manager.js';
 import { parseLengthAs } from '../../../../markset/us-units.js'; // Markset
 import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
+import { leesGetalBegin } from '../../../core/getal-invoer.js';
 
 function redraw() {
   const doc = getActiveDocument();
@@ -43,11 +44,17 @@ export default function MeasuredLengthDialog(props) {
   const [value, setValue] = createSignal('');
   const [unit, setUnit] = createSignal(defaultUnit);
 
-  const paperMm = pointsToPaperMm(pixelDistance);
+  // /UserUnit of the page the two points were picked on (#884): the page of
+  // the new region, or of the existing region whose scale is measured.
+  const doc0 = getActiveDocument();
+  const regionPage = target.pageNum
+    ?? doc0?.annotations?.find((a) => a.id === target.annotationId)?.page;
+  const userUnit = userUnitVanPagina(doc0, regionPage ?? doc0?.currentPage);
+  const paperMm = pointsToPaperMm(pixelDistance, userUnit);
 
   const computedScale = createMemo(() => {
     const v = parseLengthAs(value(), unit()); // Markset: also 12'-6 3/8"
-    return scaleStringFromMeasurement(pixelDistance, v, unit());
+    return scaleStringFromMeasurement(pixelDistance, v, unit(), userUnit);
   });
 
   function reopenScaleRegionDialog(initial) {
@@ -128,7 +135,7 @@ export default function MeasuredLengthDialog(props) {
         <div class="ai-login-field">
           <label>{t('scaleRegion.measureQuestion') || 'What is the real length of this distance?'}</label>
           <div style="display:flex;gap:6px">
-            <input type="text" inputmode="decimal" class="ribbon-input"
+            <input type="text" inputmode="decimal" data-getal class="ribbon-input" min="0" step="any"
               value={value()} onInput={e => setValue(e.target.value)}
               placeholder="1000"
               style="flex:1;box-sizing:border-box" autofocus />

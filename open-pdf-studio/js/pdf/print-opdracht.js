@@ -17,11 +17,15 @@
 //   het venster zelf. De deelverzameling (even/oneven) en de omgekeerde
 //   volgorde van het venster doen bij een opdracht niet mee: de paginalijst is
 //   precies wat `pages` zegt.
+// - De kleurmodus (#754, print-kleur.js) is geen argument: de opdracht drukt
+//   af in de kleurmodus die het venster onthield (standaard kleur), en het
+//   antwoord meldt hem (`color_mode`).
 
 import { PAPIERFORMATEN } from './print-pagina-instelling.js';
 import { SCHALINGEN, ZOOM_MAX, ZOOM_MIN, geldigeZoom } from './print-plaatsing.js';
 import { herstelPrintInstellingen } from '../solid/stores/print-instellingen.js';
 import { MAX_PADLENGTE, padFout } from './cad-mcp-opdracht.js';
+import { geldigeKleurModus, zetKleurOm } from './print-kleur.js';
 
 /**
  * Hoe lang de opdracht zelf op de afdruk wacht. De brug wacht hooguit 300 s op
@@ -113,7 +117,7 @@ export function pdfPadFout(pad) {
  * @returns {{ok:false, error:string} | {ok:true, naarBestand:boolean,
  *   pad:string|null, printer:string|null, paginas:string, papier:string,
  *   orientatie:'auto'|'portrait'|'landscape', autoRotate:boolean,
- *   schaling:string, zoom:number, centreren:boolean, inhoud:string, kopieen:number}}
+ *   schaling:string, zoom:number, centreren:boolean, inhoud:string, kleur:string, kopieen:number}}
  */
 export function leesPrintOpdracht(params, { onthouden, venster, naarBestand = true } = {}) {
   if (params !== undefined && params !== null && (typeof params !== 'object' || Array.isArray(params))) {
@@ -165,7 +169,10 @@ export function leesPrintOpdracht(params, { onthouden, venster, naarBestand = tr
     return fout(`params.zoom must be between ${ZOOM_MIN} and ${ZOOM_MAX} percent`);
   }
   // Een zoom noemen betekent "aangepaste schaal", zoals params.scale bij app_export_cad.
-  const schaling = p.scaling ?? (p.zoom !== undefined ? 'custom-scale' : bewaard.scaling);
+  // De posterafdruk (print-poster.js) is een keuze van de printdialoog; een
+  // opdracht zonder schaal valt dan terug op passend.
+  const bewaardeSchaling = SCHALINGEN.includes(bewaard.scaling) ? bewaard.scaling : 'fit';
+  const schaling = p.scaling ?? (p.zoom !== undefined ? 'custom-scale' : bewaardeSchaling);
   if (schaling === 'custom-scale' && p.zoom === undefined && p.scaling !== undefined) {
     return fout('params.scaling "custom-scale" needs params.zoom');
   }
@@ -203,6 +210,7 @@ export function leesPrintOpdracht(params, { onthouden, venster, naarBestand = tr
     zoom,
     centreren,
     inhoud,
+    kleur: geldigeKleurModus(bewaard.colorMode),
     kopieen,
   };
 }
@@ -260,8 +268,8 @@ function leesStand(p, venster, bewaard) {
 /**
  * De paginalijst van de opdracht, met dezelfde keuzes als het printvenster:
  * "all" = elke pagina, "current" = de getoonde pagina, anders het bereik.
- * `bereik` is `parsePageRange` uit exporter.js; die module heeft de DOM nodig,
- * dus de aanroeper geeft hem mee.
+ * `bereik` is `printPaginaBereik` uit print-bereik.js (zoals getypt, met
+ * volgorde en herhalingen); de aanroeper geeft hem mee.
  * @returns {{ok:true, pages:number[]} | {ok:false, error:string}}
  */
 export function kiesPaginas(opdracht, { totaal, huidig = 1, bereik }) {
@@ -331,6 +339,7 @@ export function printOpdrachtArgumenten(opdracht, { pages, keuzes }) {
     zoom: keuzes.zoom,
     centreren: keuzes.centreren,
     inhoud: opdracht.inhoud,
+    kleur: geldigeKleurModus(opdracht.kleur),
   };
   if (opdracht.naarBestand) return { ...gemeen, pad: opdracht.pad, openen: null };
   return { ...gemeen, printer: opdracht.printer, copies: opdracht.kopieen, papier: opdracht.papier };
@@ -378,7 +387,12 @@ export function printUitkomst(opdracht, plaatsingen, { gerasterd = false, waarsc
       known_sheet: plaatsing?.bekend !== false,
     };
   });
-  if (gerasterd) warnings.push('the source could not be read as vectors; the pages were printed as images');
+  const kleur = geldigeKleurModus(opdracht.kleur);
+  if (gerasterd) {
+    warnings.push(zetKleurOm(kleur)
+      ? `color mode ${kleur}: the pages were printed as images`
+      : 'the source could not be read as vectors; the pages were printed as images');
+  }
 
   const eerste = page_list[0];
   const gelijk = eerste && page_list.every((b) => b.widthMm === eerste.widthMm && b.heightMm === eerste.heightMm
@@ -390,6 +404,7 @@ export function printUitkomst(opdracht, plaatsingen, { gerasterd = false, waarsc
     pages: page_list.length,
     paper: opdracht.papier,
     content: opdracht.inhoud === 'doc-only' ? 'document' : 'document-and-markups',
+    color_mode: kleur,
     sheet: gelijk ? eerste.sheet : '',
     widthMm: gelijk ? eerste.widthMm : 0,
     heightMm: gelijk ? eerste.heightMm : 0,

@@ -11,6 +11,7 @@
     "box": "आयत",
     "polygon": "बहुभुज",
     "cloud": "बादल",
+    "cloudPolyline": "क्लाउड पॉलीलाइन",
     "polyline": "पॉलीलाइन",
     "textbox": "टेक्स्ट बॉक्स",
     "callout": "कॉलआउट",
@@ -27,7 +28,9 @@
     "formTextField": "फॉर्म टेक्स्ट फ़ील्ड",
     "formCheckbox": "फॉर्म चेकबॉक्स",
     "formRadio": "फॉर्म रेडियो बटन",
-    "screenshot": "स्क्रीनशॉट"
+    "screenshot": "स्क्रीनशॉट",
+    "pageLabelPick": "पृष्ठ लेबल के लिए टेक्स्ट चुनें",
+    "proofread": "प्रूफ़रीडिंग"
   },
   "toolLabel": "उपकरण:",
   "annotationsLabel": "एनोटेशन:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "इस दस्तावेज़ में इंटरैक्टिव फॉर्म फ़ील्ड हैं। आप फॉर्म भर सकते हैं और अपना डेटा सहेज सकते हैं।",
   "enableEditing": "संपादन सक्षम करें",
   "pdfAConformance": "यह दस्तावेज़ PDF/A अनुरूपता का दावा करता है।",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "फ़ाइल का नाम बदलने में विफल: {{error}}",
+  "renameInvalidChars": "फ़ाइल नाम में ये वर्ण नहीं हो सकते:  / : * ? \" < > |",
+  "renameFileExists": "इस नाम की फ़ाइल पहले से मौजूद है।",
+  "engineTitle": "वर्तमान दृश्य के लिए उपयोग किया गया रेंडरिंग इंजन",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (वेक्टर)"
+  },
+  "viewSingle": "एकल पृष्ठ",
+  "viewContinuous": "सतत",
+  "viewBook": "दो पृष्ठ",
+  "viewFacing": "दो पृष्ठ अगल-बगल",
   "viewRotatedTitle": "दृश्य दक्षिणावर्त {{degrees}}° घुमाया गया है; दस्तावेज़ अपरिवर्तित है। दृश्य वापस घुमाने के लिए क्लिक करें।",
+  "compareTabTitle": "तुलना",
   "filledAreaSketch": {
     "undoPoint": "बिंदु पूर्ववत करें",
     "undoPointTitle": "अंतिम बिंदु हटाएं (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "च",
   "boxHeightAbbr": "ऊ",
+  "boxSizeHint": "मान टाइप करें + Enter — या लागू करने के लिए बाहर क्लिक करें",
   "ocr": {
     "progress": {
       "starting": "टेक्स्ट पहचाना जा रहा है...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "परिणाम ({{count}})",
   "searchResultPage": "पृष्ठ {{page}}",
   "searchHitsOne": "1 मिलान",
-  "searchHitsMany": "{{count}} मिलान"
+  "searchHitsMany": "{{count}} मिलान",
+  "passwordProtectedBar": "पासवर्ड से सुरक्षित: केवल पढ़ने के लिए खोला गया।",
+  "documentSearch": {
+    "title": "दस्तावेज़ खोजें",
+    "query": "खोज टेक्स्ट",
+    "scope": "इसमें खोजें",
+    "active": "वर्तमान दस्तावेज़",
+    "open": "खुले दस्तावेज़",
+    "folder": "फ़ोल्डर",
+    "choose": "फ़ोल्डर चुनें",
+    "annotations": "टिप्पणियाँ शामिल करें",
+    "search": "खोजें",
+    "cancel": "रद्द करें",
+    "stale": "दस्तावेज़ बदल गया है। खोज फिर से चलाएँ।",
+    "folderHint": "टैब खोले या फ़ाइलें बदले बिना सीधे इस फ़ोल्डर की PDF फ़ाइलों में खोजता है।",
+    "limited": "परिणाम सीमा पूरी हो गई। अपनी खोज को सीमित करें।",
+    "cancelled": "खोज रद्द की गई; परिणाम अधूरे हैं।",
+    "ocrHint": "पृष्ठ {{pages}} पर कोई खोजने योग्य टेक्स्ट नहीं। आवश्यकता हो तो दस्तावेज़ खोलें और स्पष्ट रूप से OCR चलाएँ।",
+    "status": {
+      "searching": "खोज जारी है",
+      "complete": "पूर्ण",
+      "needs_ocr": "इसमें बिना खोजने योग्य टेक्स्ट वाले पृष्ठ हैं",
+      "encrypted": "पासवर्ड आवश्यक",
+      "unreadable": "खोज नहीं की जा सकी",
+      "changed": "दस्तावेज़ बदल गया; फिर से खोजें",
+      "cancelled": "रद्द किया गया",
+      "limited": "परिणाम सीमा पूरी हुई"
+    },
+    "failed": "खोज विफल रही। क्वेरी और फ़ोल्डर जाँचें, फिर दोबारा प्रयास करें।",
+    "prepareOcr": "OCR के लिए खोलें…"
+  },
+  "symbolSearch": "प्रतीक खोजें",
+  "findMoreOptions": "खोज के और विकल्प",
+  "watchActive": "{{folder}} की निगरानी जारी",
+  "watchFailed": "निगरानी त्रुटि: {{folder}}",
+  "watchTitle": "दस्तावेज़ वर्कफ़्लो {{input}} की निगरानी कर रहा है और {{output}} में लिख रहा है। निगरानी रोकने के लिए क्लिक करें।",
+  "renderDiagnostics": {
+    "title": "अगली रेंडर सूचना पर जाएँ। सूचना न होना पूर्ण रेंडरिंग की गारंटी नहीं है।",
+    "count": "रेंडर सूचनाएँ: {{count}}",
+    "detail": "पृष्ठ {{page}}: {{code}}। कम ज़ूम आज़माएँ या दस्तावेज़ फिर से खोलें; पूर्णता की गारंटी नहीं है।"
+  },
+  "mcpSignal": {
+    "label": "AI कनेक्शन (MCP)",
+    "connected": "AI सहायक कनेक्ट है",
+    "idle": "MCP सर्वर चालू, निष्क्रिय",
+    "off": "MCP सर्वर बंद",
+    "port": "पोर्ट: {{port}}",
+    "lastTool": "अंतिम टूल: {{tool}}, {{time}} पर",
+    "noTool": "अभी तक कोई टूल कॉल नहीं"
+  }
 }

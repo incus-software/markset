@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "open-pdf-studio",
   "display_name": "Open PDF Studio",
-  "version": "0.1.0",
+  "version": "2026.45.0",
   "description": "Open, measure, annotate and save PDF drawings in Open PDF Studio, the free open-source PDF editor for the construction industry.",
   "long_description": "Connects Claude to Open PDF Studio running on your computer. Claude can open PDF drawings, read and navigate pages, place scale regions, measure areas and lengths, create and edit annotations, cut vector snippets from one drawing into another, fill title blocks, place a quantity schedule on the sheet and save the result.\n\nEverything runs locally: the extension talks to the app on 127.0.0.1 and the PDF file itself is never sent to an external service. Claude only sees what it asks for, such as a picture of the current page view.\n\n**Before you start:** install Open PDF Studio (free, from open-aec.com). The AI link is on by default; check it under **Settings > General > AI link (MCP)**. Tools that change a document always ask for your permission.",
   "author": {
@@ -49,7 +49,11 @@
     },
     {
       "name": "app_screenshot_view",
-      "description": "Capture the LIVE app's current page view as a base64 PNG."
+      "description": "Capture the LIVE app as a base64 PNG."
+    },
+    {
+      "name": "app_capture_region",
+      "description": "Render an area of a page (or the whole page) of the active document as an image at a chosen resolution, the way Home > Screenshot does: the page is rendered again at `dpi` (not the screen pixels enlarged), with the annotations as printed (no selection frames), in the view rotation the user sees."
     },
     {
       "name": "app_mouse_move",
@@ -100,20 +104,44 @@
       "description": "Merge one or more PDF files into the active document at the given position."
     },
     {
-      "name": "app_assistant_ask",
-      "description": "Submit a message into the app's assistant window as if the user typed it (opens the panel)."
+      "name": "app_rotate_pages",
+      "description": "Rotate pages of the active document by a quarter, half or three-quarter turn, as one undo step, the same way Organize > Rotate does: the markups on those pages and the measurement scales of the PDF turn along."
     },
     {
-      "name": "app_assistant_pending",
-      "description": "Take the oldest assistant question waiting for an MCP client to answer (the relay provider)."
+      "name": "app_delete_pages",
+      "description": "Delete pages from the active document, as one undo step, the same way Organize > Delete does: the markups on the deleted pages go with them, the others, the page labels and the measurement scales move along."
     },
     {
-      "name": "app_assistant_answer",
-      "description": "Answer a pending assistant question (id from app_assistant_pending)."
+      "name": "app_insert_blank_pages",
+      "description": "Insert blank pages into the active document, as one undo step, the same way Organize > Insert does."
     },
     {
-      "name": "app_assistant_history",
-      "description": "Return the LIVE assistant conversation: { ok, messages:[{ role, content }] }."
+      "name": "app_extract_pages",
+      "description": "Write pages of the active document, in the given order, to a new PDF file, the same way Organize > Extract does."
+    },
+    {
+      "name": "app_reorder_pages",
+      "description": "Put the pages of the active document in a new order, as one undo step, the same way dragging thumbnails does: markups, page labels and measurement scales move with their page."
+    },
+    {
+      "name": "app_shift_pages",
+      "description": "Shift the content of pages by a fixed distance, as one undo step, the same way Organize > Shift page does: the page content is moved (not rasterized), and the markups, links, form fields and measurement scales on those pages move along."
+    },
+    {
+      "name": "app_bookmarks",
+      "description": "Read and edit the bookmarks (outline) of the active document, the same way the Bookmarks panel does; every change is one undo step and is written into the file on save."
+    },
+    {
+      "name": "app_watermarks",
+      "description": "List, add and remove the watermarks and headers/footers of the active document, the same way the Watermark, Header & Footer and Manage dialogs do; every change is one undo step, shown at once and written into the pages on save."
+    },
+    {
+      "name": "app_agent_task_pending",
+      "description": "Take the oldest structured agent task that an extension submitted: the task moves from pending to running and no other client gets it."
+    },
+    {
+      "name": "app_agent_task_result",
+      "description": "Answer a running agent task by its id (from app_agent_task_pending) with either result, an object that must match the task's resultSchema (unknown fields are refused), or error { message, code } when the task cannot be done."
     },
     {
       "name": "app_create_annotation",
@@ -188,12 +216,68 @@
       "description": "Return the active document's page count and current page."
     },
     {
+      "name": "app_portfolio",
+      "description": "Inspect or save a PDF Collection copy, preserving component bytes, folders, schema, sort and metadata."
+    },
+    {
+      "name": "app_recognize_form",
+      "description": "Detect heuristic form-field candidates on selected saved PDF pages, excluding existing fields."
+    },
+    {
+      "name": "app_search_symbols",
+      "description": "Search page artwork for a selected symbol rectangle in current page-view coordinates at scale 1."
+    },
+    {
+      "name": "app_workbook_bindings",
+      "description": "Persist mappings from a named schedule on a source PDF to numeric XLSX cells."
+    },
+    {
+      "name": "app_document_workflows",
+      "description": "Save/export (list) named version-1 document workflows, remove by name, run selected PDF paths into a separate output folder, start explicit watched input/output folders, or stop/cancel."
+    },
+    {
+      "name": "app_drawing_sets",
+      "description": "Manage a portable version-1 multi-file drawing set."
+    },
+    {
+      "name": "app_sheet_links",
+      "description": "Build reviewed relative PDF links across a package."
+    },
+    {
+      "name": "app_approval_routing",
+      "description": "Local-file-v1 electronic approval routing, no network sending or certificate signing."
+    },
+    {
+      "name": "app_search_documents",
+      "description": "Search text and optional comments in the active PDF, all open PDFs, or PDF files directly in a desktop folder."
+    },
+    {
+      "name": "app_locations",
+      "description": "List computed markup locations or edit named spatial zones and explicit location overrides."
+    },
+    {
+      "name": "app_hidden_information",
+      "description": "Inspect structural metadata, comments, embedded files, actions and optional-content indicators in the saved active PDF."
+    },
+    {
+      "name": "app_print_preflight",
+      "description": "Inspect the saved active PDF against a reusable print profile."
+    },
+    {
+      "name": "app_review_ocr",
+      "description": "List low/unknown-confidence OCR words with page coordinates and review state, or accept/correct one word."
+    },
+    {
       "name": "app_get_page_text",
       "description": "Read existing PDF page text without mouse automation."
     },
     {
       "name": "app_replace_text",
       "description": "Replace one existing PDF text span returned by app_get_page_text."
+    },
+    {
+      "name": "app_translate_page",
+      "description": "Replace many text spans of one page in a single call, for example to translate the page."
     },
     {
       "name": "app_set_measure_scale",
@@ -213,11 +297,15 @@
     },
     {
       "name": "app_list_commands",
-      "description": "List EVERY function the app exposes: each ribbon button on every tab (label, tab, disabled/active state) plus every drawing tool."
+      "description": "List EVERY function the app exposes: each ribbon tab, each ribbon button on every tab (label, tab, disabled/active state) plus every drawing tool."
     },
     {
       "name": "app_run_command",
-      "description": "Run any command returned by app_list_commands: clicks the ribbon button (switching to its tab first) or activates the tool."
+      "description": "Run any command returned by app_list_commands: activates a ribbon tab ('ribbon-tab:<tab>'), clicks the ribbon button (switching to its tab first), runs an extension action ('ext:...') or activates the tool."
+    },
+    {
+      "name": "app_read_ui",
+      "description": "Read the LIVE app's interface as a compact accessibility-style tree, to check what a click did without a screenshot."
     },
     {
       "name": "app_snippet_cut",
@@ -234,6 +322,10 @@
     {
       "name": "app_export_cad",
       "description": "Export pages of the current document to DXF or DWG, without opening the export dialog."
+    },
+    {
+      "name": "app_export_ifcx",
+      "description": "Convert pages of the current document to an IFCX file (beta; the JSON-based IFC5 format, alpha schema) without opening the export dialog."
     },
     {
       "name": "app_print_to_pdf",
@@ -278,6 +370,42 @@
     {
       "name": "app_facade_element",
       "description": "Draw and edit a facade element in a floor plan: a curtain wall or a window frame, as ONE object along a line with an outer frame, mullions on the field boundaries and a panel in every field."
+    },
+    {
+      "name": "app_list_system_types",
+      "description": "List the reusable system types (suspended ceilings, floor slabs, panel systems) of the app library, or one type by id."
+    },
+    {
+      "name": "app_register_system_type",
+      "description": "Register a system type owned by MCP under the id mcp:<key>."
+    },
+    {
+      "name": "app_update_system_type",
+      "description": "Update a system type owned by MCP (id mcp:<key>)."
+    },
+    {
+      "name": "app_open_system_type_editor",
+      "description": "Open the app's system type editor with the given type selected, or select it in the editor that is already open without discarding unapplied edits."
+    },
+    {
+      "name": "app_get_system_geometry",
+      "description": "Get the geometry of one system (suspended ceiling, floor slab, panel field) in the active document, computed by the app's own geometry engine: panels with clipped outlines, grid lines, openings, trimmers, edge segments and component positions, in millimetres in the system's own frame (independent of zoom and view rotation; placement maps it onto the page)."
+    },
+    {
+      "name": "app_call_extension_command",
+      "description": "Run a structured command of a loaded extension."
+    },
+    {
+      "name": "app_list_extensions",
+      "description": "List the app's extensions: every installed and every loaded extension with its id, name, version, installed version, whether it is loaded and activated, its status (active, failed, notLoaded, busy), the code and message of the last failure, who made the last change (ui, mcp or startup) and whether it uses an old-style id."
+    },
+    {
+      "name": "app_install_extension",
+      "description": "Install or update an extension from a local .oppx package, without a file dialog and without restarting the app: the package is checked and unpacked by the app, then the new version is activated."
+    },
+    {
+      "name": "app_reload_extension",
+      "description": "Reload an installed extension from disk: deactivate it, remove everything it registered (ribbon tabs, commands, annotation types, palettes, panels) and activate it again, without restarting the app."
     }
   ],
   "keywords": [

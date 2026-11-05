@@ -11,6 +11,7 @@
     "box": "Rettangolo",
     "polygon": "Poligono",
     "cloud": "Nuvola",
+    "cloudPolyline": "Polilinea a nuvola",
     "polyline": "Polilinea",
     "textbox": "Casella di testo",
     "callout": "Fumetto",
@@ -27,7 +28,9 @@
     "formTextField": "Campo di testo modulo",
     "formCheckbox": "Casella di controllo modulo",
     "formRadio": "Pulsante di opzione modulo",
-    "screenshot": "Cattura schermata"
+    "screenshot": "Cattura schermata",
+    "pageLabelPick": "Scegli il testo per l'etichetta di pagina",
+    "proofread": "Revisione"
   },
   "toolLabel": "Strumento:",
   "annotationsLabel": "Annotazioni:",
@@ -36,6 +39,7 @@
   "previousPage": "Pagina precedente",
   "nextPage": "Pagina successiva",
   "lastPage": "Ultima pagina",
+  "page": "Pagina",
   "zoomOut": "Riduci",
   "zoomIn": "Ingrandisci",
   "noDocumentsOpen": "Nessun documento aperto",
@@ -51,14 +55,21 @@
   "formFieldsMessage": "Questo documento contiene campi modulo interattivi. È possibile compilare il modulo e salvare i dati.",
   "enableEditing": "Abilita modifica",
   "pdfAConformance": "Questo documento dichiara conformità PDF/A.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Impossibile rinominare il file: {{error}}",
+  "renameInvalidChars": "Il nome del file non può contenere:  / : * ? \" < > |",
+  "renameFileExists": "Esiste già un file con questo nome.",
+  "engineTitle": "Motore di rendering usato per la vista corrente",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vettoriale)"
+  },
+  "viewSingle": "Pagina singola",
+  "viewContinuous": "Continua",
+  "viewBook": "Due pagine",
+  "viewFacing": "Due pagine affiancate",
   "viewRotatedTitle": "La vista è ruotata di {{degrees}}° in senso orario; il documento non è stato modificato. Fai clic per ripristinare la vista.",
+  "compareTabTitle": "Confronta",
   "filledAreaSketch": {
     "undoPoint": "Annulla punto",
     "undoPointTitle": "Rimuovi ultimo punto (Backspace)",
@@ -81,6 +92,7 @@
   },
   "boxWidthAbbr": "L",
   "boxHeightAbbr": "A",
+  "boxSizeHint": "Digita un valore + Enter — oppure fai clic altrove per applicare",
   "ocr": {
     "progress": {
       "starting": "Riconoscimento del testo...",
@@ -96,5 +108,54 @@
   "searchResultsTitle": "Risultati ({{count}})",
   "searchResultPage": "Pagina {{page}}",
   "searchHitsOne": "1 corrispondenza",
-  "searchHitsMany": "{{count}} corrispondenze"
+  "searchHitsMany": "{{count}} corrispondenze",
+  "passwordProtectedBar": "Protetto da password: aperto in sola lettura.",
+  "documentSearch": {
+    "title": "Cerca nei documenti",
+    "query": "Testo da cercare",
+    "scope": "Cerca in",
+    "active": "Documento corrente",
+    "open": "Documenti aperti",
+    "folder": "Cartella",
+    "choose": "Scegli cartella",
+    "annotations": "Includi commenti",
+    "search": "Cerca",
+    "cancel": "Annulla",
+    "stale": "Il documento è cambiato. Esegui di nuovo la ricerca.",
+    "folderHint": "Cerca nei file PDF presenti direttamente in questa cartella, senza aprire schede né modificare file.",
+    "limited": "Limite di risultati raggiunto. Affina la ricerca.",
+    "cancelled": "Ricerca annullata; i risultati sono incompleti.",
+    "ocrHint": "Nessun testo ricercabile nelle pagine {{pages}}. Apri il documento ed esegui esplicitamente l'OCR se necessario.",
+    "status": {
+      "searching": "Ricerca in corso",
+      "complete": "Completata",
+      "needs_ocr": "Contiene pagine senza testo ricercabile",
+      "encrypted": "Password richiesta",
+      "unreadable": "Impossibile eseguire la ricerca",
+      "changed": "Documento modificato; cerca di nuovo",
+      "cancelled": "Annullata",
+      "limited": "Limite di risultati raggiunto"
+    },
+    "failed": "Ricerca non riuscita. Controlla la query e la cartella, quindi riprova.",
+    "prepareOcr": "Apri per OCR…"
+  },
+  "symbolSearch": "Trova simboli",
+  "findMoreOptions": "Altre opzioni di ricerca",
+  "watchActive": "Monitoraggio di {{folder}}",
+  "watchFailed": "Errore di monitoraggio: {{folder}}",
+  "watchTitle": "Il flusso di lavoro dei documenti monitora {{input}} e scrive in {{output}}. Fai clic per interrompere il monitoraggio.",
+  "renderDiagnostics": {
+    "title": "Vai alla segnalazione di rendering successiva. L’assenza di segnalazioni non garantisce un rendering completo.",
+    "count": "Segnalazioni di rendering: {{count}}",
+    "detail": "Pagina {{page}}: {{code}}. Prova uno zoom inferiore o riapri il documento; la completezza non è garantita."
+  },
+  "mcpSignal": {
+    "label": "Connessione IA (MCP)",
+    "connected": "Assistente IA connesso",
+    "idle": "Server MCP acceso, in attesa",
+    "off": "Server MCP spento",
+    "port": "Porta: {{port}}",
+    "lastTool": "Ultimo strumento: {{tool}} alle {{time}}",
+    "noTool": "Nessuna chiamata a strumenti finora"
+  }
 }

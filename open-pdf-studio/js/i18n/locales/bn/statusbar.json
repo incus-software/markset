@@ -11,6 +11,7 @@
     "box": "আয়তক্ষেত্র",
     "polygon": "বহুভুজ",
     "cloud": "মেঘ",
+    "cloudPolyline": "ক্লাউড পলিলাইন",
     "polyline": "পলিলাইন",
     "textbox": "পাঠ্য বাক্স",
     "callout": "কলআউট",
@@ -27,7 +28,9 @@
     "formTextField": "ফর্ম পাঠ্য ক্ষেত্র",
     "formCheckbox": "ফর্ম চেকবক্স",
     "formRadio": "ফর্ম রেডিও বোতাম",
-    "screenshot": "স্ক্রিনশট"
+    "screenshot": "স্ক্রিনশট",
+    "pageLabelPick": "পৃষ্ঠা লেবেলের জন্য লেখা বাছুন",
+    "proofread": "প্রুফ রিডিং"
   },
   "toolLabel": "সরঞ্জাম:",
   "annotationsLabel": "টীকা:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "এই নথিতে ইন্টারেক্টিভ ফর্ম ক্ষেত্র রয়েছে। আপনি ফর্মটি পূরণ করে আপনার ডেটা সংরক্ষণ করতে পারেন।",
   "enableEditing": "সম্পাদনা সক্রিয় করুন",
   "pdfAConformance": "এই নথিটি PDF/A সামঞ্জস্যের দাবি করে।",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "ফাইলের নাম পরিবর্তন করতে ব্যর্থ: {{error}}",
+  "renameInvalidChars": "ফাইলের নামে এগুলো থাকতে পারবে না:  / : * ? \" < > |",
+  "renameFileExists": "এই নামে একটি ফাইল আগে থেকেই আছে।",
+  "engineTitle": "বর্তমান দৃশ্যের জন্য ব্যবহৃত রেন্ডারিং ইঞ্জিন",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (ভেক্টর)"
+  },
+  "viewSingle": "একক পৃষ্ঠা",
+  "viewContinuous": "ক্রমাগত",
+  "viewBook": "দুই পৃষ্ঠা",
+  "viewFacing": "পাশাপাশি দুই পৃষ্ঠা",
   "viewRotatedTitle": "দৃশ্যটি ঘড়ির কাঁটার দিকে {{degrees}}° ঘোরানো আছে; নথি অপরিবর্তিত। দৃশ্য ফিরিয়ে আনতে ক্লিক করুন।",
+  "compareTabTitle": "তুলনা",
   "filledAreaSketch": {
     "undoPoint": "পয়েন্ট পূর্বাবস্থায় ফেরান",
     "undoPointTitle": "শেষ পয়েন্ট সরান (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "প",
   "boxHeightAbbr": "উ",
+  "boxSizeHint": "একটি মান টাইপ করুন + Enter — অথবা প্রয়োগ করতে বাইরে ক্লিক করুন",
   "ocr": {
     "progress": {
       "starting": "টেক্সট শনাক্ত করা হচ্ছে...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "ফলাফল ({{count}})",
   "searchResultPage": "পৃষ্ঠা {{page}}",
   "searchHitsOne": "1টি মিল",
-  "searchHitsMany": "{{count}}টি মিল"
+  "searchHitsMany": "{{count}}টি মিল",
+  "passwordProtectedBar": "পাসওয়ার্ড দিয়ে সুরক্ষিত: শুধু পড়ার জন্য খোলা হয়েছে।",
+  "documentSearch": {
+    "title": "ডকুমেন্ট অনুসন্ধান করুন",
+    "query": "অনুসন্ধানের টেক্সট",
+    "scope": "যেখানে খুঁজবেন",
+    "active": "বর্তমান ডকুমেন্ট",
+    "open": "খোলা ডকুমেন্ট",
+    "folder": "ফোল্ডার",
+    "choose": "ফোল্ডার বেছে নিন",
+    "annotations": "মন্তব্য অন্তর্ভুক্ত করুন",
+    "search": "অনুসন্ধান",
+    "cancel": "বাতিল",
+    "stale": "ডকুমেন্টটি পরিবর্তিত হয়েছে। আবার অনুসন্ধান চালান।",
+    "folderHint": "ট্যাব না খুলে বা ফাইল পরিবর্তন না করে সরাসরি এই ফোল্ডারের PDF ফাইলগুলিতে অনুসন্ধান করে।",
+    "limited": "ফলাফলের সীমায় পৌঁছেছে। অনুসন্ধান আরও নির্দিষ্ট করুন।",
+    "cancelled": "অনুসন্ধান বাতিল হয়েছে; ফলাফল অসম্পূর্ণ।",
+    "ocrHint": "পৃষ্ঠা {{pages}}-এ কোনো অনুসন্ধানযোগ্য টেক্সট নেই। প্রয়োজনে ডকুমেন্টটি খুলে স্পষ্টভাবে OCR চালান।",
+    "status": {
+      "searching": "অনুসন্ধান চলছে",
+      "complete": "সম্পন্ন",
+      "needs_ocr": "অনুসন্ধানযোগ্য টেক্সট ছাড়া পৃষ্ঠা রয়েছে",
+      "encrypted": "পাসওয়ার্ড প্রয়োজন",
+      "unreadable": "অনুসন্ধান করা যায়নি",
+      "changed": "ডকুমেন্ট পরিবর্তিত হয়েছে; আবার অনুসন্ধান করুন",
+      "cancelled": "বাতিল করা হয়েছে",
+      "limited": "ফলাফলের সীমায় পৌঁছেছে"
+    },
+    "failed": "অনুসন্ধান ব্যর্থ হয়েছে। কোয়েরি ও ফোল্ডার পরীক্ষা করে আবার চেষ্টা করুন।",
+    "prepareOcr": "OCR-এর জন্য খুলুন…"
+  },
+  "symbolSearch": "প্রতীক খুঁজুন",
+  "findMoreOptions": "আরও অনুসন্ধান বিকল্প",
+  "watchActive": "{{folder}} পর্যবেক্ষণ চলছে",
+  "watchFailed": "পর্যবেক্ষণ ত্রুটি: {{folder}}",
+  "watchTitle": "ডকুমেন্ট ওয়ার্কফ্লো {{input}} পর্যবেক্ষণ করছে এবং {{output}}-এ লিখছে। পর্যবেক্ষণ বন্ধ করতে ক্লিক করুন।",
+  "renderDiagnostics": {
+    "title": "পরবর্তী রেন্ডার বার্তায় যান। কোনো বার্তা না থাকা সম্পূর্ণ রেন্ডারের নিশ্চয়তা দেয় না।",
+    "count": "রেন্ডার বার্তা: {{count}}",
+    "detail": "পৃষ্ঠা {{page}}: {{code}}। কম জুম চেষ্টা করুন বা নথিটি আবার খুলুন; সম্পূর্ণতা নিশ্চিত নয়।"
+  },
+  "mcpSignal": {
+    "label": "AI সংযোগ (MCP)",
+    "connected": "AI সহকারী সংযুক্ত",
+    "idle": "MCP সার্ভার চালু, নিষ্ক্রিয়",
+    "off": "MCP সার্ভার বন্ধ",
+    "port": "পোর্ট: {{port}}",
+    "lastTool": "শেষ টুল: {{tool}}, {{time}}",
+    "noTool": "এখনও কোনো টুল কল হয়নি"
+  }
 }

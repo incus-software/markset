@@ -1,4 +1,4 @@
-import { layoutTextboxLines, textboxTekstInzet } from './textbox-layout.js';
+import { layoutTextboxLines, textboxTekstInzet, verticaleVerschuiving } from './textbox-layout.js';
 import { klemMaat, MIN_VORM_MAAT_PT } from '../minimummaat.js';
 // First strong-directional character decides the base direction of a text run,
 // mirroring CSS `dir="auto"` (which the free-text/callout editors use, issue #61).
@@ -228,7 +228,7 @@ export function computeTextboxContentHeight(annotation) {
 // /AP appearance stream whose line breaks + vertical placement match what OPDS
 // draws on screen — so other viewers show the same thing (no overflow).
 // Returns { lines:[{text,width}], fontSize, lineHeight, padding,
-//           ascent, descent, halfLeading, maxWidth }.
+//           ascent, descent, halfLeading, maxWidth, fontFor, measure }.
 export function layoutTextboxForExport(annotation) {
   const text = annotation.text || '';
   const width = annotation.width || 150;
@@ -263,7 +263,7 @@ export function layoutTextboxForExport(annotation) {
   const lines = layoutTextboxLines(annotation, maxWidth, measure).map(l => ({
     text: l.chunks.map(c => c.text).join(''), width: l.width, chunks: l.chunks,
   }));
-  return { lines, fontSize, lineHeight, padding, ascent, descent, halfLeading, maxWidth, fontFor };
+  return { lines, fontSize, lineHeight, padding, ascent, descent, halfLeading, maxWidth, fontFor, measure };
 }
 
 // Draw textbox content with word wrap
@@ -370,6 +370,8 @@ export function drawTextboxContent(ctx, annotation, padding) {
   const measure = (t, bold, italic) => { ctx.font = fontFor(bold, italic); return ctx.measureText(t).width; };
   const baseFill = ctx.fillStyle;
   const lines = layoutTextboxLines(annotation, maxWidth, measure);
+  // Verticale uitlijning (boven, midden, onder) van het hele tekstblok.
+  y += verticaleVerschuiving(annotation.textVAlign, height - 2 * padding, lines.length * lineHeight);
 
   for (const ln of lines) {
     if (y >= annotation.y + height) break;

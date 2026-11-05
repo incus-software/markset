@@ -5,6 +5,15 @@ import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
 import { setTool } from '../../../tools/manager.js';
 import { startRemoveImageTool } from '../../../tools/tools/remove-image-tool.js';
+import { startOffsetTool } from '../../../tools/tools/offset-tool.js';
+import { startExtendTool } from '../../../tools/tools/extend-tool.js';
+import { startStretchTool } from '../../../tools/tools/stretch-tool.js';
+import { startEnlargeTool } from '../../../tools/tools/enlarge-tool.js';
+import { startFilletTool, startChamferTool } from '../../../tools/tools/corner-tools.js';
+import { startSpotCoordTool } from '../../../tools/tools/spot-coord-tool.js';
+import { tryStartGMove } from '../../../tools/g-move-mode.js';
+import { updateStatusMessage } from '../../../ui/chrome/status-bar.js';
+import i18next from '../../../i18n/config.js';
 import { state, getActiveDocument, noPdf } from '../../../core/state.js';
 import { savePreferences } from '../../../core/preferences.js';
 import { isPdfAReadOnly } from '../../../pdf/loader.js';
@@ -19,7 +28,7 @@ import { alignLeft } from '../../../annotations/alignment.js';
 import { explodeSelection, joinSelection, createCollection, explodeCollection } from '../../../annotations/segment-ops.js';
 import {
   handIcon, selectCommentsIcon, findIcon,
-  lineIcon, arrowIcon, drawIcon, eraserIcon, rectIcon, polylineIcon, textboxIcon, noteIcon, ellipseIcon, circleIcon,
+  lineIcon, arrowIcon, drawIcon, eraserIcon, rectIcon, polylineIcon, textboxIcon, noteIcon, ellipseIcon, circleIcon, countIcon,
   calloutIcon, cloudIcon,
   measureDistanceIcon, measureAngleIcon, measurePerimeterIcon, measureAreaIcon,
   alignLeftIcon, alignTopIcon, alignBottomIcon,
@@ -33,6 +42,7 @@ import { openDialog } from '../../../bridge.js';
 
 // Generic placeholder icons for buttons without a dedicated icon
 const placeholderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="0" stroke-dasharray="3 2"/><path d="M9 9 L15 15 M15 9 L9 15" stroke-width="1"/></svg>`;
+const wallIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h18v8H3zM3 14l6-6M7 16l8-8M13 16l8-8M19 16l2-2"/></svg>`;
 const arcIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20 Q 12 4 20 20"/></svg>`;
 const splineIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17 C 7 2, 13 2, 12 12 S 17 22 21 7"/></svg>`;
 const splineArrowIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19 C 8 9, 14 7, 19 9"/><path d="M14 6 L 20 9 L 16 13.5"/></svg>`;
@@ -40,6 +50,9 @@ const hatchIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const imageIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M3 17l5-5 4 4 3-3 6 6"/></svg>`;
 const removeImageIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="13" height="13"/><circle cx="7" cy="7" r="1.3"/><path d="M3 12l3.5-3.5 3 3"/><path d="M14.5 14.5l6.5 6.5M21 14.5l-6.5 6.5"/></svg>`;
 const moveIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>`;
+const spotCoordIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20 L 11 13 M8 20 h8 M12 17 v6"/><circle cx="13" cy="11" r="3.2"/><path d="M13 6.5 v1.5 M13 14 v1.5 M8.5 11 h1.5 M16 11 h1.5"/></svg>`;
+const filletIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20 H 9.5 A 6.5 6.5 0 0 0 16 13.5 V 4"/><path d="M4 4 H 10.5 M20 20 H 13.5" stroke-dasharray="2 2" stroke-width="1"/></svg>`;
+const chamferIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20 H 8 L 16 4 H 20"/><path d="M4 4 H 8 M20 20 H 16" stroke-dasharray="2 2" stroke-width="1"/></svg>`;
 const copyAnnIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8" y="8" width="12" height="12"/><rect x="4" y="4" width="12" height="12"/></svg>`;
 const arrayIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="6" height="6"/><rect x="15" y="3" width="6" height="6"/><rect x="3" y="15" width="6" height="6"/><rect x="15" y="15" width="6" height="6"/></svg>`;
 const trimIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8 16 L20 4 M16 16 L4 4"/></svg>`;
@@ -70,6 +83,12 @@ const splitIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const breakIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12 L9 12 M15 12 L21 12"/><path d="M9 8 L9 16 M15 8 L15 16" stroke-width="1"/></svg>`;
 // Lengthen: a line with a double arrow along its axis
 const lengthenIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 H21"/><path d="M6 9 L3 12 L6 15"/><path d="M18 9 L21 12 L18 15"/></svg>`;
+// Offset: two parallel lines with an arrow between them
+const offsetIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18"/><path d="M3 17h18"/><path d="M12 7v10"/><path d="M9 14l3 3 3-3"/></svg>`;
+// Stretch: a solid box being pulled into a dashed box
+const stretchIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="7" height="9"/><rect x="14" y="8" width="7" height="9" stroke-dasharray="3 2"/><path d="M11 12.5h2.5"/><path d="M13 10.5l2 2-2 2"/></svg>`;
+// Enlarge: small square growing into a big square
+const enlargeIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="14" width="6" height="6"/><rect x="15" y="3" width="6" height="6" stroke-dasharray="3 2"/><path d="M9.5 17.5L14 13"/><path d="M14 8.5v4.5h-4.5"/></svg>`;
 // Collection create: group objects into a bracketed set
 const collectionCreateIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/><path d="M11 7 H16 V13" stroke-width="1" stroke-dasharray="2 2"/></svg>`;
 // Collection explode: dissolve a group back into loose objects
@@ -127,9 +146,45 @@ function rotateSelected() {
   recordBulkModify(anns, originals);
 }
 
+// Eén snap-vinkje in de lintgroep 'Snap'. Schakelt de bijbehorende
+// voorkeur en bewaart ze meteen (net als de voorkeuren-dialog).
+function SnapOption(props) {
+  const on = () => state.preferences[props.prefKey] !== false && state.preferences.enableObjectSnap === true;
+  const set = (checked) => { state.preferences[props.prefKey] = checked; savePreferences(); };
+  return (
+    <label class="ribbon-checkbox-option" title={props.label}>
+      <input
+        type="checkbox"
+        checked={on()}
+        disabled={state.preferences.enableObjectSnap !== true}
+        onChange={(e) => set(e.currentTarget.checked)}
+      />
+      <span>{props.label}</span>
+    </label>
+  );
+}
+
 function moveSelected() {
-  // Trigger G-key move (existing handler) on current selection
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true }));
+  // CAD-stijl verplaatsen met basispunt (de 'mv'-flow uit g-move-mode):
+  // klik 1 kiest het basispunt, slepen óf een getypte verplaatsing (50,0)
+  // plaatst de selectie. Beide klikken object-snappen naar bestaande punten.
+  if (tryStartGMove({ basePoint: true })) {
+    updateStatusMessage(
+      i18next.t('drawing.moveBase', {
+        ns: 'ribbon',
+        defaultValue: 'Move: click the base point, then the destination — or type a displacement like 50,0 + Enter',
+      }),
+      5000,
+    );
+  } else {
+    updateStatusMessage(
+      i18next.t('drawing.moveNoSelection', {
+        ns: 'ribbon',
+        defaultValue: 'Move: select an object first',
+      }),
+      5000,
+    );
+  }
 }
 
 // The drawing groups are exported as a standalone fragment so the merged
@@ -137,6 +192,7 @@ function moveSelected() {
 // comment groups inside a single AdaptiveGroups container.
 export function DrawingGroups() {
   const { t } = useTranslation('ribbon');
+  const { t: tProperties } = useTranslation('properties');
   const ro = () => noPdf() || isPdfAReadOnly();
   const cs = t('common.comingSoon') || 'Coming soon';
 
@@ -172,11 +228,19 @@ export function DrawingGroups() {
 
         {/* DRAW — uniform grid of small icon-only buttons (CAD toolbar style).
             All buttons are 26×26 size=small; the compact group's flex-wrap CSS
-            arranges them into 2 rows × 7 cols. */}
+            wraps them into rows. */}
         <RibbonGroup label={t('drawing.draw')} compact>
           {/* Row 1 */}
           <RibbonButton size="small" id="dr-line" title={t('comment.line')} icon={lineIcon}
             disabled={ro()} active={state.currentTool === 'line'} onClick={() => setTool('line')} />
+          <RibbonButton size="small" id="dr-polyline" title={`${t('comment.polylineTitle')} — ${t('drawing.dimHint')}`} icon={polylineIcon}
+            disabled={ro()} active={state.currentTool === 'polyline'} onClick={() => setTool('polyline')} />
+          <RibbonButton size="small" id="dr-wall" title={tProperties('quantities.type.wall')} icon={wallIcon}
+            disabled={ro()} active={state.currentTool === 'wall'} onClick={() => {
+              // Palette walls keep their overrides; the ribbon starts with the standard wall.
+              state.toolOverrides = null;
+              setTool('wall');
+            }} />
           <RibbonButton size="small" id="dr-arrow" title={t('comment.arrow')} icon={arrowIcon}
             disabled={ro()} active={state.currentTool === 'arrow'} onClick={() => setTool('arrow')} />
           <RibbonButton size="small" id="dr-spline-arrow" title={t('comment.splineArrowTitle')} icon={splineArrowIcon}
@@ -185,12 +249,10 @@ export function DrawingGroups() {
             disabled={ro()} active={state.currentTool === 'draw'} onClick={() => setTool('draw')} />
           <RibbonButton size="small" id="dr-eraser" title={t('drawing.eraser')} icon={eraserIcon}
             disabled={ro()} active={state.currentTool === 'eraser'} onClick={() => setTool('eraser')} />
-          <RibbonButton size="small" id="dr-rect" title={t('comment.rectangle')} icon={rectIcon}
+          <RibbonButton size="small" id="dr-rect" title={`${t('comment.rectangle')} — ${t('drawing.dimHint')}`} icon={rectIcon}
             disabled={ro()} active={state.currentTool === 'box'} onClick={() => setTool('box')} />
-          <RibbonButton size="small" id="dr-arc" title="Arc" icon={arcIcon}
+          <RibbonButton size="small" id="dr-arc" title={t('drawing.arc')} icon={arcIcon}
             disabled={ro()} active={state.currentTool === 'arc'} onClick={() => setTool('arc')} />
-          <RibbonButton size="small" id="dr-polyline" title={t('comment.polylineTitle')} icon={polylineIcon}
-            disabled={ro()} active={state.currentTool === 'polyline'} onClick={() => setTool('polyline')} />
           <RibbonButton size="small" id="dr-hatch" title={t('comment.filledArea')} icon={hatchIcon}
             disabled={ro()} active={state.currentTool === 'filledArea'} onClick={() => setTool('filledArea')} />
           <RibbonButton size="small" id="dr-text" title={t('comment.textBox')} icon={textboxIcon}
@@ -200,18 +262,40 @@ export function DrawingGroups() {
           {/* Row 2 */}
           <RibbonButton size="small" id="dr-spline" title={t('comment.splineTitle')} icon={splineIcon}
             disabled={ro()} active={state.currentTool === 'spline'} onClick={() => setTool('spline')} />
-          <RibbonButton size="small" id="dr-circle" title={t('format.circle') || 'Cirkel'} icon={circleIcon}
+          <RibbonButton size="small" id="dr-circle" title={`${t('format.circle') || 'Circle'} — ${t('drawing.dimHint')}`} icon={circleIcon}
             disabled={ro()} active={state.currentTool === 'circle'} onClick={() => setTool('circle')} />
-          <RibbonButton size="small" id="dr-ellipse" title={t('comment.ellipse') || 'Ellips'} icon={ellipseIcon}
+          <RibbonButton size="small" id="dr-ellipse" title={`${t('comment.ellipse') || 'Ellipse'} — ${t('drawing.dimHint')}`} icon={ellipseIcon}
             disabled={ro()} active={state.currentTool === 'ellipse'} onClick={() => setTool('ellipse')} />
-          <RibbonButton size="small" id="dr-count" title="Tellen" icon={circleIcon}
+          <RibbonButton size="small" id="dr-count" title={t('drawing.count')} icon={countIcon}
             disabled={ro()} active={state.currentTool === 'count'} onClick={() => setTool('count')} />
-          <RibbonButton size="small" id="dr-l-shape" title={t('drawing.lShape')} icon={lShapeIcon}
+          <RibbonButton size="small" id="dr-l-shape" title={`${t('drawing.lShape')} — ${t('drawing.dimHint')}`} icon={lShapeIcon}
             disabled={ro()} active={state.currentTool === 'lshape'} onClick={() => setTool('lshape')} />
           <RibbonButton size="small" id="dr-image" title={t('drawing.image')} icon={imageIcon}
-            disabled={ro()} active={state.currentTool === 'image'} onClick={() => setTool('image')} />
+            disabled={ro()}
+            onClick={() => import('../../../annotations/image-drop.js').then((m) => m.kiesEnPlaatsAfbeelding())} />
           <RibbonButton size="small" id="dr-remove-image" title={t('drawing.removeImage')} icon={removeImageIcon}
             disabled={ro()} active={state.currentTool === 'removeImage'} onClick={() => startRemoveImageTool()} />
+        </RibbonGroup>
+
+        {/* SNAP — object-snap-modi direct naast de tekeninstrumenten.
+            Zelfde voorkeuren als het Voorkeuren-dialog, zodat het engine-
+            gedeelte (snap-engine.js) ze bij elke muisbeweging leest. */}
+        <RibbonGroup label={t('drawing.snapGroup')}>
+          <div class="ribbon-snap-options">
+            <label class="ribbon-checkbox-option snap-master" title={t('drawing.snapObjectSnapTip')}>
+              <input
+                type="checkbox"
+                checked={state.preferences.enableObjectSnap === true}
+                onChange={(e) => { state.preferences.enableObjectSnap = e.currentTarget.checked; savePreferences(); }}
+              />
+              <span>{t('drawing.snapObjectSnap')}</span>
+            </label>
+            <SnapOption prefKey="snapToEndpoints" label={t('drawing.snapEndpoint')} />
+            <SnapOption prefKey="snapToMidpoints" label={t('drawing.snapMidpoint')} />
+            <SnapOption prefKey="snapToVertices" label={t('drawing.snapVertex')} />
+            <SnapOption prefKey="snapToStartPoints" label={t('drawing.snapStartPoint')} />
+            <SnapOption prefKey="snapToCenters" label={t('drawing.snapCenter')} />
+          </div>
         </RibbonGroup>
 
         {/* LIJN-OPTIES — alleen zichtbaar bij het lijn-gereedschap. Bevat het
@@ -308,9 +392,9 @@ export function DrawingGroups() {
               disabled={ro()} active={state.currentTool === 'measureAngle'} onClick={() => setTool('measureAngle')} />
           </RibbonButtonStack>
           <RibbonButtonStack>
-            {/* Spot Coord — placeholder icon, deferred */}
-            <RibbonButton size="small" id="dr-spot-coord" title={cs} icon={placeholderIcon} label={t('drawing.spotCoord')}
-              disabled={true} />
+            {/* Spot Coord — één klik labelt de X,Y-coördinaten van een punt */}
+            <RibbonButton size="small" id="dr-spot-coord" title={t('drawing.spotCoord')} icon={spotCoordIcon} label={t('drawing.spotCoord')}
+              disabled={ro()} active={state.currentTool === 'spotCoord'} onClick={() => startSpotCoordTool()} />
             {/* Radius — 2-click radius dimension (centre → rim) */}
             <RibbonButton size="small" id="dr-radius" title={t('drawing.radius')} icon={radiusIcon} label={t('drawing.radius')}
               disabled={ro()} active={state.currentTool === 'radius'} onClick={() => setTool('radius')} />
@@ -342,7 +426,7 @@ export function DrawingGroups() {
               net, gelijkmatig blok vormt i.p.v. een mix van grote losse
               knoppen en een kleine stapel. */}
           <RibbonButtonStack>
-            <RibbonButton size="small" id="dr-move" title={t('drawing.move')} icon={moveIcon} label={t('drawing.move')}
+            <RibbonButton size="small" id="dr-move" title={t('drawing.moveBasePoint')} icon={moveIcon} label={t('drawing.move')}
               disabled={ro()} onClick={moveSelected} />
             <RibbonButton size="small" id="dr-copy" title={t('drawing.copy')} icon={copyAnnIcon} label={t('drawing.copy')}
               disabled={ro()} onClick={() => duplicateAnnotation()} />
@@ -375,17 +459,22 @@ export function DrawingGroups() {
             <RibbonButton size="small" id="dr-trim" title={t('drawing.trim')} icon={trimIcon} label={t('drawing.trim')}
               disabled={ro()} active={state.currentTool === 'trim'} onClick={() => setTool('trim')} />
             <RibbonButton size="small" id="dr-extend" title={t('drawing.extend')} icon={extendIcon} label={t('drawing.extend')}
-              disabled={ro()} active={state.currentTool === 'extend'} onClick={() => setTool('extend')} />
-            <RibbonButton size="small" id="dr-offset" title={cs} icon={placeholderIcon} label={t('drawing.offset')}
-              disabled={true} />
+              disabled={ro()} active={state.currentTool === 'extend'} onClick={() => startExtendTool()} />
+            <RibbonButton size="small" id="dr-offset" title={t('drawing.offset')} icon={offsetIcon} label={t('drawing.offset')}
+              disabled={ro()} active={state.currentTool === 'offset'} onClick={() => startOffsetTool()} />
           </RibbonButtonStack>
           <RibbonButtonStack>
-            <RibbonButton size="small" id="dr-fillet" title={cs} icon={placeholderIcon} label={t('drawing.fillet')}
-              disabled={true} />
-            <RibbonButton size="small" id="dr-chamfer" title={cs} icon={placeholderIcon} label={t('drawing.chamfer')}
-              disabled={true} />
-            <RibbonButton size="small" id="dr-stretch" title={cs} icon={placeholderIcon} label={t('drawing.stretch')}
-              disabled={true} />
+            <RibbonButton size="small" id="dr-fillet" title={t('drawing.fillet')} icon={filletIcon} label={t('drawing.fillet')}
+              disabled={ro()} active={state.currentTool === 'fillet'} onClick={() => startFilletTool()} />
+            <RibbonButton size="small" id="dr-chamfer" title={t('drawing.chamfer')} icon={chamferIcon} label={t('drawing.chamfer')}
+              disabled={ro()} active={state.currentTool === 'chamfer'} onClick={() => startChamferTool()} />
+            <RibbonButton size="small" id="dr-stretch" title={t('drawing.stretch')} icon={stretchIcon} label={t('drawing.stretch')}
+              disabled={ro()} active={state.currentTool === 'stretch'} onClick={() => startStretchTool()} />
+          </RibbonButtonStack>
+          <RibbonButtonStack>
+            {/* Vergroten/verkleinen (CAD-stijl schalen) rond een basispunt */}
+            <RibbonButton size="small" id="dr-enlarge" title={t('drawing.enlarge')} icon={enlargeIcon} label={t('drawing.enlarge')}
+              disabled={ro()} active={state.currentTool === 'enlarge'} onClick={() => startEnlargeTool()} />
           </RibbonButtonStack>
           <RibbonButtonStack>
             <RibbonButton size="small" id="dr-split" title={t('drawing.split')} icon={splitIcon} label={t('drawing.split')}
@@ -410,7 +499,7 @@ export function DrawingGroups() {
         <RibbonGroup label={t('drawing.clipboard')}>
           <RibbonButton id="dr-paste" title={t('drawing.paste')} icon={pasteIcon} label={t('drawing.paste')}
             disabled={ro()} onClick={pasteFromClipboard} />
-          <RibbonButton id="dr-paste-in-place" title={`${t('drawing.pasteInPlace')} (Ctrl+Shift+V)`} icon={pasteInPlaceIcon} label={t('drawing.pasteInPlace')}
+          <RibbonButton id="dr-paste-in-place" title={t('drawing.pasteInPlace')} icon={pasteInPlaceIcon} label={t('drawing.pasteInPlace')}
             disabled={ro()} onClick={() => pasteAnnotationsInPlace()} />
           {/* Knippen / Kopiëren / Verwijderen — icon-only (issue #278);
               de naam blijft als tooltip beschikbaar. */}

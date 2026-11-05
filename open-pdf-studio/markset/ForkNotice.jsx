@@ -1,10 +1,10 @@
 // Markset fork notice for the About dialog (LGPL-3.0 / GPL-3.0 section 5).
 // Lives under markset/ so the build-time brand overlay leaves the upstream
 // project's name intact here.
-import { openExternal } from '../js/core/platform.js';
+import { openExtern } from '../js/core/extern-openen.js';
 
 export default function ForkNotice() {
-  const open = (url) => (e) => { e.preventDefault(); openExternal(url); };
+  const open = (url) => (e) => { e.preventDefault(); openExtern(url); };
   return (
     <div class="bs-about-company markset-fork-notice">
       <p class="bs-about-company-desc">

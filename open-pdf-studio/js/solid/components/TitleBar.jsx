@@ -4,6 +4,10 @@ import { state } from '../../core/state.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
 import { openDialog, getDialogs } from '../stores/dialogStore.js';
 import { isTauri } from '../../core/platform.js';
+import { knopUit, meldingTekst } from '../../core/webfuncties.js';
+import { hostVersieLabel } from '../../pdf/host-versies.js';
+// Als asset geïmporteerd: Vite zet de bouwbasis ervoor (#545).
+import appIcoon from '/icon.png';
 
 async function handleClose() {
   const { closeActiveTab } = await import('../../ui/chrome/tabs.js');
@@ -12,12 +16,18 @@ async function handleClose() {
     const closed = await closeActiveTab();
     if (!closed) return;
   }
+  // Alle documenten zijn dicht: een nette afsluiting, net als via het app-menu.
+  // closeWindow() is destroy(), dus de close-requested in main.js komt hier niet.
+  const { meldSchoonAfsluiten } = await import('../../herstel/haken.js');
+  await meldSchoonAfsluiten();
   closeWindow();
 }
 
 export default function TitleBar() {
   const { t: tCommon } = useTranslation('common');
   const [isMaximized, setIsMaximized] = createSignal(false);
+  // Feedback gaat naar een andere host: als gast uit (#548).
+  const feedbackUit = knopUit('send-feedback', { inTauri: isTauri() });
   let unlisten = null;
 
   onMount(async () => {
@@ -39,7 +49,9 @@ export default function TitleBar() {
   const fileName = () => {
     const d = doc();
     if (!d || !d.fileName) return '';
-    return (d.modified ? '* ' : '') + d.fileName;
+    // Een oudere versie van de site (#712): "Versie 3 van 5 – alleen-lezen".
+    const versie = hostVersieLabel(d, tCommon);
+    return (d.modified ? '* ' : '') + d.fileName + (versie ? ` · ${versie}` : '');
   };
   const hasPdf = () => !!state.documents[state.activeDocumentIndex]?.pdfDoc;
   const undoEnabled = () => {
@@ -69,7 +81,7 @@ export default function TitleBar() {
     <div class={`title-bar${hasDialogs() ? ' dialogs-open' : ''}`} data-tauri-drag-region>
       <div class="title-bar-left">
         <div class="quick-access-toolbar">
-          <img src="icon.png" class="app-icon" alt={tCommon('appName')} />
+          <img src={appIcoon} class="app-icon" alt={tCommon('appName')} />
           <div class="quick-access-separator"></div>
 
           <button class="quick-access-btn" title={`${tCommon('open')} (Ctrl+O)`}
@@ -79,7 +91,7 @@ export default function TitleBar() {
             </svg>
           </button>
 
-          <button class="quick-access-btn" title={`${tCommon('save')} (Ctrl+S)`} disabled={!hasPdf()}
+          <button class="quick-access-btn" title={`${tCommon('save')} (Ctrl+S)`} disabled={!hasPdf() || doc()?.hostAlleenLezen === true}
             onClick={() => { const d = doc(); return import('../../pdf/saver.js').then(m => m.savePDF(null, {}, d)); }}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12.5 14.5h-9a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1h7.586a1 1 0 0 1 .707.293l1.414 1.414a1 1 0 0 1 .293.707V13.5a1 1 0 0 1-1 1z"/>
@@ -164,7 +176,13 @@ export default function TitleBar() {
       </div>
 
       <div class="window-controls">
-        <button class="send-feedback-btn" onClick={() => openDialog('feedback')}>
+        <button
+          id="send-feedback"
+          class="send-feedback-btn"
+          disabled={feedbackUit}
+          title={feedbackUit ? meldingTekst(tCommon, tCommon('sendFeedback')) : undefined}
+          onClick={() => openDialog('feedback')}
+        >
           {tCommon('sendFeedback')}
         </button>
         {isTauri() && <>

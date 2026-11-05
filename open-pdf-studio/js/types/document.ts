@@ -19,7 +19,8 @@ export interface OcrWord {
   top: number;
   width: number;
   height: number;
-  confidence: number;
+  confidence: number | null;
+  review?: { status: 'accepted' | 'corrected'; originalText: string };
 }
 
 export interface Watermark {
@@ -86,7 +87,17 @@ export interface DocumentState {
   /** OCR word results keyed by 1-based page number, written into an invisible
    *  searchable text layer on save (see js/pdf/ocr.js, saver/ocr-text-layer.js). */
   ocrResults: Record<number, OcrWord[]>;
+  /** Reviews stored in the file without the full word list (shown read-only). */
+  ocrReviewArchive?: Record<number, OcrWord[]>;
+  /** Pages whose own OCR layer an earlier save of this session wrote. */
+  ocrLayerPages?: number[];
+  /** Fingerprint of the OCR results the last save wrote (saver/ocr-text-layer.js). */
+  ocrLayerSignature?: string;
   bookmarks: Bookmark[];
+  /** Paginalabels (bladnamen, #580), index 0 = pagina 1; null = gewone paginanummers. */
+  pageLabels?: string[] | null;
+  /** Labels bewerkt: de volgende save schrijft /PageLabels opnieuw. */
+  pageLabelsDirty?: boolean;
   undoStack: UndoCommand[];
   redoStack: UndoCommand[];
   savedUndoStackLength: number;
@@ -104,13 +115,28 @@ export interface DocumentState {
   /** Weergave draaien (#200): 0/90/180/270, rechtsom, voor alle pagina's van
    *  dit tabblad. Alleen de weergave; het document verandert niet. */
   viewRotation?: number;
+  /** Gesplitste weergave (#715): null/afwezig = één paneel. Alleen wat de
+   *  interface toont; de standen per paneel houdt pdf/split-view/split-view.js. */
+  splitView?: { richting: 'vertical' | 'horizontal'; actief: 0 | 1; verhouding: number; sync: boolean } | null;
   pageDims?: Record<number, { widthPt: number; heightPt: number; rotation?: number }>;
   pdfaCompliance: string | null;
   pdfADismissed: boolean;
+  /** Met een openingswachtwoord geopend: alleen-lezen, kan niet opgeslagen
+   *  worden (js/pdf/wachtwoord-pdf.js). `filePath` is dan de ontsleutelde
+   *  werkkopie, `originalFilePath` het bestand van de gebruiker. */
+  passwordProtected?: boolean;
+  originalFilePath?: string | null;
+  /** De infobalk van een beveiligde PDF is voor dit tabblad weggeklikt. */
+  _beveiligdBalkVerborgen?: boolean;
   measureScale: MeasureScale | null;
   /** Meetschalen uit de PDF zelf (/VP + /Measure), per 1-gebaseerd paginanummer,
    *  in app-ruimte; alleen gelezen (js/pdf/pdf-viewports.js, #400). */
   pdfViewports?: Record<number, Array<{ x: number; y: number; width: number; height: number; pixelsPerUnit: number; unit: string; mmPerPoint: number; ratio: string; name: string }>>;
+  /** /UserUnit per 1-gebaseerd paginanummer, alleen waar hij niet 1 is; een
+   *  schaal 1:N rekent daarmee naar pagina-eenheden (pixelsPerUnitFor, #884). */
+  pageUserUnits?: Record<number, number>;
+  /** De /UserUnit per pagina is gelezen; zonder pageUserUnits is hij dan overal 1. */
+  userUnitsGelezen?: boolean;
   /** Benoemde lijnstijl-presets — persist in de PDF (catalog /OPS_StylePresets). */
   stylePresets: StylePreset[];
   /** Annotatielagen (#468); leeg = alleen de standaardlaag (js/annotations/annotatie-lagen.js). */

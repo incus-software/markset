@@ -54,7 +54,8 @@
     "dimChainAdd": "Punten toevoegen aan maatketting",
     "dimChainRemove": "Hulplijn uit maatketting halen",
     "selectRoom": "Ruimte selecteren",
-    "editViewportScale": "Viewport-schaal bewerken"
+    "editViewportScale": "Viewport-schaal bewerken",
+    "saveToToolSet": "Opslaan in werkkist"
   },
   "multiSelect": {
     "copyAnnotations": "{{count}} annotaties kopiëren",
@@ -99,7 +100,22 @@
     "editBookmark": "Bladwijzer bewerken",
     "deleteBookmark": "Bladwijzer verwijderen",
     "expandAll": "Alles uitvouwen",
-    "collapseAll": "Alles invouwen"
+    "collapseAll": "Alles invouwen",
+    "color": "Kleur",
+    "colorDefault": "Standaard",
+    "colorRed": "Rood",
+    "colorOrange": "Oranje",
+    "colorGreen": "Groen",
+    "colorBlue": "Blauw",
+    "colorPurple": "Paars",
+    "colorGray": "Grijs",
+    "colorCustom": "Aangepast...",
+    "bold": "Vet",
+    "italic": "Cursief",
+    "nestUnderNew": "Onder nieuwe bladwijzer nesten...",
+    "indent": "Inspringen",
+    "outdent": "Uitspringen",
+    "deleteBookmarks": "{{count}} bladwijzers verwijderen"
   },
   "thumbnail": {
     "rotateLeft": "Linksom draaien",
@@ -122,7 +138,8 @@
     "deselectAll": "Selectie opheffen",
     "insertFromFile": "Invoegen uit bestand...",
     "insertFromFileBefore": "Vóór deze pagina...",
-    "insertFromFileAfter": "Na deze pagina..."
+    "insertFromFileAfter": "Na deze pagina...",
+    "pageLabels": "Paginalabels (naambouwer)..."
   },
   "textSelection": {
     "highlightSelection": "Selectie markeren",

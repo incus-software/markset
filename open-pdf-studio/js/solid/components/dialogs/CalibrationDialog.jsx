@@ -1,4 +1,5 @@
 import { createSignal, onMount, Show } from 'solid-js';
+import { leesGetal } from '../../../core/getal-invoer.js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { state, getActiveDocument } from '../../../core/state.js';
@@ -6,6 +7,9 @@ import { savePreferences } from '../../../core/preferences.js';
 import { recalculateAllMeasurements, saveDocumentScale } from '../../../annotations/measurement.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { cloneAnnotation } from '../../../annotations/factory.js';
+import { schaalUitKalibratie } from '../../../annotations/kalibratie-schaal.js';
+import { geldigeUserUnit, userUnitVanPagina } from '../../../annotations/scale-region-scale.js';
+import { SCALE_PRESETS, METRIC_SCALE_PRESETS, IMPERIAL_SCALE_PRESETS } from '../../../annotations/scale-presets.js';
 import {
   recordBulkModify,
   recordMeasureScale,
@@ -16,11 +20,6 @@ import { ARCHITECTURAL_SCALES, ENGINEERING_SCALES, US_SCALES, findUsScale, parse
 import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
 import { withPageScale, withoutPageScale, pageScaleAt, sheetInches } from '../../../../markset/page-scale.js'; // Markset
 import { formatPageSizeIn } from '../../../../markset/us-units.js'; // Markset
-
-const SCALE_PRESETS = [
-  '1:1', '1:2', '1:5', '1:10', '1:20', '1:25', '1:50',
-  '1:100', '1:200', '1:250', '1:500', '1:1000'
-];
 
 // Markset: US scales as "1:N" presets; picking one switches the unit to ft.
 const US_SCALE_PRESETS = US_SCALES.map(s => `1:${s.ratio}`);
@@ -65,7 +64,7 @@ async function detectScaleFromTitleBlock() {
       if (us) { candidates.push({ denominator: us.ratio, unit: 'ft', text: item.str, x: vx, y: vy }); continue; }
       const match = item.str.match(scalePattern);
       if (match) {
-        const denominator = parseFloat(match[1].replace(',', '.'));
+        const denominator = leesGetal(match[1]);
         if (denominator >= 1 && denominator <= 10000) {
           candidates.push({ denominator, text: item.str, x: vx, y: vy });
         }
@@ -86,7 +85,7 @@ async function detectScaleFromTitleBlock() {
 
       const match = item.str.match(scalePattern);
       if (match) {
-        const denominator = parseFloat(match[1].replace(',', '.'));
+        const denominator = leesGetal(match[1]);
         if (denominator >= 1 && denominator <= 10000) {
           candidates.push({ denominator, text: item.str, x: 0, y: 0 });
         }
@@ -121,6 +120,9 @@ export default function CalibrationDialog(props) {
   const [pageSizeText, setPageSizeText] = createSignal('');
   const [detecting, setDetecting] = createSignal(false);
   const [detectResult, setDetectResult] = createSignal(null); // null | 'found' | 'notfound'
+  // /UserUnit van de pagina: 1:N wordt daarmee pagina-eenheden (#884).
+  const [userUnit, setUserUnit] = createSignal(
+    userUnitVanPagina(getActiveDocument(), getActiveDocument()?.currentPage));
 
   onMount(async () => {
     // Pre-fill pixels from reference line if provided
@@ -155,6 +157,8 @@ export default function CalibrationDialog(props) {
       const calDoc = getActiveDocument();
       if (calDoc?.pdfDoc) {
         const page = await calDoc.pdfDoc.getPage(calDoc.currentPage);
+        setUserUnit(geldigeUserUnit(page.userUnit));
+        // De viewport van PDF.js rekent /UserUnit mee: de echte papiermaat.
         const vp = page.getViewport({ scale: 1 });
         // PDF points to mm: 1 pt = 25.4/72 mm
         const wMm = (vp.width * 25.4 / 72).toFixed(0);
@@ -200,51 +204,12 @@ export default function CalibrationDialog(props) {
   }
 
   function handleApply() {
-    let scaleData = null;
-
-    if (method() === 'reference') {
-      const d = parseLengthAs(distance(), unit()); // Markset: also 12'-6 3/8"
-      const p = parseFloat(pixels());
-      if (d > 0 && p > 0) {
-        scaleData = {
-          pixelsPerUnit: p / d,
-          unit: unit(),
-          method: 'reference',
-          scaleRatio: null
-        };
-      }
-    } else {
-      // Scale ratio method
-      // PDF units are points (1/72 inch). Scale S means 1 drawing unit = S real units.
-      // For mm: 1 pt = 25.4/72 mm on paper. At scale 1:S, 1 pt on paper = S * 25.4/72 mm real.
-      // So pixelsPerUnit (how many PDF pts per 1 real unit) = 72 / (S * 25.4) for mm
-      const S = getScaleDenominator();
-      const u = ratioUnit();
-      let pixelsPerUnit;
-
-      if (u === 'mm') {
-        pixelsPerUnit = 72 / (S * 25.4);
-      } else if (u === 'cm') {
-        pixelsPerUnit = 72 / (S * 2.54);
-      } else if (u === 'm') {
-        pixelsPerUnit = 72 / (S * 0.0254);
-      } else if (u === 'in') {
-        pixelsPerUnit = 72 / S;
-      } else if (u === 'ft') {
-        // Markset: 1 ft real = 12/S in on paper = 864/S pt (upstream had 72/(S*12), 144x too small)
-        pixelsPerUnit = (72 * 12) / S;
-      } else {
-        pixelsPerUnit = 72 / (S * 25.4); // fallback mm
-      }
-
-      const ratioStr = `1:${S}`;
-      scaleData = {
-        pixelsPerUnit,
-        unit: u,
-        method: 'ratio',
-        scaleRatio: ratioStr
-      };
-    }
+    // De omrekening staat in annotations/kalibratie-schaal.js; de
+    // schaalverhouding gaat daar via pixelsPerUnitFor, net als het
+    // schaalgebied (#553).
+    const scaleData = method() === 'reference'
+      ? schaalUitKalibratie({ method: 'reference', distance: parseLengthAs(distance(), unit()), pixels: pixels(), unit: unit() })
+      : schaalUitKalibratie({ method: 'ratio', denominator: getScaleDenominator(), unit: ratioUnit(), userUnit: userUnit() });
 
     if (scaleData) {
       const doc = getActiveDocument();
@@ -337,7 +302,7 @@ export default function CalibrationDialog(props) {
         <div class="calibration-row">
           <label class="calibration-label">{t('calibration.measuredPixels')}</label>
           <input
-            type="number"
+            type="text" inputmode="decimal" data-getal
             class="calibration-input"
             min="1"
             step="0.01"
@@ -349,8 +314,7 @@ export default function CalibrationDialog(props) {
         <div class="calibration-row">
           <label class="calibration-label">{t('calibration.knownDistance')}</label>
           <input
-            type="text"
-            inputmode="decimal"
+            type="text" inputmode="decimal" data-getal
             class="calibration-input"
             placeholder={unit() === 'ft' || unit() === 'in' ? `e.g. 7'-3"` : ''}
             title={`Feet and inches work too: 7'-3", 12'-6 1/2"`}
@@ -387,24 +351,24 @@ export default function CalibrationDialog(props) {
             }}
           >
             {/* Markset: US scales, listed first with US units; metric after them */}
-            {!usFirst && SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}
+            {!usFirst && METRIC_SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}
             <optgroup label={t('calibration.architecturalScales')}>
               {ARCHITECTURAL_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
             </optgroup>
             <optgroup label={t('calibration.engineeringScales')}>
               {ENGINEERING_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
             </optgroup>
-            {usFirst && <optgroup label="Metric">{SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}</optgroup>}
+            {usFirst && <optgroup label="Metric">{METRIC_SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}</optgroup>}
             <option value="custom">{t('calibration.customRatio')}</option>
           </select>
           <Show when={scalePreset() === 'custom'}>
             <span class="calibration-label-inline">1:</span>
             <input
-              type="number"
+              type="text" inputmode="decimal" data-getal
               class="calibration-input calibration-input-narrow"
               min="1"
               value={customScale()}
-              onInput={(e) => setCustomScale(parseInt(e.target.value) || 1)}
+              onInput={(e) => { const n = parseFloat(e.target.value); setCustomScale(n > 0 ? n : 1); }}
             />
           </Show>
         </div>

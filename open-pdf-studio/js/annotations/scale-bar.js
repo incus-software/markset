@@ -1,9 +1,10 @@
+import { tekenDocument as getActiveDocument } from './rendering/document-context.js';
 import { createAnnotation } from './factory.js';
-import { getActiveDocument } from '../core/state.js';
 import { detectScaleInDocument, scaleFromScaleBar } from './document-scale.js';
 import { schaalOpPuntUitBronnen } from './schaal-op-punt.js';
 import { schaalBronnen } from './schaal-bronnen.js';
 import { defaultScaleBar } from '../../markset/us-units.js'; // Markset
+import { documentSchaalOpPagina } from './scale-region-scale.js';
 
 /**
  * Create a scale bar annotation at the given position.
@@ -11,7 +12,7 @@ import { defaultScaleBar } from '../../markset/us-units.js'; // Markset
  */
 export function createScaleBar(x, y) {
   const doc = getActiveDocument();
-  const ms = doc?.measureScale;
+  const ms = documentSchaalOpPagina(doc, doc?.currentPage || 1);
   const unit = ms?.unit || 'mm';
 
   // Default: 5000mm (5m) scale bar with 5 divisions (each 1000mm = 1m)

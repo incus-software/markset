@@ -1,4 +1,5 @@
 import { huidigeSymboolSchaal } from '../symbols/symbol-scale-store.js';
+import { symbolInsertStampFormat } from '../symbols/symbol-insert-format-store.js';
 import { state, getActiveDocument, imageCache } from '../core/state.js';
 import { createAnnotation } from './factory.js';
 import { recordAdd } from '../core/undo-manager.js';
@@ -6,10 +7,11 @@ import { showProperties } from '../ui/panels/properties-panel.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
 import { openDialog } from '../bridge.js';
-import { BUILTIN_STAMP_DEFAULT_WIDTH, BUILTIN_STAMP_DEFAULT_HEIGHT, OVERRIDE_STAMP_DEFAULT_HEIGHT, BUILT_IN_STAMPS } from './stamp-defaults.js';
-import { svgRealSizeMm, stampPlacementSize } from './svg-real-size.js';
+import { BUILTIN_STAMP_DEFAULT_WIDTH, BUILTIN_STAMP_DEFAULT_HEIGHT, BUILT_IN_STAMPS } from './stamp-defaults.js';
+import { overrideStampMaat } from './svg-real-size.js';
 import { stampPxPerMm } from './stamp-scale.js';
 import { rasterizeSvg } from './svg-raster.js';
+import { AFBEELDING_EXTENSIES } from './afbeelding-bron.js';
 import { paginaMaat, rechtopRotatie } from '../pdf/weergave-ruimte.js';
 import { sheetSymbolHeight } from '../../markset/library/sizing.js'; // Markset
 
@@ -123,21 +125,35 @@ export async function placeOverrideStamp(x, y) {
     // maat (alle meegeleverde symbolen) blijft het bestaande gedrag gelden:
     // de standaardhoogte, met de breedte uit de beeldverhouding.
     const page = getActiveDocument()?.currentPage || 1;
-    const size = stampPlacementSize({
-      mm: svgRealSizeMm(overrides.stampSvg),
+    // Zelfde berekening als de spookafbeelding van het stempelgereedschap
+    // (tools/text-tool.js), inclusief de gekozen symboolschaal (#357).
+    // Markset: Starter Library symbols are sized to the sheet (3/8" on 24x36).
+    const sheetH = sheetSymbolHeight(overrides.stampPaperHeightIn,
+      paginaMaat(page, getActiveDocument())?.breedte, paginaMaat(page, getActiveDocument())?.hoogte);
+    const size = overrideStampMaat(sheetH ? { ...overrides, stampHeight: sheetH } : overrides, {
       pxPerMm: stampPxPerMm(page, x, y),
       aspect,
-      defaultWidth: overrides.stampWidth,
-      // Markset: Starter Library symbols are sized to the sheet (3/8" on 24x36).
-      defaultHeight: sheetSymbolHeight(overrides.stampPaperHeightIn,
-        paginaMaat(page, getActiveDocument())?.breedte, paginaMaat(page, getActiveDocument())?.hoogte)
-        || overrides.stampHeight || OVERRIDE_STAMP_DEFAULT_HEIGHT,
       schaal: huidigeSymboolSchaal(),
     });
     stampWidth = size.width;
     stampHeight = size.height;
     stampX = x - stampWidth / 2;
     stampY = y - stampHeight / 2;
+  }
+
+  // Opmaak uit de invoegsessie (#587): kleur en lijndikte gaan de SVG-bron
+  // in (een symbool wordt als raster getekend), dekking en mengmodus op de
+  // annotatie. De lijndikte rekent met de werkelijke plaatsingsbreedte; de
+  // beeldverhouding verandert niet, dus de maat hierboven blijft geldig.
+  let stampSvg = overrides.stampSvg || null;
+  const opmaak = stampSvg ? symbolInsertStampFormat(overrides, stampWidth) : null;
+  if (opmaak && opmaak.svg && opmaak.svg !== stampSvg) {
+    const opgemaakt = await rasterizeSvg(opmaak.svg);
+    if (opgemaakt) {
+      img = opgemaakt.img;
+      dataUrl = opgemaakt.dataUrl;
+      stampSvg = opmaak.svg;
+    }
   }
 
   const imageId = 'stamp_' + Date.now();
@@ -155,7 +171,7 @@ export async function placeOverrideStamp(x, y) {
     height: stampHeight,
     stampName: overrides.stampName || 'Custom',
     stampText: '',
-    stampSvg: overrides.stampSvg || null,
+    stampSvg,
     // Original (unedited) source SVG for this symbol type. Kept so the
     // "Edit Type" editor can resolve/update the correct type override even
     // after the stamp's rendered geometry has been replaced.
@@ -167,6 +183,7 @@ export async function placeOverrideStamp(x, y) {
     originalHeight: img.naturalHeight,
     color: '#000000',
     opacity: 1,
+    ...(opmaak ? opmaak.props : {}),
     // Rechtop op het scherm in een gedraaide weergave (#200); een stempel die
     // de pagina vult, volgt de pagina.
     rotation: overrides.stampFillPage ? 0 : rechtopRotatie(),
@@ -219,21 +236,20 @@ export async function updateStampImage(ann, svgString) {
   else redrawAnnotations();
 }
 
-// Load custom stamp from image file
+// Load custom stamp from image file.
+// Same loader as an inserted image (#749): imageData is a PNG/JPEG data URL
+// that the saver embeds in the appearance stream, and the bitmap comes from
+// that data URL. It used to be an untyped blob: URL — an SVG did not load at
+// all (no stamp on the page), and a GIF/BMP/SVG could not be embedded, so the
+// stamp was gone after save and reopen.
 async function loadCustomStamp(x, y) {
   try {
     const { openFileDialog } = await import('../core/platform.js');
-    const filePath = await openFileDialog(['png', 'jpg', 'jpeg', 'bmp', 'gif', 'svg']);
-    if (!filePath) return;
+    const filePath = await openFileDialog(AFBEELDING_EXTENSIES);
+    if (!filePath || typeof filePath !== 'string') return;
 
-    const { readBinaryFile } = await import('../core/platform.js');
-    const data = await readBinaryFile(filePath);
-    const blob = new Blob([data]);
-    const url = URL.createObjectURL(blob);
-
-    const img = new Image();
-    img.src = url;
-    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+    const { laadAfbeeldingUitPad } = await import('./image-drop.js');
+    const { img, dataUrl } = await laadAfbeeldingUitPad(filePath);
 
     const { generateImageId } = await import('../utils/helpers.js');
     const imageId = generateImageId();
@@ -258,14 +274,16 @@ async function loadCustomStamp(x, y) {
       stampName: 'Custom',
       stampText: '',
       imageId: imageId,
-      imageData: url,
+      imageData: dataUrl,
       originalWidth: img.naturalWidth,
       originalHeight: img.naturalHeight,
       color: '#000000',
       opacity: 1,
       // Rechtop op het scherm, ook in een gedraaide weergave (#200).
-      rotation: rechtopRotatie()
+      rotation: rechtopRotatie(),
+      lockAspectRatio: true
     });
+    ann._cachedImg = img;
 
     const _doc3 = getActiveDocument();
     if (_doc3) _doc3.annotations.push(ann);
@@ -285,5 +303,6 @@ async function loadCustomStamp(x, y) {
     updateStatusMessage('Custom stamp placed');
   } catch (err) {
     console.error('Failed to load custom stamp:', err);
+    updateStatusMessage('Could not load the image for the stamp');
   }
 }

@@ -28,7 +28,9 @@
     "formCheckbox": "Formulier selectievakje",
     "formRadio": "Formulier keuzerondje",
     "screenshot": "Schermafbeelding",
-    "cloudPolyline": "Wolk-polylijn"
+    "cloudPolyline": "Wolk-polylijn",
+    "pageLabelPick": "Tekst kiezen voor paginalabel",
+    "proofread": "Proeflezen"
   },
   "toolLabel": "Gereedschap:",
   "annotationsLabel": "Annotaties:",
@@ -52,9 +54,9 @@
   "formFieldsMessage": "Dit document bevat interactieve formuliervelden. U kunt het formulier invullen en uw gegevens opslaan.",
   "enableEditing": "Bewerken inschakelen",
   "pdfAConformance": "Dit document voldoet aan de PDF/A-norm.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
+  "renameError": "Bestand hernoemen mislukt: {{error}}",
+  "renameInvalidChars": "Bestandsnaam mag niet bevatten:  / : * ? \" < > |",
+  "renameFileExists": "Er bestaat al een bestand met deze naam.",
   "page": "Pagina",
   "engineTitle": "Weergave-engine van de huidige weergave",
   "engine": {
@@ -90,6 +92,7 @@
   },
   "boxWidthAbbr": "B",
   "boxHeightAbbr": "H",
+  "boxSizeHint": "Typ een waarde + Enter — of klik ernaast om toe te passen",
   "ocr": {
     "progress": {
       "starting": "Tekst herkennen...",
@@ -105,5 +108,54 @@
   "searchResultsTitle": "Resultaten ({{count}})",
   "searchResultPage": "Pagina {{page}}",
   "searchHitsOne": "1 treffer",
-  "searchHitsMany": "{{count}} treffers"
+  "searchHitsMany": "{{count}} treffers",
+  "passwordProtectedBar": "Beveiligd met een wachtwoord: alleen-lezen geopend.",
+  "documentSearch": {
+    "title": "Documenten doorzoeken",
+    "query": "Zoektekst",
+    "scope": "Zoeken in",
+    "active": "Huidig document",
+    "open": "Open documenten",
+    "folder": "Map",
+    "choose": "Map kiezen",
+    "annotations": "Opmerkingen meenemen",
+    "search": "Zoeken",
+    "cancel": "Annuleren",
+    "stale": "Het document is gewijzigd. Zoek opnieuw.",
+    "folderHint": "Doorzoekt PDF-bestanden direct in deze map, zonder tabbladen te openen of bestanden te wijzigen.",
+    "limited": "Resultaatlimiet bereikt. Verfijn de zoekopdracht.",
+    "cancelled": "Zoeken geannuleerd; resultaten zijn onvolledig.",
+    "ocrHint": "Geen doorzoekbare tekst op pagina’s {{pages}}. Open het document en voer zo nodig expliciet OCR uit.",
+    "status": {
+      "searching": "Bezig met zoeken",
+      "complete": "Voltooid",
+      "needs_ocr": "Bevat pagina’s zonder doorzoekbare tekst",
+      "encrypted": "Wachtwoord nodig",
+      "unreadable": "Niet doorzoekbaar",
+      "changed": "Document gewijzigd; zoek opnieuw",
+      "cancelled": "Geannuleerd",
+      "limited": "Resultaatlimiet bereikt"
+    },
+    "failed": "Zoeken mislukt. Controleer de zoekterm en map en probeer opnieuw.",
+    "prepareOcr": "Openen voor OCR…"
+  },
+  "symbolSearch": "Symbolen zoeken",
+  "findMoreOptions": "Meer zoekopties",
+  "watchActive": "Bewaakt {{folder}}",
+  "watchFailed": "Bewaakfout: {{folder}}",
+  "watchTitle": "Documentworkflow bewaakt {{input}} en schrijft naar {{output}}. Klik om het bewaken te stoppen.",
+  "renderDiagnostics": {
+    "title": "Ga naar de volgende rendermelding. Geen melding garandeert geen volledige weergave.",
+    "count": "Rendermeldingen: {{count}}",
+    "detail": "Pagina {{page}}: {{code}}. Probeer een lagere zoom of heropen het document; de volledigheid is niet gecertificeerd."
+  },
+  "mcpSignal": {
+    "label": "AI-koppeling (MCP)",
+    "connected": "AI-assistent verbonden",
+    "idle": "MCP-server aan, geen activiteit",
+    "off": "MCP-server uit",
+    "port": "Poort: {{port}}",
+    "lastTool": "Laatste tool: {{tool}} om {{time}}",
+    "noTool": "Nog geen tool-aanroepen"
+  }
 }

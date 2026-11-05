@@ -3,6 +3,7 @@ import Dialog from '../Dialog.jsx';
 import PrefSelect from '../preferences/PrefSelect.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { getActiveDocument } from '../../../core/state.js';
+import { pixelsPerUnitFor, userUnitVanPagina } from '../../../annotations/scale-region-scale.js';
 import {
   recordAdd,
   recordBulkModify,
@@ -89,7 +90,8 @@ export default function ViewportScaleDialog(props) {
     } else if (mode() === 'preset') {
       const ratio = parseInt(presetRatio());
       if (!ratio || ratio <= 0) return;
-      pixelsPerUnit = 72 / (25.4 * ratio);
+      // In pagina-eenheden, /UserUnit meegerekend (#884).
+      pixelsPerUnit = pixelsPerUnitFor(`1:${ratio}`, 'mm', userUnitVanPagina(doc, ann.page));
       unit = 'mm';
       scaleRatio = `1:${ratio}`;
     } else {
@@ -183,14 +185,14 @@ export default function ViewportScaleDialog(props) {
         <Show when={mode() === 'custom'}>
           <div class="ai-login-field">
             <label>Reference pixels</label>
-            <input type="number" class="ribbon-input" value={refPixels()} onInput={e => setRefPixels(e.target.value)}
+            <input type="text" inputmode="decimal" data-getal class="ribbon-input" value={refPixels()} onInput={e => setRefPixels(e.target.value)}
               placeholder="Pixel distance on screen"
               style="width:100%;box-sizing:border-box" />
           </div>
           <div class="ai-login-field">
             <label>Real-world distance</label>
             <div style="display:flex;gap:4px;align-items:center">
-              <input type="number" class="ribbon-input" value={customValue()} onInput={e => setCustomValue(e.target.value)}
+              <input type="text" inputmode="decimal" data-getal class="ribbon-input" value={customValue()} onInput={e => setCustomValue(e.target.value)}
                 placeholder="Distance"
                 style="flex:1" />
               <PrefSelect

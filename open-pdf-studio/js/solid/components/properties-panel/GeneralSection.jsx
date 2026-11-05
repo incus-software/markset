@@ -2,6 +2,7 @@ import { Show, For } from 'solid-js';
 import { annotProps, sectionVis, updateAnnotProp, cycleSelectNext } from '../../stores/propertiesStore.js';
 import { ifcCategoryLabel, IFC_LABELS } from '../../data/ifcCategoryMap.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
+import LayerField from './LayerField.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function GeneralSection() {
@@ -21,7 +22,7 @@ export default function GeneralSection() {
           <div class="property-group">
             <label>ID</label>
             <input type="text" value={annotProps.id} readonly
-              style="font-family: monospace; font-size: 11px;"
+              style="font-family: var(--ui-font-mono); font-size: 11px;"
               onClick={(e) => e.target.select()} />
           </div>
         </Show>
@@ -81,6 +82,10 @@ export default function GeneralSection() {
             <option value="yes">{tCommon('yes')}</option>
           </select>
         </div>
+
+        <Show when={annotProps.id !== '__tool-defaults__'}>
+          <LayerField disabled={isLocked()} />
+        </Show>
 
         <div class="property-group">
           <label>{t('general.printable')}</label>

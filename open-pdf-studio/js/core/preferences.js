@@ -5,12 +5,28 @@ import { updateStatusMessage } from '../ui/chrome/status-bar.js';
 import { changeLanguage } from '../i18n/useTranslation.js';
 import { isTauri, getUsername, savePreferencesFile, loadPreferencesFile } from './platform.js';
 import { preferencesMirrorJson } from './preferences-mirror.js';
+import { leesOpslag, schrijfOpslag, VOORKEUREN_NAAM } from './opslag.js';
 import { voegSamenMetStandaarden } from './preferences-merge.js';
 import { usMeasureFallback } from '../../markset/us-units.js'; // Markset
 import { marksetPrefMigrations } from '../../markset/pref-migrations.js'; // Markset
 import { saveTextStyleDefault, textStyleDefault } from '../../markset/text-defaults.js'; // Markset
-import { randkleurVoorVoorkeur, randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
+import { styleTypeOf } from '../../markset/plain-text.js'; // Markset
+import { randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
+import { writeStylePrefs } from './style-prefs.js';
+import { prefsForStorage, keepPrefsAsOwn } from '../tools/tool-set-session.js';
 import { zetRanddikte } from '../annotations/rendering/textbox-layout.js';
+import { getStyleMapping } from './stijl-mapping.js';
+import { setZoomDpi, setZoomDpiSource, normalizeZoomDpi } from './zoom-display.js';
+import { kalibratieVoor } from '../pdf/schermkalibratie.js';
+import { pasSneltoetsVoorkeurToe } from './keybindings/app-shortcuts.js';
+import { zetPaginaAchtergrond } from '../pdf/pagina-achtergrond.js';
+
+// What 100% zoom means (#523), read live so a new calibration, a changed
+// preference or a move to a screen with another scale applies at once: on a
+// screen with a calibration (#520) its CSS pixels per inch (100% = the real
+// paper size), otherwise the 'Screen resolution for 100% zoom' preference.
+setZoomDpiSource(() => kalibratieVoor(state.preferences?.screenCalibration, globalThis.devicePixelRatio || 1)
+  ?? normalizeZoomDpi(state.preferences?.zoomDpi));
 
 // Load preferences from Rust file storage, with localStorage migration fallback
 export async function loadPreferences() {
@@ -20,7 +36,7 @@ export async function loadPreferences() {
 
     if (!loaded) {
       // Fallback: migrate from localStorage (first launch after update, or non-Tauri)
-      const saved = localStorage.getItem('pdfEditorPreferences');
+      const saved = leesOpslag(VOORKEUREN_NAAM);
       if (saved) {
         loaded = JSON.parse(saved);
       }
@@ -68,7 +84,7 @@ export async function loadPreferences() {
       );
     }
     try {
-      localStorage.setItem('pdfEditorPreferences', preferencesMirrorJson(state.preferences, isTauri()));
+      schrijfOpslag(VOORKEUREN_NAAM, preferencesMirrorJson(state.preferences, isTauri()));
     } catch (e) {
       console.warn('Voorkeuren-spiegel niet bijgewerkt (localStorage):', e);
     }
@@ -100,14 +116,17 @@ export async function loadPreferences() {
 // (het enige dat het pre-boot-themascript leest) zodat het quotum niet
 // eens in beeld komt.
 export function savePreferences() {
+  // While a tool set item is active its style is a temporary overlay on
+  // the preferences (#311); what is saved is the user's own value.
+  const opTeSlaan = prefsForStorage(state.preferences);
   if (isTauri()) {
-    savePreferencesFile(state.preferences).catch(e =>
+    savePreferencesFile(opTeSlaan).catch(e =>
       console.error('Failed to save preferences file:', e)
     );
   }
   applyPreferences();
   try {
-    localStorage.setItem('pdfEditorPreferences', preferencesMirrorJson(state.preferences, isTauri()));
+    schrijfOpslag(VOORKEUREN_NAAM, preferencesMirrorJson(opTeSlaan, isTauri()));
   } catch (e) {
     // Alleen de pre-boot-themaflits staat op het spel — niet de instellingen.
     console.warn('Voorkeuren-spiegel niet bijgewerkt (localStorage):', e);
@@ -172,6 +191,15 @@ export function applyPreferences() {
     applyTheme(state.preferences.theme);
   }
 
+  // Screen resolution behind the 100% zoom label
+  setZoomDpi(state.preferences.zoomDpi);
+
+  // Keyboard shortcuts (#714): take effect at once, no restart.
+  pasSneltoetsVoorkeurToe(state.preferences.keyboardShortcuts);
+
+  // Background color around the pages (#859), at once.
+  zetPaginaAchtergrond(state.preferences.pageBackgroundColor);
+
   // Update default author from preferences
   state.defaultAuthor = state.preferences.authorName || 'User';
 
@@ -189,6 +217,11 @@ export function applyPreferences() {
   import('../tools/screenshot-annotate.js')
     .then((m) => m.applyPrintScreenHotkeyPref())
     .catch(() => {});
+
+  // Unit for paper sizes in the properties panel (#598).
+  import('../solid/stores/papierEenheidStore.js')
+    .then((m) => m.hydratePapierEenheid())
+    .catch(() => {});
 }
 
 // Show preferences dialog (bridges to Solid.js dialog)
@@ -196,100 +229,19 @@ export function showPreferencesDialog(tabName = 'general') {
   openDialog('preferences', { tab: tabName });
 }
 
-// Map annotation type to preference key prefix and property mappings
-export function getStyleMapping(type) {
-  const hasHatch = ['box', 'circle', 'polygon', 'cloud'].includes(type);
-  switch (type) {
-    case 'draw':
-      return { prefix: 'draw', stroke: 'StrokeColor', width: 'LineWidth', opacity: 'Opacity' };
-    case 'highlight':
-      return { prefix: 'highlight', color: 'Color', opacity: 'Opacity' };
-    case 'line':
-      return { prefix: 'line', stroke: 'StrokeColor', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity' };
-    case 'arrow':
-      return { prefix: 'arrow', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', startHead: 'StartHead', endHead: 'EndHead', headSize: 'HeadSize' };
-    case 'box':
-      return { prefix: 'rect', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', hatch: hasHatch };
-    case 'circle':
-      return { prefix: 'circle', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', hatch: hasHatch };
-    case 'textbox':
-      return { prefix: 'textbox', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fontSize: 'FontSize' };
-    case 'callout':
-      return { prefix: 'callout', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fontSize: 'FontSize' };
-    case 'polygon':
-      return { prefix: 'polygon', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', hatch: hasHatch };
-    case 'cloud':
-      return { prefix: 'cloud', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', hatch: hasHatch };
-    case 'comment':
-      return { prefix: 'comment', color: 'Color', icon: 'Icon' };
-    case 'polyline':
-      return { prefix: 'polyline', stroke: 'StrokeColor', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity' };
-    case 'filledArea':
-      // Keys match what filled-area-tool.js reads at draw time
-      // (filledAreaStrokeColor, filledAreaHatchPattern, …).
-      return { prefix: 'filledArea', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', hatch: true };
-    case 'redaction':
-      return { prefix: 'redaction', overlayColor: 'OverlayColor' };
-    case 'measureDistance':
-      return { prefix: 'measureDist', stroke: 'StrokeColor', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', startHead: 'StartHead', endHead: 'EndHead', headSize: 'HeadSize', fontSize: 'FontSize', dimension: true };
-    case 'measureArea':
-      return { prefix: 'measureArea', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', dimension: true };
-    case 'measurePerimeter':
-      return { prefix: 'measurePerim', stroke: 'StrokeColor', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', startHead: 'StartHead', endHead: 'EndHead', headSize: 'HeadSize', dimension: true };
-    default:
-      return null;
-  }
-}
+// De stijltabel per soort staat in stijl-mapping.js (zonder app-imports, #668).
+export { getStyleMapping };
 
 // Set the current annotation's style as default for its type
 export function setAsDefaultStyle(annotation) {
   if (!annotation) return;
-  const prefs = state.preferences;
-  const m = getStyleMapping(annotation.type);
-  if (!m) return;
-
-  const p = m.prefix;
-
-  // "Geen rand" blijft alleen staan voor soorten waarvan de omtrek weg kan;
-  // voor de rest zou de voorkeur op 'none' een onzichtbare lijn geven (#433).
-  if (m.stroke) prefs[p + m.stroke] = randkleurVoorVoorkeur(annotation) || prefs[p + m.stroke];
-  if (m.color) prefs[p + m.color] = annotation.color || annotation.fillColor || prefs[p + m.color];
-  if (m.fill) {
-    prefs[p + m.fill] = annotation.fillColor || prefs[p + m.fill];
-    if (m.fillNone) prefs[p + m.fillNone] = !annotation.fillColor || annotation.fillColor === 'transparent' || annotation.fillColor === 'none' || annotation.fillColor === null;
-  }
-  if (m.width) prefs[p + m.width] = annotation.lineWidth ?? prefs[p + m.width];
-  if (m.borderStyle && annotation.borderStyle) prefs[p + m.borderStyle] = annotation.borderStyle;
-  if (m.opacity && annotation.opacity !== undefined) prefs[p + m.opacity] = Math.round(annotation.opacity * 100);
-  if (m.startHead && annotation.startHead) prefs[p + m.startHead] = annotation.startHead;
-  if (m.endHead && annotation.endHead) prefs[p + m.endHead] = annotation.endHead;
-  if (m.headSize && annotation.headSize) prefs[p + m.headSize] = annotation.headSize;
-  if (m.fontSize && annotation.fontSize) prefs[p + m.fontSize] = annotation.fontSize;
-  if (m.icon && annotation.icon) prefs[p + m.icon] = annotation.icon;
-  if (m.overlayColor) prefs[p + m.overlayColor] = annotation.overlayColor || prefs[p + m.overlayColor];
-
-  // Hatch properties
-  if (m.hatch) {
-    if (annotation.hatchPattern) prefs[p + 'HatchPattern'] = annotation.hatchPattern;
-    if (annotation.hatchColor) prefs[p + 'HatchColor'] = annotation.hatchColor;
-    if (annotation.hatchScale != null) prefs[p + 'HatchScale'] = annotation.hatchScale;
-  }
-
-  // Generic style-type preset id (see annotations/style-types.js) — '' = custom.
-  prefs[p + 'StyleType'] = annotation.styleType || '';
-
-  // Dimension measurement properties (use 'Dim' prefix to avoid clash with global measureScale object)
-  if (m.dimension) {
-    if (annotation.measureScale != null) prefs[p + 'DimScale'] = annotation.measureScale;
-    if (annotation.measureUnit) prefs[p + 'DimUnit'] = annotation.measureUnit;
-    if (annotation.measurePrecision != null) prefs[p + 'DimPrecision'] = annotation.measurePrecision;
-    // Dimension type preset (1.8/2.5/3.5/5.0 mm) — '' means custom.
-    prefs[p + 'DimType'] = annotation.dimType || '';
-    prefs[p + 'DimExtension'] = !!annotation.dimExtension;
-  }
-
-  saveTextStyleDefault(prefs, annotation); // Markset: text color, font, bold, alignment of text boxes and callouts
-
+  const written = new Set();
+  if (!writeStylePrefs(annotation, state.preferences, written)) return;
+  // With a tool set item active (#311) these keys may hold the item's
+  // overlay value; the user just chose them as their own, so they are saved
+  // and stay when the item ends, also where they equal the item's value.
+  keepPrefsAsOwn(state.preferences, written);
+  saveTextStyleDefault(state.preferences, annotation); // Markset: text color, font, bold, alignment of text boxes and callouts
   savePreferences();
   updateStatusMessage('Style set as default');
 }
@@ -298,7 +250,7 @@ export function setAsDefaultStyle(annotation) {
 export function applyDefaultStyle(annotation) {
   if (!annotation) return;
   const prefs = state.preferences;
-  const m = getStyleMapping(annotation.type);
+  const m = getStyleMapping(styleTypeOf(annotation)); // Markset: plain text has its own default style
   if (!m) return;
 
   const p = m.prefix;
@@ -319,13 +271,15 @@ export function applyDefaultStyle(annotation) {
   if (m.width && prefs[p + m.width] != null) zetRanddikte(annotation, prefs[p + m.width]);
   if (m.borderStyle && prefs[p + m.borderStyle]) annotation.borderStyle = prefs[p + m.borderStyle];
   if (m.opacity && prefs[p + m.opacity] !== undefined) annotation.opacity = prefs[p + m.opacity] / 100;
+  if (m.fillOpacity && typeof prefs[p + m.fillOpacity] === 'number') annotation.fillOpacity = prefs[p + m.fillOpacity] / 100;
   if (m.startHead && prefs[p + m.startHead]) annotation.startHead = prefs[p + m.startHead];
   if (m.endHead && prefs[p + m.endHead]) annotation.endHead = prefs[p + m.endHead];
   if (m.headSize && prefs[p + m.headSize]) annotation.headSize = prefs[p + m.headSize];
   if (m.fontSize && prefs[p + m.fontSize]) annotation.fontSize = prefs[p + m.fontSize];
+  if (m.fontFamily && prefs[p + m.fontFamily]) annotation.fontFamily = prefs[p + m.fontFamily];
   if (m.icon && prefs[p + m.icon]) annotation.icon = prefs[p + m.icon];
   if (m.overlayColor && prefs[p + m.overlayColor]) annotation.overlayColor = prefs[p + m.overlayColor];
-  Object.assign(annotation, textStyleDefault(prefs, annotation.type)); // Markset: saved text style
+  Object.assign(annotation, textStyleDefault(prefs, styleTypeOf(annotation))); // Markset: saved text style
 
   // Hatch properties
   if (m.hatch) {
@@ -339,11 +293,23 @@ export function applyDefaultStyle(annotation) {
 
   // Dimension measurement properties (use 'Dim' prefix to avoid clash with global measureScale object)
   if (m.dimension) {
-    if (prefs[p + 'DimScale'] != null) annotation.measureScale = prefs[p + 'DimScale'];
-    if (prefs[p + 'DimUnit']) annotation.measureUnit = prefs[p + 'DimUnit'];
+    if (!m.noDimScale) {
+      if (prefs[p + 'DimScale'] != null) annotation.measureScale = prefs[p + 'DimScale'];
+      if (prefs[p + 'DimUnit']) annotation.measureUnit = prefs[p + 'DimUnit'];
+    }
     if (prefs[p + 'DimPrecision'] != null) annotation.measurePrecision = prefs[p + 'DimPrecision'];
     if (prefs[p + 'DimType']) annotation.dimType = prefs[p + 'DimType'];
     if (prefs[p + 'DimExtension'] != null) annotation.dimExtension = !!prefs[p + 'DimExtension'];
+  }
+
+  if (m.edgeLengths) annotation.measureShowEdgeLengths = prefs[p + m.edgeLengths] === true;
+
+  // Vrije hand (#385). De druk zelf hoort bij de streek; hier alleen of hij
+  // meetelt, de minimale breedte en de gladheid.
+  if (m.ink) {
+    annotation.inkPressure = prefs[p + 'Pressure'] === false ? false : undefined;
+    if (prefs[p + 'PressureMinWidth'] != null) annotation.inkMinWidth = prefs[p + 'PressureMinWidth'];
+    if (prefs[p + 'Smoothing'] != null) annotation.inkSmoothing = prefs[p + 'Smoothing'];
   }
 
   annotation.modifiedAt = new Date().toISOString();

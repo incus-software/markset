@@ -6,6 +6,11 @@
 //   OPS_DimOvershootEnds   /start | /end | /none: waar de uitloop komt
 //   OPS_DimChain    tekst  id van de maatketting; OPS_DimRole /chain | /total
 //   OPS_NoLabel     true   meetvlak zonder eigen label (measureShowLabel false)
+//   OPS_EdgeLengths true   meetvlak toont de lengte van elke zijde
+//                          (measureShowEdgeLengths, #536); de maten zelf
+//                          staan in de appearance
+//   OPS_Depth       getal  diepte van een maat, omtrek of meetvlak (#311), in
+//                          de eenheid van de meting (measureDepth)
 //   OPS_RuimteZaad  [x y]  zaadpunt van een ruimte, in PDF-coördinaten
 //   OPS_RuimteNaam  tekst  de naam van die ruimte
 //   OPS_RuimteNummer tekst het nummer van die ruimte
@@ -53,8 +58,14 @@ export function schrijfPlattegrondMeta(annotDict, ann, context, X, Y) {
     if (typeof ann.opsKettingId === 'string' && ann.opsKettingId) zet('OPS_DimChain', pdfTextString(ann.opsKettingId));
     if (ann.opsMaatRol === 'chain' || ann.opsMaatRol === 'total') zet('OPS_DimRole', PDFName.of(ann.opsMaatRol));
   }
+  // Diepte (#311): maat, omtrek en meetvlak.
+  if (['measureDistance', 'measurePerimeter', 'measureArea'].includes(ann.type)) {
+    const d = Number(ann.measureDepth);
+    if (Number.isFinite(d) && d > 0) zet('OPS_Depth', context.obj(d));
+  }
   if (ann.type === 'measureArea') {
     if (ann.measureShowLabel === false) zet('OPS_NoLabel', context.obj(true));
+    if (ann.measureShowEdgeLengths === true) zet('OPS_EdgeLengths', context.obj(true));
     const z = ann.opsRuimteZaad;
     if (z && Number.isFinite(z.x) && Number.isFinite(z.y)) {
       zet('OPS_RuimteZaad', context.obj([X(z.x), Y(z.y)]));

@@ -4,6 +4,7 @@ import { closeDialog } from '../../stores/dialogStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { setScaleFromLine } from '../../../annotations/measurement.js';
 import { parseLength } from '../../../../markset/us-units.js'; // Markset
+import { leesGetalMetEenheid } from '../../../core/getal-invoer.js';
 
 const UNIT_ALIASES = {
   mm: 'mm', millimeter: 'mm', millimeters: 'mm', millimetre: 'mm', millimetres: 'mm',
@@ -21,13 +22,14 @@ function parseValueAndUnit(input, fallbackUnit) {
   const trimmed = (input || '').trim();
   if (!trimmed) return null;
 
-  const match = trimmed.match(/^([0-9]+(?:\.[0-9]*)?)[\s]*([a-zA-Z"']+)?$/);
-  if (!match) return parseLength(trimmed, fallbackUnit); // Markset: 12'-6 3/8", 6 3/8", 1,5 m
+  // Komma en punt zijn allebei een decimaalteken: "2,5 m" = "2.5 m".
+  const match = leesGetalMetEenheid(trimmed);
+  if (!match) return parseLength(trimmed, fallbackUnit); // Markset: 12'-6 3/8", 6 3/8"
 
-  const value = parseFloat(match[1]);
+  const value = match.waarde;
   if (!value || value <= 0 || !isFinite(value)) return null;
 
-  const rawUnit = (match[2] || '').toLowerCase();
+  const rawUnit = match.eenheid.toLowerCase();
   const unit = rawUnit ? (UNIT_ALIASES[rawUnit] || rawUnit) : fallbackUnit;
 
   return { value, unit };

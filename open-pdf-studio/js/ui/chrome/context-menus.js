@@ -1,7 +1,10 @@
+import { areaVertexHit, AREA_VERTEX_HIT_PX } from '../../annotations/area-vertices.js';
 import { state, getActiveDocument, isSelected } from '../../core/state.js';
 import { setTool } from '../../tools/manager.js';
-import { resolvePointerCoords } from '../../tools/tool-context.js';
+import { resolvePointerCoords, getEffectiveScale } from '../../tools/tool-context.js';
 import { recordAdd } from '../../core/undo-manager.js';
+import { isBewerkbareVeelhoek, veelhoekDeelBij } from '../../annotations/veelhoek-punten.js';
+import { HANDLE_SIZE } from '../../core/constants.js';
 import {
   showAnnotationMenu, showMultiAnnotationMenu, showPageMenu,
   showTextSelectionMenu, hideMenu,
@@ -35,6 +38,8 @@ export function hideContextMenu() {
 
 export function initContextMenus() {
   document.addEventListener('contextmenu', (e) => {
+    // Right-dragging pans a 3D model (#599): no tool switch there.
+    if (e.target instanceof Element && e.target.closest('.threed-inline-clip, .threed-view')) return;
     // Shift+right-click = 2D-cursor gesture (tool-dispatcher) — never a menu
     // and never a tool switch.
     if (e.shiftKey) {
@@ -46,7 +51,10 @@ export function initContextMenus() {
     const isMultiClickActive = state.isDrawingPolyline || state.isDrawingCloudPolyline ||
       state.isDrawingDimension || (state.measurePoints && state.measurePoints.length >= 1) ||
       state.addHoleTargetId || state.dimChainTargetId;
-    if (!nonDrawTools.includes(state.currentTool) && !state.isDrawing && !isMultiClickActive) {
+    // Net afgerond met een rechtermuisklik (polylijn, veelhoek): die klik
+    // hoort bij het tekenen en wisselt niet van gereedschap.
+    if (!nonDrawTools.includes(state.currentTool) && !state.isDrawing && !isMultiClickActive
+        && !state._suppressNextContextmenu) {
       e.preventDefault();
       e.stopPropagation();
       setTool('hand');
@@ -105,6 +113,12 @@ export function initContextMenus() {
       const y = coords.y;
 
       import('../../annotations/geometry.js').then(async ({ findAnnotationAt }) => {
+        if (getActiveDocument() !== doc) return;
+        const selected = doc?.selectedAnnotations || [];
+        const area = selected.length === 1 ? selected[0] : null;
+        const areaHit = area?.page === doc?.currentPage
+          ? areaVertexHit(area, x, y, AREA_VERTEX_HIT_PX / (getEffectiveScale() || 1)) : null;
+        if (areaHit) { showContextMenu(e, area, areaHit); return; }
         const annotation = findAnnotationAt(x, y);
         // In edit-contour mode, detect right-click on a vertex/edge handle so the
         // context menu can offer vertex-specific actions.
@@ -129,6 +143,21 @@ export function initContextMenus() {
                 showContextMenu(e, editAnn, vertex);
                 return;
               }
+            }
+          }
+        }
+        // Geselecteerde veelhoek (#622): rechtsklik op een hoekpunt of zijde
+        // geeft de hoekpunt-acties (weghalen / hier toevoegen).
+        {
+          const _sel = getActiveDocument()?.selectedAnnotations || [];
+          const pg = _sel.length === 1 ? _sel[0] : null;
+          if (pg && isBewerkbareVeelhoek(pg)) {
+            const deel = veelhoekDeelBij(pg, x, y, (HANDLE_SIZE / 2 + 4) / scale);
+            if (deel) {
+              showContextMenu(e, pg, deel.kind === 'vertex'
+                ? { kind: 'veelhoekHoek', nodeIndex: deel.nodeIndex, annotationId: pg.id }
+                : { kind: 'veelhoekZijde', edgeIndex: deel.edgeIndex, punt: deel.punt, annotationId: pg.id });
+              return;
             }
           }
         }

@@ -126,6 +126,9 @@ export {
   setVisible as setLoadingVisible,
   message as loadingMessage,
   setMessage as setLoadingMessage,
+  setProgress as setLoadingProgress,
+  setCancelHandler as setLoadingCancelHandler,
+  setCancelDisabled as setLoadingCancelDisabled,
 } from './solid/stores/loadingStore.js';
 
 // ============= APP MENU =============
@@ -257,6 +260,7 @@ export {
   setCountText as setBookmarkCountText,
   setEmptyMessage as setBookmarkEmptyMessage,
   setSelectedId as setBookmarkSelectedId,
+  setSelectedIds as setBookmarkSelectedIds,
   setToolbarDisabled as setBookmarkToolbarDisabled,
 } from './solid/stores/panels/bookmarksStore.js';
 
@@ -270,6 +274,8 @@ export {
   setItems as setLayerItems,
   setCountText as setLayerCountText,
   setEmptyMessage as setLayerEmptyMessage,
+  setCanSetDefault as setLayerCanSetDefault,
+  setDefaultPending as setLayerDefaultPending,
 } from './solid/stores/panels/layersStore.js';
 
 export {
@@ -288,5 +294,20 @@ export {
   setTree as setTagTree,
   setCountText as setTagCountText,
   setEmptyMessage as setTagEmptyMessage,
+  setSelected as setTagSelected,
+  setHasTree as setTagHasTree,
 } from './solid/stores/panels/tagsStore.js';
+
+export {
+  setVisible as setReadAloudVisible,
+  setStatus as setReadAloudStatus,
+  setVoices as setReadAloudVoices,
+  setVoice as setReadAloudVoice,
+  setRate as setReadAloudRate,
+  setEngineKind as setReadAloudEngineKind,
+  setMessageKey as setReadAloudMessageKey,
+  setReadingPage as setReadAloudPage,
+  setAllowOnline as setReadAloudAllowOnline,
+  setOnlineVoices as setReadAloudOnlineVoices,
+} from './solid/stores/readAloudStore.js';
 

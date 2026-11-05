@@ -5,15 +5,17 @@
 //
 // Pure: works on the preferences object and an annotation.
 
+import { styleTypeOf } from './plain-text.js';
+
 export const TEXT_STYLE_KEYS = Object.freeze([
   'textColor', 'fontFamily', 'fontBold', 'fontItalic', 'fontUnderline', 'fontStrikethrough', 'textAlign', 'lineSpacing',
 ]);
 
-const PREF_KEY = Object.freeze({ textbox: 'textboxTextStyle', callout: 'calloutTextStyle' });
+const PREF_KEY = Object.freeze({ textbox: 'textboxTextStyle', callout: 'calloutTextStyle', plainText: 'plainTextTextStyle' });
 
-/** Store the text style of `ann` as its type's default. Returns false for other types. */
+/** Store the text style of `ann` as its type's default (plain text has its own). Returns false for other types. */
 export function saveTextStyleDefault(prefs, ann) {
-  const key = PREF_KEY[ann?.type];
+  const key = PREF_KEY[styleTypeOf(ann)];
   if (!key || !prefs) return false;
   const style = {};
   for (const k of TEXT_STYLE_KEYS) if (ann[k] !== undefined && ann[k] !== null) style[k] = ann[k];

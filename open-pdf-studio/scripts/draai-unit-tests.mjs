@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { splitRunnable } from '../markset/test-packages.mjs'; // Markset
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const app = path.resolve(hier, '..');
@@ -45,8 +46,14 @@ function draai() {
     console.error(`unit-testlijst.txt noemt bestanden die niet bestaan:\n  ${ontbreekt.join('\n  ')}`);
     process.exit(1);
   }
+  // Markset: test files that import a package Markset leaves out (MuPDF) are
+  // skipped and named, not failed (markset/test-packages.mjs).
+  const { run, skipped } = splitRunnable(bestanden, app);
+  if (skipped.length) {
+    console.log(`Skipped ${skipped.length} test files that need a package Markset does not install:\n  ${skipped.map((s) => `${s.file} (${s.missing.join(', ')})`).join('\n  ')}`);
+  }
   let status = 0;
-  for (const partij of inPartijen(bestanden)) {
+  for (const partij of inPartijen(run)) {
     const r = spawnSync(process.execPath, ['--test', ...process.argv.slice(2), ...partij], { cwd: app, stdio: 'inherit' });
     if (r.status !== 0) status = r.status || 1;
   }

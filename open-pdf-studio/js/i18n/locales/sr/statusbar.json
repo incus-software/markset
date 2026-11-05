@@ -11,6 +11,7 @@
     "box": "Правоугаоник",
     "polygon": "Полигон",
     "cloud": "Облак",
+    "cloudPolyline": "Облак-полилинија",
     "polyline": "Полилинија",
     "textbox": "Текстуално поље",
     "callout": "Облачић",
@@ -27,7 +28,9 @@
     "formTextField": "Текстуално поље обрасца",
     "formCheckbox": "Поље за потврду обрасца",
     "formRadio": "Радио дугме обрасца",
-    "screenshot": "Снимак екрана"
+    "screenshot": "Снимак екрана",
+    "pageLabelPick": "Избор текста за ознаку странице",
+    "proofread": "Коректура"
   },
   "toolLabel": "Алатка:",
   "annotationsLabel": "Анотације:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Овај документ садржи интерактивна поља обрасца. Можете попунити образац и сачувати податке.",
   "enableEditing": "Омогући уређивање",
   "pdfAConformance": "Овај документ тврди да је у складу са PDF/A стандардом.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Преименовање датотеке није успело: {{error}}",
+  "renameInvalidChars": "Назив датотеке не сме да садржи  / : * ? \" < > |",
+  "renameFileExists": "Датотека са тим називом већ постоји.",
+  "engineTitle": "Механизам исцртавања коришћен за тренутни приказ",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (векторски)"
+  },
+  "viewSingle": "Једна страница",
+  "viewContinuous": "Континуирано",
+  "viewBook": "Две странице",
+  "viewFacing": "Две странице једна поред друге",
   "viewRotatedTitle": "Приказ је ротиран за {{degrees}}° у смеру казаљке на сату; документ није промењен. Кликните да бисте вратили приказ.",
+  "compareTabTitle": "Поређење",
   "filledAreaSketch": {
     "undoPoint": "Опозови тачку",
     "undoPointTitle": "Уклони последњу тачку (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "Ш",
   "boxHeightAbbr": "В",
+  "boxSizeHint": "Унесите вредност + Enter — или кликните ван поља за примену",
   "ocr": {
     "progress": {
       "starting": "Препознавање текста...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Резултати ({{count}})",
   "searchResultPage": "Страница {{page}}",
   "searchHitsOne": "1 подударање",
-  "searchHitsMany": "Подударања: {{count}}"
+  "searchHitsMany": "Подударања: {{count}}",
+  "passwordProtectedBar": "Заштићено лозинком: отворено само за читање.",
+  "documentSearch": {
+    "title": "Претражи документе",
+    "query": "Текст за претрагу",
+    "scope": "Претражи у",
+    "active": "Тренутни документ",
+    "open": "Отворени документи",
+    "folder": "Фасцикла",
+    "choose": "Изабери фасциклу",
+    "annotations": "Укључи коментаре",
+    "search": "Претражи",
+    "cancel": "Откажи",
+    "stale": "Документ је измењен. Поново покрените претрагу.",
+    "folderHint": "Претражује PDF датотеке директно у овој фасцикли, без отварања картица или мењања датотека.",
+    "limited": "Достигнуто је ограничење резултата. Прецизирајте претрагу.",
+    "cancelled": "Претрага је отказана; резултати су непотпуни.",
+    "ocrHint": "Нема текста за претрагу на страницама {{pages}}. По потреби отворите документ и изричито покрените OCR.",
+    "status": {
+      "searching": "Претраживање",
+      "complete": "Довршено",
+      "needs_ocr": "Садржи странице без текста за претрагу",
+      "encrypted": "Потребна је лозинка",
+      "unreadable": "Претрага није могућа",
+      "changed": "Документ је измењен; претражите поново",
+      "cancelled": "Отказано",
+      "limited": "Достигнуто је ограничење резултата"
+    },
+    "failed": "Претрага није успела. Проверите упит и фасциклу, па покушајте поново.",
+    "prepareOcr": "Отвори за OCR…"
+  },
+  "symbolSearch": "Пронађи симболе",
+  "findMoreOptions": "Још опција претраге",
+  "watchActive": "Праћење: {{folder}}",
+  "watchFailed": "Грешка праћења: {{folder}}",
+  "watchTitle": "Радни ток документа прати {{input}} и уписује у {{output}}. Кликните да бисте зауставили праћење.",
+  "renderDiagnostics": {
+    "title": "Иди на следећи налаз приказа. Без налаза не значи да је приказ потпун.",
+    "count": "Налази приказа: {{count}}",
+    "detail": "Страница {{page}}: {{code}}. Покушајте мање увећање или поново отворите документ; потпуност није загарантована."
+  },
+  "mcpSignal": {
+    "label": "AI веза (MCP)",
+    "connected": "AI асистент је повезан",
+    "idle": "MCP сервер укључен, неактиван",
+    "off": "MCP сервер искључен",
+    "port": "Порт: {{port}}",
+    "lastTool": "Последња алатка: {{tool}} у {{time}}",
+    "noTool": "Још нема позива алатки"
+  }
 }

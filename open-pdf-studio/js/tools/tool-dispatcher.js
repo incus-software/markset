@@ -1,10 +1,16 @@
+import { areaVertexHit, AREA_VERTEX_HIT_PX } from '../annotations/area-vertices.js';
+import { fitPlainText } from '../../markset/plain-text-edit.js'; // Markset
+import { applyAreaVertexEdit } from './area-vertex-editing.js';
 import { batch } from 'solid-js';
 import { state, getActiveDocument } from '../core/state.js';
 import { resolvePointerCoords, buildToolContext, isModalOpen, applyToolTransform, getEffectiveScale } from './tool-context.js';
 import { zetRechtopRond } from '../pdf/weergave-ruimte.js';
 import { getTool } from './tool-registry.js';
+import { noteerAanwijzer } from './tools/draw-tool.js';
+import { eindEventBijAfbreken } from './aanraak-gebaar.js';
 import { cloneAnnotation } from '../annotations/factory.js';
 import { applyResize, applyMove, applyRotation } from '../annotations/transforms.js';
+import { kanDraaipunt, heeftEigenDraaipunt, draaipuntVoorPunt, draaiOmDraaipunt, houdDraaipuntVast, schaalDeltaOmDraaipunt } from '../annotations/draaipunt.js';
 import { redrawAnnotations, redrawContinuous, snapToGrid } from '../annotations/rendering.js';
 import { showProperties, showMultiSelectionProperties } from '../ui/panels/properties-panel.js';
 import { startTextEditing, finishTextEditing } from './text-editing.js';
@@ -37,7 +43,7 @@ import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { getTemplate } from '../symbols/registry.js';
 import { hideMenu } from '../bridge.js';
 import { syncDocScale } from '../annotations/scale-bar.js';
-import { recalculateAllMeasurements, getMeasureScale } from '../annotations/measurement.js';
+import { recalculateAllMeasurements, getMeasureScale, findMeasureScale } from '../annotations/measurement.js';
 import { parseCoordBuffer } from './coord-invoer.js';
 import {
   gripLengteEindpunten,
@@ -45,6 +51,8 @@ import {
   nieuwEindpuntVoorInvoer,
   isGripLengteStartToets,
 } from './grip-lengte.js';
+import { greepOorsprong, strekBasispunt, strekLengteTekst } from './greep-strek.js';
+import { isBewerkbareVeelhoek, veelhoekPuntenOpScherm, veelhoekDeelBij, voegVeelhoekHoekpuntIn } from '../annotations/veelhoek-punten.js';
 import {
   isStramien, startMeeslepen, sleepMee, meesleepWijzigingen, herstelMeeslepen,
 } from '../annotations/stramien-koppeling.js';
@@ -204,10 +212,15 @@ export function handlePointerDown(e) {
   // (middelmuis-pan.js, capture op window) — nooit als gereedschapsklik.
   if (e.button === 1) return;
 
+  // Palmafwijzing (#385): een gereedschap kan een aanwijzer weigeren (de hand
+  // op het scherm terwijl de pen schrijft) — dan gebeurt er helemaal niets.
+  const _weiger = getTool(state.currentTool);
+  if (_weiger?.rejectPointer && _weiger.rejectPointer(e, state)) return;
+
   // Dismiss context menu on any canvas click (left or right)
   hideMenu();
 
-  // Reclaim focus from a non-canvas text input (assistant chat, a properties
+  // Reclaim focus from a non-canvas text input (a properties
   // field, the OpenAEC controls, etc.) when the user clicks the page. Without
   // this the keydown lands on that input and handleKeydown's "typing in an
   // input" guard silently swallows Ctrl+Z / Ctrl+C / Ctrl+V for annotations.
@@ -358,7 +371,20 @@ function flushWachtendeMove() {
   _verwerkWachtendeMove();
 }
 
+// De laatste echte beweging, om een afgebroken gebaar mee af te ronden.
+let _laatsteBeweging = null;
+
 export function handlePointerMove(e) {
+  // Pen in de buurt (ook zwevend): de palmafwijzing van de vrije hand (#385).
+  if (e.pointerType === 'pen') noteerAanwijzer(e);
+  // Een gereedschap dat elke meting wil (de vrije hand: alle coalesced
+  // monsters van een pen) krijgt het ruwe event vóór de bundeling hieronder,
+  // die per beeldframe alleen het laatste event verwerkt.
+  if (state.isDrawing) {
+    const _ruw = getTool(state.currentTool);
+    if (_ruw?.onRawPointerMove) _ruw.onRawPointerMove(e, state);
+  }
+  _laatsteBeweging = e;
   if (state.isDragging || state.isResizing || state.isDrawing || state.isRubberBanding) {
     _wachtendeMove = e;
     if (!_moveRafId) _moveRafId = requestAnimationFrame(_verwerkWachtendeMove);
@@ -432,6 +458,13 @@ function _handlePointerMoveNu(e) {
 /**
  * Main pointer-up handler (replaces handleMouseUp + handleContinuousMouseUp)
  */
+// Een vinger, pen of systeemgebaar breekt de aanwijzer af (pointercancel,
+// #671): rond het lopende gebaar af zoals bij loslaten, op de laatste echte
+// beweging. Anders bleef een streek half getekend staan tot de volgende tik.
+export function handlePointerCancel(e) {
+  handlePointerUp(eindEventBijAfbreken(e, _laatsteBeweging));
+}
+
 export function handlePointerUp(e) {
   flushWachtendeMove();
   if (!getActiveDocument()?.pdfDoc) return;
@@ -511,6 +544,21 @@ export function handleDblClick(e) {
     if (dblClickDoc) dblClickDoc.currentPage = coords.pageNum;
   }
 
+  // Handle selected measurement edges before the select tool's synthetic
+  // pointerdown, which would otherwise leave an unfinished resize gesture.
+  const areaDoc = getActiveDocument();
+  const areaSelection = areaDoc?.selectedAnnotations || [];
+  const area = areaSelection.length === 1 ? areaSelection[0] : null;
+  if (state.currentTool === 'select' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
+      && area?.page === areaDoc?.currentPage) {
+    const hit = areaVertexHit(area, coords.x, coords.y, AREA_VERTEX_HIT_PX / (getEffectiveScale() || 1));
+    if (hit) {
+      if (applyAreaVertexEdit(area, hit, true)) { showProperties(area); redraw(); }
+      e.preventDefault();
+      return;
+    }
+  }
+
   // Delegate to current tool first — multi-click tools (polyline, spline, arc,
   // measureArea, ...) listen for `e.detail === 2` to finish a shape. PointerDown
   // events have detail=0 in Chromium so without this delegation a real
@@ -554,6 +602,28 @@ export function handleDblClick(e) {
           module.startParametricSymbolInput(clicked, coords.x, coords.y))
         .catch((error) =>
           console.error('[dispatcher] parametric label input error', error));
+    } else if (state.currentTool === 'select' && isBewerkbareVeelhoek(clicked)
+        && (dblDoc?.selectedAnnotations || []).includes(clicked) && !clicked.locked) {
+      // Dubbelklik op een zijde van een geselecteerde veelhoek (#622): daar
+      // een hoekpunt bij. Op een hoekpunt of midden in de vorm gebeurt niets.
+      const deel = veelhoekDeelBij(clicked, coords.x, coords.y, 6 / (getEffectiveScale() || 1));
+      const nieuw = deel?.kind === 'edge' ? voegVeelhoekHoekpuntIn(clicked, deel.edgeIndex, deel.punt) : null;
+      if (nieuw) {
+        const voor = cloneAnnotation(clicked);
+        Object.assign(clicked, nieuw);
+        clicked.modifiedAt = new Date().toISOString();
+        recordModify(clicked.id, voor, cloneAnnotation(clicked));
+        showProperties(clicked);
+        redraw();
+      }
+    } else if (clicked.type === 'fileAttachment') {
+      // Bijlage-annotatie (#376): het bestand openen in het standaardprogramma.
+      state.isDrawing = false;
+      if (dblDoc) { dblDoc.selectedAnnotations = [clicked]; dblDoc.selectedAnnotation = clicked; }
+      showProperties(clicked);
+      import('../ui/bijlage-annotaties.js')
+        .then((m) => m.openBijlageAnnotatie(clicked))
+        .catch((err) => console.error('[dispatcher] open attachment failed', err));
     } else if (clicked.type === 'comment') {
       state.isDrawing = false;
       if (dblDoc) { dblDoc.selectedAnnotations = [clicked]; dblDoc.selectedAnnotation = clicked; }
@@ -593,7 +663,18 @@ function _handleResize(ctx, e, coords) {
   if (state.activeHandle === 'rotate') {
     Object.assign(ann, cloneAnnotation(state.originalAnnotation));
     state.shiftKeyPressed = e.shiftKey;
-    applyRotation(ann, coords.x, coords.y, state.originalAnnotation);
+    const _orig = state.originalAnnotation;
+    if (!_orig.locked && kanDraaipunt(_orig) && heeftEigenDraaipunt(_orig)) {
+      // Om het eigen draaipunt (#826), relatief aan waar de greep gepakt werd.
+      // Shift met hoeksnap aan: in stappen, zoals de gewone draaigreep.
+      const stap = e.shiftKey && state.preferences.enableAngleSnap ? state.preferences.angleSnapDegrees : 0;
+      const _uit = draaiOmDraaipunt(_orig, state.dragStartX, state.dragStartY, coords.x, coords.y, { stap });
+      ann.rotation = _uit.rotation;
+      // Via applyMove: een veelhoek met eigen hoekpunten schuift die mee.
+      applyMove(ann, _uit.x - ann.x, _uit.y - ann.y);
+    } else {
+      applyRotation(ann, coords.x, coords.y, _orig);
+    }
     redraw();
     return;
   }
@@ -638,104 +719,47 @@ function _handleResize(ctx, e, coords) {
   const snappedY = snap.snapped ? snap.y : coords.y;
   state.lastSnapResult = snap.snapped ? snap : null;
 
+  // Het draaipunt verplaatsen (#826): alleen het punt, het vak blijft staan.
+  // Het snapt mee, zodat het precies op een kenmerk van de tekening kan.
+  if (state.activeHandle === 'pivot') {
+    Object.assign(ann, cloneAnnotation(state.originalAnnotation));
+    if (ann.locked) return;
+    const dp = draaipuntVoorPunt(state.originalAnnotation, snappedX, snappedY);
+    if (dp) ann.draaipunt = dp;
+    else delete ann.draaipunt;
+    redraw();
+    if (state.lastSnapResult) {
+      canvasCtx.save();
+      applyToolTransform(canvasCtx);
+      drawSnapIndicator(canvasCtx, state.lastSnapResult, resizeScale);
+      canvasCtx.restore();
+    }
+    return;
+  }
+
   let deltaX, deltaY;
   if (snap.snapped) {
-    const orig = state.originalAnnotation;
-    const h = state.activeHandle;
-    let ox, oy;
-    // Textbox leader tip/knee: pull origin from the matching leader on originalAnn
-    if (typeof h === 'string' && (h.startsWith('leader_tip_') || h.startsWith('leader_knee_'))) {
-      const isTipL = h.startsWith('leader_tip_');
-      const lid = h.substring(isTipL ? 'leader_tip_'.length : 'leader_knee_'.length);
-      const ldrs = Array.isArray(orig.leaders) ? orig.leaders : [];
-      const found = ldrs.find(l => l.id === lid);
-      if (found) {
-        ox = isTipL ? found.tipX : found.kneeX;
-        oy = isTipL ? found.tipY : found.kneeY;
-      }
-    } else
-    if (typeof h === 'string' && h.startsWith('polyline_node_')) {
-      // Check for hole node: polyline_node_hole_<holeIdx>_<nodeIdx>
-      const holeSnapMatch = h.match(/^polyline_node_hole_(\d+)_(\d+)$/);
-      if (holeSnapMatch && orig.holes) {
-        const hi = parseInt(holeSnapMatch[1], 10);
-        const ni = parseInt(holeSnapMatch[2], 10);
-        if (hi < orig.holes.length && ni < orig.holes[hi].length) {
-          ox = orig.holes[hi][ni].x;
-          oy = orig.holes[hi][ni].y;
-        }
-      } else if (orig.points) {
-        const nodeIdx = parseInt(h.split('_').pop(), 10);
-        if (!isNaN(nodeIdx) && nodeIdx < orig.points.length) {
-          ox = orig.points[nodeIdx].x;
-          oy = orig.points[nodeIdx].y;
-        }
-      } else if (orig.type === 'measureAngle' && orig.point1 && orig.vertex && orig.point2) {
-        const maNodeIdx = parseInt(h.split('_').pop(), 10);
-        const maPts = [orig.point1, orig.vertex, orig.point2];
-        if (!isNaN(maNodeIdx) && maNodeIdx < 3) {
-          ox = maPts[maNodeIdx].x;
-          oy = maPts[maNodeIdx].y;
-        }
-      }
-    }
-    // Label move handle
-    if (h === 'label_move' && orig.points) {
-      if (orig.labelX != null && orig.labelY != null) {
-        ox = orig.labelX;
-        oy = orig.labelY;
-      } else {
-        let clx = 0, cly = 0;
-        for (const p of orig.points) { clx += p.x; cly += p.y; }
-        ox = clx / orig.points.length;
-        oy = cly / orig.points.length;
-      }
-    }
-    // Label move on a dimension line (measureDistance text handle): anchor =
-    // dimension-line midpoint + textOffset. Without this the generic x/width
-    // fallback below would produce NaN (dimensions have no x/width).
-    if (h === 'label_move' && ox === undefined
-        && typeof orig.startX === 'number' && typeof orig.endX === 'number') {
-      ox = (orig.startX + orig.endX) / 2 + (orig.textOffsetX || 0);
-      oy = (orig.startY + orig.endY) / 2 + (orig.textOffsetY || 0);
-    }
-    // Sjabloon-eigen greep van een parametrisch symbool (bijv. de stijl van
-    // een gevelelement): het sjabloon weet waar die greep zat.
-    if (ox === undefined && orig.type === 'parametricSymbol') {
-      const o = getTemplate(orig.symbolId)?.greepOorsprong?.(orig, h);
-      if (o) { ox = o.x; oy = o.y; }
-    }
-    if (ox === undefined) {
-      ox = h === 'line_start' ? orig.startX
-        : h === 'line_end' ? orig.endX
-        : h === 'line_mid' ? (orig.startX + orig.endX) / 2
-        : h === 'leader_start' ? orig.leaderStartX
-        : h === 'leader_end' ? orig.leaderEndX
-        : h === 'callout_arrow' ? (orig.arrowX || orig.x)
-        : h === 'callout_knee' ? (orig.kneeX || orig.x)
-        : h === 'circle_center' ? ((orig.x !== undefined ? orig.x : orig.centerX - (orig.radius || 0)) + (orig.width || (orig.radius || 0) * 2) / 2)
-        : h === 'rect_center' ? (orig.x + (orig.width || 0) / 2)
-        : (h === 'tl' || h === 'l' || h === 'bl') ? orig.x
-        : (h === 'tr' || h === 'r' || h === 'br') ? orig.x + orig.width
-        : orig.x + orig.width / 2;
-      oy = h === 'line_start' ? orig.startY
-        : h === 'line_end' ? orig.endY
-        : h === 'line_mid' ? (orig.startY + orig.endY) / 2
-        : h === 'leader_start' ? orig.leaderStartY
-        : h === 'leader_end' ? orig.leaderEndY
-        : h === 'callout_arrow' ? (orig.arrowY || orig.y)
-        : h === 'callout_knee' ? (orig.kneeY || orig.y)
-        : h === 'circle_center' ? ((orig.y !== undefined ? orig.y : orig.centerY - (orig.radius || 0)) + (orig.height || (orig.radius || 0) * 2) / 2)
-        : h === 'rect_center' ? (orig.y + (orig.height || 0) / 2)
-        : (h === 'tl' || h === 't' || h === 'tr') ? orig.y
-        : (h === 'bl' || h === 'b' || h === 'br') ? orig.y + orig.height
-        : orig.y + orig.height / 2;
-    }
-    deltaX = snappedX - ox;
-    deltaY = snappedY - oy;
+    // Vanaf de greep zoals hij getekend is (ook bij een gedraaide vorm), zodat
+    // de greep precies op het snappunt komt in plaats van te verspringen.
+    // Zonder bekende greepplek: vanaf waar de sleep begon (nooit NaN).
+    const o = greepOorsprong(state.originalAnnotation, state.activeHandle,
+      (orig, h) => getTemplate(orig.symbolId)?.greepOorsprong?.(orig, h))
+      || { x: state.dragStartX, y: state.dragStartY };
+    deltaX = snappedX - o.x;
+    deltaY = snappedY - o.y;
   } else {
     deltaX = coords.x - state.dragStartX;
     deltaY = coords.y - state.dragStartY;
+  }
+
+  // Schalen met een eigen draaipunt (#826): de muis bepaalt hoe ver de
+  // gesleepte greep van het draaipunt komt te staan; het vak schuift daarna
+  // terug zodat het draaipunt op de pagina blijft staan.
+  const _rhVooraf = state.activeHandle;
+  const _omDraaipunt = ['tl', 'tr', 'bl', 'br', 't', 'b', 'l', 'r'].includes(_rhVooraf)
+    && kanDraaipunt(state.originalAnnotation) && heeftEigenDraaipunt(state.originalAnnotation);
+  if (_omDraaipunt) {
+    ({ dx: deltaX, dy: deltaY } = schaalDeltaOmDraaipunt(state.originalAnnotation, _rhVooraf, deltaX, deltaY));
   }
 
   Object.assign(ann, cloneAnnotation(state.originalAnnotation));
@@ -753,12 +777,17 @@ function _handleResize(ctx, e, coords) {
   // snaps a single axis and derives the other from the ratio, so the lock is
   // preserved — hence we no longer skip locked images here. Shift is a caller
   // override that we keep respecting via lockRatio below.
+  // Een gedraaide afbeelding snapt net zo (#561): snapImageResize zet het
+  // vak daarna om het gedraaide midden terug, zodat de vaste greep op het
+  // scherm blijft staan waar hij getekend is.
   state._imageAlignGuides = null;
   const _rh = state.activeHandle;
   const _isBoxHandle = _rh === 'tl' || _rh === 'tr' || _rh === 'bl' || _rh === 'br' ||
     _rh === 't' || _rh === 'b' || _rh === 'l' || _rh === 'r';
   const _lockRatio = e.shiftKey || ann.lockAspectRatio;
-  if (state.preferences.enableImageAlignSnap && ann.type === 'image' && _isBoxHandle) {
+  // Niet met een eigen draaipunt: die maatsnap zet de overliggende greep vast
+  // en het terugschuiven naar het draaipunt zou de hulplijnen ernaast leggen.
+  if (!_omDraaipunt && state.preferences.enableImageAlignSnap && ann.type === 'image' && _isBoxHandle) {
     const excludeIds = new Set([ann.id]);
     const refs = collectImageAlignRefs(resizeDoc?.annotations || [], coords.pageNum, excludeIds);
     const tol = (state.preferences.objectSnapRadius || 12) / resizeScale;
@@ -766,13 +795,23 @@ function _handleResize(ctx, e, coords) {
     const _aspectRatio = state.originalAnnotation.originalWidth && state.originalAnnotation.originalHeight
       ? state.originalAnnotation.originalWidth / state.originalAnnotation.originalHeight
       : (state.originalAnnotation.height ? state.originalAnnotation.width / state.originalAnnotation.height : 1);
-    const res = snapImageResize(box, _rh, refs, tol, { lockRatio: _lockRatio, aspectRatio: _aspectRatio });
+    const res = snapImageResize(box, _rh, refs, tol, {
+      lockRatio: _lockRatio, aspectRatio: _aspectRatio, rotation: state.originalAnnotation.rotation || 0,
+    });
     if (res.guides.length > 0) {
       ann.x = res.box.x; ann.y = res.box.y;
       ann.width = res.box.w; ann.height = res.box.h;
       state._imageAlignGuides = res.guides;
       state._imageAlignGuidesPage = coords.pageNum;
     }
+  }
+
+  // Schalen met een eigen draaipunt (#826): het draaipunt blijft op dezelfde
+  // plek op de pagina; zonder eigen draaipunt blijft de overliggende greep staan.
+  if (_omDraaipunt) {
+    const _vast = houdDraaipuntVast(state.originalAnnotation, ann);
+    // Via applyMove: een veelhoek met eigen hoekpunten schuift die mee.
+    applyMove(ann, _vast.x - ann.x, _vast.y - ann.y);
   }
 
   redraw();
@@ -797,34 +836,9 @@ function _handleResize(ctx, e, coords) {
   // (livePoint), plus a small "<length> < <angle>°" tooltip. Per the
   // grippoints design spec.
   {
-    const orig = state.originalAnnotation;
-    const h = state.activeHandle;
-    let bx, by;
-    if (typeof h === 'string' && h.startsWith('polyline_node_') && !h.includes('hole') && Array.isArray(orig.points)) {
-      const ni = parseInt(h.split('_').pop(), 10);
-      if (!isNaN(ni) && ni < orig.points.length) {
-        bx = orig.points[ni].x; by = orig.points[ni].y;
-      }
-    } else if (h === 'line_start') { bx = orig.startX; by = orig.startY; }
-    else if (h === 'line_end') { bx = orig.endX; by = orig.endY; }
-    else if (h === 'line_mid') { bx = (orig.startX + orig.endX) / 2; by = (orig.startY + orig.endY) / 2; }
-    else if (h === 'rect_center') { bx = orig.x + (orig.width || 0) / 2; by = orig.y + (orig.height || 0) / 2; }
-    else if (h === 'circle_center') {
-      const cw = orig.width || (orig.radius || 0) * 2;
-      const ch = orig.height || (orig.radius || 0) * 2;
-      const cx0 = orig.x !== undefined ? orig.x : (orig.centerX - (orig.radius || 0));
-      const cy0 = orig.y !== undefined ? orig.y : (orig.centerY - (orig.radius || 0));
-      bx = cx0 + cw / 2; by = cy0 + ch / 2;
-    } else if (h === 'tl') { bx = orig.x; by = orig.y; }
-    else if (h === 'tr') { bx = orig.x + orig.width; by = orig.y; }
-    else if (h === 'bl') { bx = orig.x; by = orig.y + orig.height; }
-    else if (h === 'br') { bx = orig.x + orig.width; by = orig.y + orig.height; }
-    else if (h === 't') { bx = orig.x + orig.width / 2; by = orig.y; }
-    else if (h === 'b') { bx = orig.x + orig.width / 2; by = orig.y + orig.height; }
-    else if (h === 'l') { bx = orig.x; by = orig.y + orig.height / 2; }
-    else if (h === 'r') { bx = orig.x + orig.width; by = orig.y + orig.height / 2; }
-
-    if (bx !== undefined && by !== undefined) {
+    const basis = strekBasispunt(state.originalAnnotation, state.activeHandle);
+    if (basis) {
+      const bx = basis.x, by = basis.y;
       const lx = state.lastSnapResult ? state.lastSnapResult.x : coords.x;
       const ly = state.lastSnapResult ? state.lastSnapResult.y : coords.y;
       const lineColor = ann.strokeColor || ann.color || ann.lineColor || '#0078d4';
@@ -842,9 +856,10 @@ function _handleResize(ctx, e, coords) {
       const dxT = lx - bx, dyT = ly - by;
       const len = Math.sqrt(dxT * dxT + dyT * dyT);
       const ang = Math.atan2(dyT, dxT) * 180 / Math.PI;
-      const measureScale = (getActiveDocument()?.measureScale) || 1;
-      const measureUnit = (getActiveDocument()?.measureUnit) || 'px';
-      const lenLabel = (len * measureScale).toFixed(1) + ' ' + measureUnit;
+      // Lengte in de eenheid van de tekening, met de schaal halverwege de
+      // meetlijn (zoals bij een maatlijn); zonder enige schaal in punten.
+      const lenSchaal = findMeasureScale(ann.page ?? coords.pageNum, (bx + lx) / 2, (by + ly) / 2);
+      const lenLabel = strekLengteTekst(len, lenSchaal, getActiveDocument());
       const label = `${lenLabel} < ${ang.toFixed(1)}°`;
       // Rechtop op het scherm, ook in een gedraaide weergave (#200).
       zetRechtopRond(canvasCtx, lx, ly);
@@ -873,7 +888,10 @@ function _handleResize(ctx, e, coords) {
     if (!isNaN(nodeIdx) && nodeIdx < ann.points.length) {
       canvasCtx.save();
       applyToolTransform(canvasCtx);
-      drawAlignmentGuides(canvasCtx, ann, nodeIdx, resizeScale);
+      // Een veelhoek (#622) op zijn hoekpunten zoals het scherm ze toont
+      // (door het vak, gedraaid).
+      const gidsVorm = isBewerkbareVeelhoek(ann) ? { points: veelhoekPuntenOpScherm(ann) } : ann;
+      drawAlignmentGuides(canvasCtx, gidsVorm, nodeIdx, resizeScale);
       canvasCtx.restore();
     }
   }
@@ -1077,6 +1095,7 @@ function _finishDragResize(ctx, e, coords) {
     const hasScaleBarChange = modifiedScaleBars.length > 0;
     if (hasScaleBarChange) beginUndoTransaction();
     const upAnn = _fSel.length === 1 ? _fSel[0] : null;
+    if (state.isResizing && upAnn) fitPlainText(upAnn, state.activeHandle); // Markset: plain text fits its text
     if (_fSel.length > 1 && state.originalAnnotations.length > 0) {
       // Only record if at least one annotation actually changed
       const anyChanged = _fSel.some((ann, i) =>

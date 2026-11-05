@@ -48,6 +48,15 @@
   cursor: default;
 }
 
+/* Knop met het aantal rendermeldingen (#677): één regel, niet laten krimpen
+   naast de statusmelding. */
+.status-nav-btn.status-render-findings {
+  width: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 0 6px;
+}
+
 .status-separator {
   width: 1px;
   height: 14px;
@@ -122,6 +131,15 @@
   outline: none;
 }
 
+/* Bladnaam van de huidige pagina naast het paginavak (#580). */
+.status-page-label {
+  margin-inline-start: 4px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-page-input:focus {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.5);
@@ -180,6 +198,60 @@
   width: 12px;
   height: 12px;
   stroke: var(--theme-status-nav-text);
+}
+
+/* Mapbewaking van documentworkflows: zichtbaar zolang ze loopt, ook na het
+   sluiten van het venster; een klik stopt het bewaken. */
+.status-watch {
+  margin-left: 0;
+  margin-right: 8px;
+}
+
+.status-watch-error {
+  color: #a4262c;
+}
+
+/* Verbindingssignaal van de AI-koppeling (MCP): glyph met een punt.
+   Grijs = server uit, open punt = aan maar rustig, groen = actief. Bij een
+   tool-aanroep licht het item kort op (geen animatie, alleen een klasse). */
+.status-mcp {
+  gap: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.status-mcp-glyph {
+  width: 12px;
+  height: 12px;
+  stroke: var(--theme-status-nav-text);
+}
+
+.status-mcp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid var(--theme-status-text-label);
+  background: transparent;
+}
+
+.status-mcp-uit .status-mcp-glyph {
+  opacity: 0.45;
+}
+
+.status-mcp-uit .status-mcp-dot {
+  border-color: #9e9e9e;
+  background: #9e9e9e;
+}
+
+.status-mcp-actief .status-mcp-dot {
+  border-color: #15803d;
+  background: #16a34a;
+}
+
+.status-mcp-puls {
+  background: var(--theme-status-nav-hover);
+  box-shadow: inset 0 0 0 1px var(--theme-status-separator);
 }
 
 .status-zoom-level {

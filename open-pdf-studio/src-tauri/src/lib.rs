@@ -1,25 +1,40 @@
 // The MCP `tools/list` descriptor table in mcp_server.rs is one large
 // `serde_json::json!` literal; its recursive macro expansion exceeds the
-// default limit of 128 once the tool count grew past ~30.
-#![recursion_limit = "256"]
+// default limit of 128. The 98-tool public catalog requires a limit of 512.
+#![recursion_limit = "512"]
 
 mod accounts;
+mod pdf_beveiliging;
 mod atomic_file;
+pub mod beveiligde_pdf;
+pub mod beheerd;
 pub mod cad_export;
 pub mod cad_import;
+pub mod crashlog;
 pub mod datamap;
+pub mod draagbaar;
 mod email;
+pub mod export_policy;
+pub mod extensie_installatie;
 pub mod linux_runtime;
 pub mod logboek;
 pub mod mcp_app_bridge;
+pub mod mcp_extensie_tools;
 pub mod mcp_koppeling;
 pub mod mcp_server;
+pub mod mcp_signaal;
 pub mod mcp_tool_meta;
+pub mod openaec_omgeving;
 // OCR (Tesseract) is desktop only; Android has no Tesseract build.
 #[cfg(not(target_os = "android"))]
 pub mod ocr;
 pub mod pdfium_renderer;
+pub mod pdfx_cmyk;
 pub mod handtekening;
+pub mod headless;
+pub mod herstel;
+pub mod laagweergave;
+pub mod instantie;
 pub mod print_formulieren;
 pub mod print_instelling;
 pub mod print_plaatsing;
@@ -29,13 +44,25 @@ pub mod print_plaatsing;
 pub mod print_devmode;
 #[cfg(target_os = "windows")]
 pub mod print_lijst;
-#[cfg(target_os = "windows")]
-mod standaard_app;
+// Of de app de standaard-PDF-app is: het Windows-register, of xdg-mime en
+// de sandbox-status op Linux.
+pub mod standaard_app;
+// Printen op Linux: rechtstreeks met CUPS via IPP, met lp/lpstat en het
+// printportaal als terugval (print_unix.rs). macOS houdt lp/lpstat in lib.rs.
+#[cfg(any(target_os = "linux", test))]
+pub mod cups_ipp;
+#[cfg(any(target_os = "linux", test))]
+pub mod print_unix;
 #[cfg(target_os = "windows")]
 pub mod print_windows;
 pub mod render_to_png;
+pub mod spraak;
+// Miniaturen van PDF's in Windows Verkenner (#605); buiten Windows niet beschikbaar.
+pub mod verkenner_miniaturen;
 pub mod window_mgmt;
 pub mod startup_diagnostics;
+// Vensteropname voor app_screenshot_view (#583); buiten Windows een nette fout.
+pub mod webview_opname;
 pub mod worker_pool;
 
 pub struct StartupOpts {
@@ -97,6 +124,51 @@ struct PageTypeCache(Mutex<HashMap<(String, u32), String>>);
 #[tauri::command]
 fn get_opened_file(state: tauri::State<OpenedFiles>) -> Vec<String> {
     state.0.lock().unwrap().clone()
+}
+
+/// Welk document opent een `RunEvent::Opened`-URL, als het een PDF is?
+///
+/// - `file://` (macOS Finder, iOS): het bestandspad, alleen voor een `.pdf`.
+/// - `content://` (Android, #593): de URI zelf. "Openen met" vanuit een
+///   bestandsbeheerder of mailapp levert geen pad maar een content-URI, vaak
+///   zonder `.pdf` aan het eind (`.../document/msf%3A1234`). Het intent-filter
+///   dat tauri-build uit `bundle.fileAssociations` maakt, laat alleen
+///   `application/pdf` door; de fs-plugin leest de URI via de ContentResolver.
+///   Op het bureaublad komt een content-URI nooit voor en telt hij niet.
+///
+/// Andere schema's (de deep-link-plugin, https) laten we met rust.
+fn geopend_pdf_document(url: &url::Url, android: bool) -> Option<String> {
+    match url.scheme() {
+        "file" => url
+            .to_file_path()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+            .filter(|p| p.to_lowercase().ends_with(".pdf")),
+        "content" if android => Some(url.as_str().to_string()),
+        _ => None,
+    }
+}
+
+/// Welk PDF-bestand opent een opdrachtregelargument?
+///
+/// Windows en de meeste starters geven een pad door. Een Linux-starter met
+/// `Exec=open-pdf-studio %U` (GNOME/Cinnamon "Openen met", #748) geeft een
+/// `file://`-URI, met procenttekens voor spaties en andere tekens; die
+/// wordt een pad. Opties (`-...`) en andere schema's tellen niet.
+fn pdf_uit_argument(arg: &str) -> Option<String> {
+    if arg.starts_with('-') {
+        return None;
+    }
+    // `get` en geen `[..7]`: byte 7 kan midden in een UTF-8-teken vallen
+    // (bijv. "ééééé.pdf"), en dan zou de app bij de start in paniek raken.
+    if arg.len() > 7 && arg.get(..7).is_some_and(|p| p.eq_ignore_ascii_case("file://")) {
+        return url::Url::parse(arg).ok().and_then(|u| geopend_pdf_document(&u, false));
+    }
+    // Een deep link of web-URL is geen bestand (de deep-link-plugin doet die).
+    if arg.contains("://") {
+        return None;
+    }
+    arg.to_lowercase().ends_with(".pdf").then(|| arg.to_string())
 }
 
 #[tauri::command]
@@ -176,10 +248,12 @@ fn veilige_catalogus_bestandsnaam(id: &str) -> String {
     format!("{}.json", schoon)
 }
 
+// Atomair (tijdelijk bestand + hernoemen, atomic_file.rs): een afgebroken
+// schrijfactie laat de vorige catalogus heel in plaats van een half bestand.
 #[tauri::command]
 fn save_catalog(id: String, data: String) -> Result<bool, String> {
     let path = get_catalogs_dir().join(veilige_catalogus_bestandsnaam(&id));
-    fs::write(&path, data).map_err(|e| e.to_string())?;
+    atomic_file::write(&path, data.as_bytes()).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -218,8 +292,63 @@ fn write_file(path: String, data: String) -> Result<bool, String> {
     Ok(true)
 }
 
+// Writes that can still be cancelled (#766), by the id from the
+// x-opds-cancel-id header. A cancel for an id that has not started yet is kept,
+// so the write stops before it begins.
+type SchrijfAnnuleringen = std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>>;
+static SCHRIJF_ANNULERINGEN: std::sync::OnceLock<SchrijfAnnuleringen> = std::sync::OnceLock::new();
+
+fn schrijf_annuleringen() -> std::sync::MutexGuard<'static, std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>> {
+    SCHRIJF_ANNULERINGEN.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn schrijf_annulering(id: &str) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+    schrijf_annuleringen().entry(id.to_string()).or_default().clone()
+}
+
+/// Cancel a running `write_file_atomic` before it replaces its destination.
+#[tauri::command]
+fn cancel_file_write(id: String) {
+    if id.is_empty() || id.len() > 64 { return; }
+    let mut lijst = schrijf_annuleringen();
+    // A cancel that arrived just after its write finished leaves an entry
+    // nobody uses; keep the list small.
+    if lijst.len() > 64 {
+        lijst.retain(|_, vlag| std::sync::Arc::strong_count(vlag) > 1);
+    }
+    lijst.entry(id).or_default().store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 #[tauri::command]
 async fn write_file_atomic(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let header = request.headers().get("x-opds-path")
+        .ok_or("Missing destination path")?.to_str().map_err(|e| e.to_string())?;
+    let path = urlencoding::decode(header).map_err(|e| e.to_string())?.into_owned();
+    let cancel_id = request.headers().get("x-opds-cancel-id")
+        .and_then(|v| v.to_str().ok()).filter(|v| !v.is_empty() && v.len() <= 64).map(str::to_string);
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        // Android cannot transport a raw IPC body.
+        tauri::ipc::InvokeBody::Json(value) => {
+            serde_json::from_value::<Vec<u8>>(value.get("data").cloned().ok_or("Missing file data")?)
+                .map_err(|e| e.to_string())?
+        }
+    };
+    let Some(id) = cancel_id else {
+        return tauri::async_runtime::spawn_blocking(move || {
+            atomic_file::write(std::path::Path::new(&path), &bytes).map_err(|e| e.to_string())
+        }).await.map_err(|e| e.to_string())?;
+    };
+    let cancelled = schrijf_annulering(&id);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        atomic_file::write_cancellable(std::path::Path::new(&path), &bytes, &cancelled).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string());
+    schrijf_annuleringen().remove(&id);
+    result?
+}
+
+#[tauri::command]
+async fn write_file_new(request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let header = request.headers().get("x-opds-path")
         .ok_or("Missing destination path")?.to_str().map_err(|e| e.to_string())?;
     let path = urlencoding::decode(header).map_err(|e| e.to_string())?.into_owned();
@@ -232,7 +361,33 @@ async fn write_file_atomic(request: tauri::ipc::Request<'_>) -> Result<(), Strin
         }
     };
     tauri::async_runtime::spawn_blocking(move || {
-        atomic_file::write(std::path::Path::new(&path), &bytes).map_err(|e| e.to_string())
+        atomic_file::write_new(std::path::Path::new(&path), &bytes).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
+}
+
+// A component extracted from a PDF collection: untrusted bytes. Never replaces
+// a file, refuses autostart folders (and, with x-opds-restrict, programs and
+// scripts) and marks the result as downloaded content on Windows.
+#[tauri::command]
+async fn write_downloaded_file_new(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let header = request.headers().get("x-opds-path")
+        .ok_or("Missing destination path")?.to_str().map_err(|e| e.to_string())?;
+    let path = urlencoding::decode(header).map_err(|e| e.to_string())?.into_owned();
+    let restrict = request.headers().get("x-opds-restrict").map_or(true, |v| v.as_bytes() != b"0");
+    if let Some(code) = export_policy::problem(&path, restrict) {
+        return Err(code.to_string());
+    }
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(value) => {
+            serde_json::from_value::<Vec<u8>>(value.get("data").cloned().ok_or("Missing file data")?)
+                .map_err(|e| e.to_string())?
+        }
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = std::path::Path::new(&path);
+        atomic_file::write_new(target, &bytes).map_err(|e| e.to_string())?;
+        export_policy::mark_of_the_web(target).map_err(|e| e.to_string())
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -243,6 +398,7 @@ fn file_exists(path: String) -> bool {
 
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
+    headless::weiger("open_url")?;
     open::that(&url).map_err(|e| e.to_string())
 }
 
@@ -251,56 +407,134 @@ fn is_dev_mode() -> bool {
     cfg!(debug_assertions)
 }
 
-/// Check if this app is the default handler for .pdf files on Windows.
-/// Returns true if our exe is the registered handler, false otherwise.
-/// Uses spawn_blocking so the subprocess calls never block the main thread.
-#[tauri::command]
-async fn is_default_pdf_app() -> bool {
-    tauri::async_runtime::spawn_blocking(|| {
-        #[cfg(target_os = "windows")]
-        {
-            // Register lezen met de Windows-API, niet met reg.exe: een extra
-            // systeemproces kort na de start laat beveiligingssoftware de app
-            // afsluiten (#524).
-            use windows_sys::Win32::System::Registry::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER};
-            let eigen_exe = std::env::current_exe()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let Some(prog_id) = standaard_app::lees_tekst(
-                HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\UserChoice",
-                Some("ProgId"),
-            ) else {
-                return false;
-            };
+/// What is known about the default handler for .pdf files, and whether this
+/// app can make itself the default (see standaard_app::StandaardAppStatus).
+/// Blocking: runs a registry read on Windows and `xdg-mime` on Linux.
+fn standaard_app_status() -> standaard_app::StandaardAppStatus {
+    // Beheerde modus (OPENAEC_BEHEERD=1): de omgeving regelt de koppeling;
+    // niet in het register of met xdg-mime kijken, en nooit om de standaard-
+    // app vragen.
+    if beheerd::is_beheerd() {
+        return standaard_app::beheerd_status();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Register lezen met de Windows-API, niet met reg.exe: een extra
+        // systeemproces kort na de start laat beveiligingssoftware de app
+        // afsluiten (#524).
+        use windows_sys::Win32::System::Registry::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER};
+        let eigen_exe = std::env::current_exe()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let prog_id = standaard_app::lees_tekst(
+            HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\UserChoice",
+            Some("ProgId"),
+        );
+        let is_default = prog_id.as_deref().is_some_and(|prog_id| {
             let open_opdracht = standaard_app::lees_tekst(
                 HKEY_CLASSES_ROOT,
                 &format!(r"{}\shell\open\command", prog_id.trim()),
                 None,
             );
-            standaard_app::is_onze_pdf_app(&prog_id, open_opdracht.as_deref(), &eigen_exe)
+            standaard_app::is_onze_pdf_app(prog_id, open_opdracht.as_deref(), &eigen_exe)
+        });
+        standaard_app::StandaardAppStatus {
+            is_default: Some(is_default),
+            current: prog_id.map(|p| p.trim().to_string()).filter(|p| !p.is_empty()),
+            can_set: true,
+            reason: None,
         }
+    }
 
-        #[cfg(target_os = "linux")]
-        {
-            // Use xdg-mime: works on any XDG-compliant desktop (GNOME, KDE,
-            // Cinnamon, MATE, XFCE) across distros (Mint, Ubuntu, Fedora, Arch).
-            let output = match std::process::Command::new("xdg-mime")
-                .args(&["query", "default", "application/pdf"])
+    #[cfg(target_os = "linux")]
+    {
+        // xdg-mime works on any XDG-compliant desktop (GNOME, KDE, Cinnamon,
+        // MATE, XFCE) across distros. A Flatpak or Snap has no xdg-mime and
+        // no write access to the desktop's associations: then the status says
+        // so and the UI explains where to choose the default instead.
+        let sandbox = linux_runtime::sandbox();
+        let query = if sandbox.is_some() || !print_unix::programma_aanwezig("xdg-mime") {
+            None
+        } else {
+            std::process::Command::new("xdg-mime")
+                .args(["query", "default", "application/pdf"])
                 .output()
-            {
-                Ok(o) => o,
-                Err(_) => return false,
-            };
-            let default_desktop = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            default_desktop == "Open PDF Studio.desktop" || default_desktop == "open-pdf-studio.desktop"
-        }
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        };
+        standaard_app::linux_status(sandbox, query.as_deref())
+    }
 
-        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-        {
-            false
-        }
-    }).await.unwrap_or(false)
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        standaard_app::StandaardAppStatus { is_default: None, current: None, can_set: false, reason: Some("unsupported") }
+    }
+}
+
+/// Check if this app is the default handler for .pdf files.
+/// Returns true if our exe/desktop entry is the registered handler, false
+/// otherwise (also when it cannot be checked; use default_pdf_app_status to
+/// tell those apart). Uses spawn_blocking so the subprocess calls never block
+/// the main thread.
+#[tauri::command]
+async fn is_default_pdf_app() -> bool {
+    tauri::async_runtime::spawn_blocking(|| standaard_app_status().is_default == Some(true))
+        .await
+        .unwrap_or(false)
+}
+
+/// The default-PDF-app status for the startup bar and the File Associations
+/// tab: { isDefault: bool|null, current: string|null, canSet: bool,
+/// reason: "flatpak"|"snap"|"xdg-mime-missing"|"unsupported"|null }.
+#[tauri::command]
+async fn default_pdf_app_status() -> standaard_app::StandaardAppStatus {
+    tauri::async_runtime::spawn_blocking(standaard_app_status)
+        .await
+        .unwrap_or(standaard_app::StandaardAppStatus {
+            is_default: None,
+            current: None,
+            can_set: false,
+            reason: Some("unsupported"),
+        })
+}
+
+/// Of de PDF-miniaturen in Windows Verkenner aan staan (#605), en of een ander
+/// programma ze al levert. Leest alleen het register.
+#[tauri::command]
+async fn explorer_thumbnails_status(app: tauri::AppHandle) -> verkenner_miniaturen::MiniatuurStatus {
+    let Ok(resource_dir) = app.path().resource_dir() else {
+        return verkenner_miniaturen::MiniatuurStatus::default();
+    };
+    tauri::async_runtime::spawn_blocking(move || verkenner_miniaturen::status(&resource_dir))
+        .await
+        .unwrap_or_default()
+}
+
+/// Zet de PDF-miniaturen in Windows Verkenner aan of uit voor deze gebruiker
+/// (HKCU, geen admin; de bestandskoppeling blijft ongemoeid). `replace_other`:
+/// de gebruiker koos ervoor de miniaturen van een ander programma te vervangen.
+#[tauri::command]
+async fn explorer_thumbnails_set(
+    app: tauri::AppHandle,
+    enabled: bool,
+    replace_other: bool,
+) -> Result<verkenner_miniaturen::MiniatuurStatus, String> {
+    // Draagbaar (#881): de COM-registratie wijst naar de DLL in deze map en
+    // breekt zodra de map verhuist. Uitzetten mag wel.
+    if enabled {
+        draagbaar::weiger_als_draagbaar()?;
+    }
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Cannot resolve resource_dir: {}", e))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        verkenner_miniaturen::zet(&resource_dir, enabled, replace_other)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Make this app the default handler for .pdf files.
@@ -308,6 +542,7 @@ async fn is_default_pdf_app() -> bool {
 /// xdg-mime default directly (no system UI for this exists on most desktops).
 #[tauri::command]
 fn open_default_apps_settings() -> Result<bool, String> {
+    headless::weiger("open_default_apps_settings")?;
     #[cfg(target_os = "windows")]
     {
         // Open the "Choose default apps by file type" settings page
@@ -320,6 +555,15 @@ fn open_default_apps_settings() -> Result<bool, String> {
 
     #[cfg(target_os = "linux")]
     {
+        // Inside a Flatpak or Snap there is no xdg-mime and the host's mime
+        // associations cannot be written; the desktop's own settings choose
+        // the default there. The UI checks default_pdf_app_status first and
+        // explains that; this error is the backstop.
+        if let Some(sandbox) = linux_runtime::sandbox() {
+            return Err(format!(
+                "Running as a {sandbox} package: choose Open PDF Studio as the default PDF app in your desktop's settings (Default Applications), or via \"Open with\" on a PDF file."
+            ));
+        }
         // xdg-mime is the desktop-environment agnostic way to set the default
         // handler. The .desktop filename must match what tauri-bundler wrote in
         // /usr/share/applications (the bundle uses the app's productName).
@@ -430,7 +674,20 @@ async fn get_printers() -> Result<String, String> {
             .map_err(|e| format!("Failed to enumerate printers: {}", e))?
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    // Linux: CUPS over IPP on its socket first, `lpstat` when that fails, and
+    // inside a Flatpak/Snap without any printer an entry for the desktop's
+    // print dialog (print_unix.rs). The JSON keeps the Windows shape:
+    // { Name, DriverName, PortName, Default, PrinterStatus }.
+    #[cfg(target_os = "linux")]
+    {
+        let sandbox = linux_runtime::sandbox().is_some();
+        tauri::async_runtime::spawn_blocking(move || print_unix::lijst_printers(sandbox))
+            .await
+            .map_err(|e| format!("Failed to enumerate printers: {}", e))?
+    }
+
+    // macOS: unchanged, `lpstat` (the CUPS client tools are always there).
+    #[cfg(target_os = "macos")]
     {
         // Use CUPS `lpstat -p` to list printers. Output format:
         //   printer NAME is idle. enabled since ...
@@ -511,6 +768,10 @@ async fn get_printers() -> Result<String, String> {
 /// Print dialog has already laid every page out at paper size with the
 /// chosen scale and position, so each page goes 1:1 onto the physical sheet
 /// (see print_plaatsing.rs and js/pdf/print-plaatsing.js).
+/// `kleur`: the colour mode of the Print dialog ('color' | 'grayscale' |
+/// 'bw'). The page images already carry it; CUPS additionally gets
+/// print-color-mode=monochrome for the non-colour modes, so a colour printer
+/// does not use colour ink for grey. Absent = printer default.
 /// async for the same reason as get_printers: GDI spooling is slow blocking
 /// work and runs on a blocking thread, not on the main event-loop thread.
 #[tauri::command]
@@ -520,6 +781,7 @@ async fn print_pdf(
     orientatie: Option<String>,
     papier: Option<String>,
     plaatsing: Option<String>,
+    kleur: Option<String>,
     devmodes: tauri::State<'_, print_instelling::PrinterDevmodes>,
 ) -> Result<bool, String> {
     // Keuzes uit de Pagina-instelling. Zonder argumenten: Auto + printerstandaard,
@@ -529,6 +791,8 @@ async fn print_pdf(
     let plaatsing = print_plaatsing::Plaatsing::uit_keuze(plaatsing.as_deref());
     #[cfg(target_os = "windows")]
     {
+        // De kleurmodus zit op Windows al in de paginabeelden.
+        let _ = &kleur;
         // Wat de gebruiker in deze sessie in het eigenschappenvenster koos.
         let opgeslagen = devmodes.ophalen(&printer);
         tauri::async_runtime::spawn_blocking(move || {
@@ -550,11 +814,32 @@ async fn print_pdf(
     // Linux/macOS: spool through CUPS. The JS side has already rasterised the
     // selected pages into a temp PDF at the right size and rotation (with
     // plaatsing "vel": at paper size, scale and position already applied),
-    // and calls this once per copy — so `lp` only has to hand one document to
-    // one queue and needs no page-range or copy options of its own.
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    // and calls this once per copy — so CUPS only has to take one document
+    // for one queue and needs no page-range or copy options of its own.
+    // Linux: sent as an IPP Print-Job over the CUPS socket, else with `lp`,
+    // else (Flatpak/Snap) through the print portal; the options are the same
+    // `lp -o` values on every route (print_unix.rs).
+    #[cfg(target_os = "linux")]
     {
         let _ = &devmodes;
+        let mut opties = print_instelling::lp_opties(orientatie, papier, plaatsing);
+        if let Some(k) = print_unix::kleur_optie(kleur.as_deref()) {
+            opties.push("-o".to_string());
+            opties.push(k);
+        }
+        let sandbox = linux_runtime::sandbox().is_some();
+        tauri::async_runtime::spawn_blocking(move || {
+            print_unix::print_bestand(std::path::Path::new(&path), &printer, &opties, sandbox, kleur.as_deref())
+        })
+        .await
+        .map_err(|e| format!("Print task failed: {e}"))??;
+        Ok(true)
+    }
+
+    // macOS: unchanged, `lp` (the colour mode is already in the page images).
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (&devmodes, &kleur);
         let queue = printer.trim();
         let mut cmd = std::process::Command::new("lp");
         // No queue name means "system default", which is what lp does without -d.
@@ -586,7 +871,7 @@ async fn print_pdf(
 
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
-        let _ = (&path, &printer, &orientatie, &papier, &plaatsing, &devmodes);
+        let _ = (&path, &printer, &orientatie, &papier, &plaatsing, &kleur, &devmodes);
         Err("Printing is not supported on this platform".to_string())
     }
 }
@@ -613,6 +898,7 @@ async fn open_printer_properties(
     orientatie: Option<String>,
     devmodes: tauri::State<'_, print_instelling::PrinterDevmodes>,
 ) -> Result<Option<print_instelling::EigenschappenKeuze>, String> {
+    headless::weiger("printer properties dialog")?;
     #[cfg(target_os = "windows")]
     {
         // The HWND makes the dialog modal to this window; passed on as usize
@@ -939,6 +1225,9 @@ exit 1
 /// scripts the installer ships.
 #[tauri::command]
 fn install_virtual_printer(use_collection: Option<bool>) -> Result<bool, String> {
+    // Draagbaar (#881): een Windows-printer met een poort naar een vaste map
+    // hoort bij een installatie.
+    draagbaar::weiger_als_draagbaar()?;
     #[cfg(target_os = "windows")]
     {
         // Default to the silent collection port — the user wants prints
@@ -1046,6 +1335,27 @@ struct VpJob {
     size: u64,
     modified_ms: u64,
     pages: u32,
+    /// `/Info /Title` of the PDF. The Windows PDF driver behind "Open PDF
+    /// Printer" writes the print job's document name there, so this is the
+    /// name of what was printed (the file port itself drops it).
+    title: Option<String>,
+}
+
+/// The document title from the trailer's `/Info` dictionary (direct or
+/// indirect), decoded from PDFDocEncoding or UTF-16; None when absent/blank.
+fn vp_pdf_title(doc: &lopdf::Document) -> Option<String> {
+    let info = doc.trailer.get(b"Info").ok()?;
+    let dict = match info.as_reference() {
+        Ok(id) => doc.get_object(id).ok()?.as_dict().ok()?,
+        Err(_) => info.as_dict().ok()?,
+    };
+    let title = match dict.get(b"Title").ok()? {
+        lopdf::Object::Reference(id) => doc.get_object(*id).ok()?,
+        o => o,
+    };
+    let text = lopdf::decode_text_string(title).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// List collected jobs (oldest first — print order).
@@ -1069,15 +1379,17 @@ fn virtual_printer_jobs() -> Result<Vec<VpJob>, String> {
                 .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            let pages = lopdf::Document::load(e.path())
-                .map(|d| d.get_pages().len() as u32)
-                .unwrap_or(0);
+            let (pages, title) = match lopdf::Document::load(e.path()) {
+                Ok(d) => (d.get_pages().len() as u32, vp_pdf_title(&d)),
+                Err(_) => (0, None),
+            };
             jobs.push(VpJob {
                 file: name,
                 path: e.path().to_string_lossy().to_string(),
                 size: meta.len(),
                 modified_ms,
                 pages,
+                title,
             });
         }
     }
@@ -1270,6 +1582,7 @@ fn discard_spool_pdf(path: String) -> Result<bool, String> {
 /// Linux: `xdg-open "<path>"` honours the `application/pdf` MIME default.
 #[tauri::command]
 fn open_pdf_in_default_viewer(path: String) -> Result<bool, String> {
+    headless::weiger("open_pdf_in_default_viewer")?;
     if !std::path::Path::new(&path).exists() {
         return Err(format!("File not found: {}", path));
     }
@@ -1318,6 +1631,7 @@ fn open_pdf_in_default_viewer(path: String) -> Result<bool, String> {
 /// manager), with the file selected where the platform supports it.
 #[tauri::command]
 fn reveal_in_file_manager(path: String) -> Result<bool, String> {
+    headless::weiger("reveal_in_file_manager")?;
     if !std::path::Path::new(&path).exists() {
         return Err(format!("File not found: {}", path));
     }
@@ -1422,6 +1736,36 @@ fn list_pdf_files(dir: String) -> Result<Vec<String>, String> {
     Ok(pdf_files)
 }
 
+/// PDF files directly in `dir` with size and modification time, so a folder
+/// watch can skip unchanged files without reading them.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PdfFileStat {
+    path: String,
+    size: u64,
+    mtime_ms: f64,
+}
+
+#[tauri::command]
+fn list_pdf_file_stats(dir: String) -> Result<Vec<PdfFileStat>, String> {
+    let entries = fs::read_dir(&dir).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let mut files: Vec<PdfFileStat> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_pdf = path.extension().map_or(false, |e| e.to_string_lossy().eq_ignore_ascii_case("pdf"));
+        let Ok(meta) = fs::metadata(&path) else { continue };
+        if !is_pdf || !meta.is_file() {
+            continue;
+        }
+        let mtime_ms = meta.modified().ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
+        files.push(PdfFileStat { path: path.to_string_lossy().to_string(), size: meta.len(), mtime_ms });
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(files)
+}
+
 #[tauri::command]
 fn play_alert_sound() {
     #[cfg(target_os = "windows")]
@@ -1511,10 +1855,9 @@ fn install_plugin(path: String) -> Result<serde_json::Value, String> {
         .and_then(|v| v.as_str())
         .ok_or("plugin.json must have an 'id' field")?;
 
-    // Validate plugin id (prevent path traversal)
-    if plugin_id.contains("..") || plugin_id.contains('/') || plugin_id.contains('\\') {
-        return Err("Invalid plugin id".to_string());
-    }
+    // Strikte id-controle (#550): "" of "." wees naar de pluginmap zelf en
+    // "C:" ontsnapte via Path::join.
+    extensie_installatie::valideer_extensie_id(plugin_id).map_err(|f| f.message)?;
 
     let plugins_dir = get_plugins_dir();
     let plugin_dir = plugins_dir.join(plugin_id);
@@ -1557,27 +1900,25 @@ fn install_plugin(path: String) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn uninstall_plugin(id: String) -> Result<bool, String> {
-    // Validate id
-    if id.contains("..") || id.contains('/') || id.contains('\\') {
-        return Err("Invalid plugin id".to_string());
-    }
+    // Strikt of een veilig oud id; nooit de pluginmap zelf of daarbuiten (#550).
+    extensie_installatie::controleer_bestaand_id(&id)?;
 
     let plugins_dir = get_plugins_dir();
     let plugin_dir = plugins_dir.join(&id);
 
-    if plugin_dir.exists() {
-        fs::remove_dir_all(&plugin_dir).map_err(|e| format!("Failed to remove plugin: {}", e))?;
-    }
-
-    Ok(true)
+    // Niet tijdens een lopende installatie van een extensie.
+    extensie_installatie::met_wisselslot(|| {
+        if plugin_dir.exists() {
+            fs::remove_dir_all(&plugin_dir).map_err(|e| format!("Failed to remove plugin: {}", e))?;
+        }
+        Ok(true)
+    })
 }
 
 #[tauri::command]
 fn read_plugin_file(plugin_id: String, file_path: String) -> Result<String, String> {
-    // Validate inputs
-    if plugin_id.contains("..") || plugin_id.contains('/') || plugin_id.contains('\\') {
-        return Err("Invalid plugin id".to_string());
-    }
+    // Validate inputs: strikt of een veilig oud id (#550)
+    extensie_installatie::controleer_bestaand_id(&plugin_id)?;
     if file_path.contains("..") {
         return Err("Invalid file path".to_string());
     }
@@ -1678,6 +2019,8 @@ fn render_pdf_page_skia(
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
 ) -> Result<tauri::ipc::Response, String> {
+    // Geschakelde lagen (#684): teken uit de weergavekopie.
+    let path = laagweergave::tekenpad(&path);
     let extra_rot = rotation.unwrap_or(0);
     let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
     let rendered = doc.render_page(page_index as usize, scale, extra_rot)
@@ -1714,14 +2057,18 @@ async fn render_pdf_page(
     page_index: u32,
     scale: f32,
     rotation: Option<i32>,
+    // Thin Lines view mode (#595): every vector stroke as a hairline.
+    thin_lines: Option<bool>,
     bytes_cache: tauri::State<'_, PdfBytesCache>,
     pdfium_cache: tauri::State<'_, pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
     pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<tauri::ipc::Response, String> {
+    // Geschakelde lagen (#684): teken uit de weergavekopie.
+    let path = laagweergave::tekenpad(&path);
     let extra_rot = rotation.unwrap_or(0);
-    let scale_q = (scale * 10_000.0).round() as u32;
-    let cache_key = (path.clone(), page_index, scale_q, extra_rot);
+    let thin_lines = thin_lines.unwrap_or(false);
+    let cache_key = pdfium_renderer::pixmap_key(&path, page_index, scale, extra_rot, thin_lines);
 
     // Cache fast path (unchanged)
     pixmap_cache.ensure();
@@ -1739,7 +2086,7 @@ async fn render_pdf_page(
 
     // Try the worker pool first
     if let Some(p) = pool.get() {
-        match p.render(&path, page_index, scale, extra_rot).await {
+        match p.render(&path, page_index, scale, extra_rot, thin_lines).await {
             Ok((width, height, rgba)) => {
                 let rgba_arc = std::sync::Arc::new(rgba);
                 if let Ok(mut guard) = pixmap_cache.0.lock() {
@@ -1789,11 +2136,13 @@ async fn render_pdf_page(
         &pdfium_cache,
     )?;
 
-    let (width, height, rgba) = pdfium_renderer::render_page_to_rgba(
+    let (width, height, rgba) = pdfium_renderer::render_page_to_rgba_opts(
         handle.document(),
         page_index,
         scale,
         extra_rot,
+        thin_lines,
+        pdfium_renderer::INPROC_SCREEN_RGBA_BYTES,
     )?;
 
     let rgba_arc = std::sync::Arc::new(rgba);
@@ -1882,11 +2231,16 @@ async fn render_pdf_page_region(
     region_w_pt: f32,
     region_h_pt: f32,
     spread: Option<bool>,
+    // Thin Lines view mode (#595), see render_pdf_page.
+    thin_lines: Option<bool>,
     bytes_cache: tauri::State<'_, PdfBytesCache>,
     pdfium_cache: tauri::State<'_, pdfium_renderer::PdfiumDocCache>,
     pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<tauri::ipc::Response, String> {
+    // Geschakelde lagen (#684): teken uit de weergavekopie.
+    let path = laagweergave::tekenpad(&path);
     let extra_rot = rotation.unwrap_or(0);
+    let thin_lines = thin_lines.unwrap_or(false);
 
     // Try the worker pool first: region tiles are small (fit the 64 MB SHM), so
     // they render in a SEPARATE process — safe for parallel/pre-cache rendering
@@ -1894,7 +2248,7 @@ async fn render_pdf_page_region(
     // except a dead worker: that crash must not be repeated in the GUI process.
     if let Some(p) = pool.get() {
         match p
-            .render_region(&path, page_index, scale, extra_rot, region_x_pt, region_y_pt, region_w_pt, region_h_pt, spread.unwrap_or(false))
+            .render_region(&path, page_index, scale, extra_rot, region_x_pt, region_y_pt, region_w_pt, region_h_pt, spread.unwrap_or(false), thin_lines)
             .await
         {
             Ok((width, height, rgba)) => {
@@ -1944,6 +2298,7 @@ async fn render_pdf_page_region(
         region_y_pt,
         region_w_pt,
         region_h_pt,
+        thin_lines,
     )?;
 
     let mut data = Vec::with_capacity(8 + rgba.len());
@@ -1969,11 +2324,17 @@ async fn render_tile_scene_region(
     region_y_pt: f32,
     region_w_pt: f32,
     region_h_pt: f32,
+    // Thin Lines view mode (#595): the scene replays every stroke as a
+    // hairline. The scene itself is the same in both modes.
+    thin_lines: Option<bool>,
     bytes_cache: tauri::State<'_, PdfBytesCache>,
     handle_cache: tauri::State<'_, DocHandleCache>,
     scene_cache: tauri::State<'_, TileSceneCache>,
 ) -> Result<tauri::ipc::Response, String> {
+    // Geschakelde lagen (#684): teken uit de weergavekopie.
+    let path = laagweergave::tekenpad(&path);
     let extra_rot = rotation.unwrap_or(0);
+    let thin_lines = thin_lines.unwrap_or(false);
     let meta = std::fs::metadata(&path).map_err(|e| format!("stat: {}", e))?;
     let mtime = meta
         .modified()
@@ -2057,7 +2418,7 @@ async fn render_tile_scene_region(
     };
 
     let (w, h, rgba) = tauri::async_runtime::spawn_blocking(move || {
-        scene.render_region_rgba(scale, region_x_pt, region_y_pt, region_w_pt, region_h_pt)
+        scene.render_region_rgba_opts(scale, region_x_pt, region_y_pt, region_w_pt, region_h_pt, thin_lines)
     })
     .await
     .map_err(|e| format!("join: {}", e))?;
@@ -2123,6 +2484,8 @@ fn render_thumbnail(
     pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
     thumb_cache: tauri::State<ThumbnailCache>,
 ) -> Result<String, String> {
+    // Geschakelde lagen (#684): teken uit de weergavekopie.
+    let path = laagweergave::tekenpad(&path);
     let extra_rot = rotation.unwrap_or(0);
     // skip_images: PDFium renders form-data on by default but doesn't
     // expose a "drop image XObjects" knob — accept the option for API
@@ -2251,6 +2614,8 @@ fn extract_draw_commands(
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
 ) -> Result<Vec<u8>, String> {
+    // Geschakelde lagen (#684): teken uit de weergavekopie.
+    let path = laagweergave::tekenpad(&path);
     let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
     let extra_rot = rotation.unwrap_or(0);
     let cmds = doc.extract_draw_commands(page_index as usize, extra_rot).map_err(|e| format!("{}", e))?;
@@ -2283,6 +2648,8 @@ fn extract_draw_commands_batch(
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
 ) -> Result<Vec<Vec<u8>>, String> {
+    // Geschakelde lagen (#684): teken uit de weergavekopie.
+    let path = laagweergave::tekenpad(&path);
     let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
     let rots = rotations.unwrap_or_default();
     let pairs: Vec<(usize, i32)> = page_indices.iter().enumerate().map(|(i, &p)| {
@@ -2317,6 +2684,14 @@ fn invalidate_pdf_cache(
     Ok(true)
 }
 
+/// Lagen schakelen (#684): meldt de weergavekopie van een document aan
+/// (`view`) of af (`None`). Vanaf nu tekenen de render-opdrachten voor `path`
+/// uit die kopie. Geeft de vorige kopie terug.
+#[tauri::command]
+fn set_layer_view(path: String, view: Option<String>) -> Option<String> {
+    laagweergave::zet(&path, view)
+}
+
 /// Alles loslaten wat het proces voor een gesloten document vasthoudt: ruwe
 /// bytes, geparsede handles (lopdf én PDFium), thumbnails, paginatypen en
 /// pixmaps. Alleen aanroepen als geen ander open tabblad hetzelfde pad
@@ -2332,6 +2707,7 @@ fn release_pdf_document(
     pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<pdfium_renderer::PixmapCacheState>,
 ) -> Result<bool, String> {
+    laagweergave::vergeet(&path);
     bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.remove(&path);
     handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?.remove(&path);
     if let Ok(mut tc) = thumb_cache.0.lock() {
@@ -2442,6 +2818,12 @@ fn read_clipboard_image_png(app: tauri::AppHandle) -> Result<tauri::ipc::Respons
 fn set_prtscn_hotkey(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut};
 
+    // Een headless testinstantie neemt de PrtScn-toets van de gebruiker niet over.
+    if enabled && headless::actief() {
+        headless::meld("PrtScn hotkey registration");
+        return Ok(());
+    }
+
     let shortcut = Shortcut::new(None, Code::PrintScreen);
     let gs = app.global_shortcut();
     let is_registered = gs.is_registered(shortcut);
@@ -2467,11 +2849,25 @@ fn run_mobile() {
     run(StartupOpts::default());
 }
 
+/// Registers the OpenAEC Installer plugin (`openaec-update`)? Only on Windows,
+/// where the installer can update this app, and not when something else decides
+/// about versions: managed mode (`OPENAEC_BEHEERD=1`, the environment manages
+/// them), a portable copy (#881, the installer would update the INSTALLED copy
+/// and close this one) or a headless test instance (no processes outside it).
+pub fn openaec_installer_plugin(windows: bool, beheerd: bool, draagbaar: bool, headless: bool) -> bool {
+    windows && !beheerd && !draagbaar && !headless
+}
+
 pub fn run(opts: StartupOpts) {
+    // Normaal al gedaan in main(); eenmalig, dus hier alleen een vangnet.
+    draagbaar::activeer();
     eprintln!(
         "[startup] mcp_server={}, mcp_port={}",
         opts.mcp_server, opts.mcp_port
     );
+    if beheerd::is_beheerd() {
+        eprintln!("[startup] managed mode ({}=1): first-run prompts off", beheerd::OMGEVINGSVARIABELE);
+    }
 
     // Capture the MCP options for `setup()` — we now spawn the MCP server
     // *after* Tauri has produced an `AppHandle` so the new `app_*` tools
@@ -2507,18 +2903,46 @@ pub fn run(opts: StartupOpts) {
         }
     }
 
-    // Collect any PDF file paths passed on the command line (for file associations)
+    // Crashlog en noodmomentopname bij een paniek (crashlog.rs, herstel.rs):
+    // zo vroeg mogelijk, zodat ook een paniek tijdens het opstarten gelogd wordt.
+    crashlog::installeer_paniekhaak();
+    let tweede_instantie = instantie::is_nieuwe_instantie(&args);
+
+    // Headless testinstantie (OPDS_HEADLESS=1, zie headless.rs): vaststellen en
+    // de WebView2-argumenten zetten vóór er een draad of venster bestaat.
+    let headless_browser_args = if headless::init(mcp_enabled) {
+        let browser_args = headless::bereid_omgeving_voor();
+        eprintln!("[startup] headless: window off-screen, no focus; WebView2 args: {browser_args}");
+        Some(browser_args)
+    } else {
+        None
+    };
+
+    // Collect any PDF file paths passed on the command line (for file associations).
+    // A relative path from `AppRun <path>` is resolved against the directory
+    // the user started from: AppRun itself changes to $APPDIR/usr (#863).
+    let startmap = openaec_omgeving::startmap_voor_argumenten(
+        openaec_omgeving::huidige(),
+        &openaec_omgeving::Waarneming::van_systeem(),
+    );
     let opened_files: Vec<String> = args.iter()
         .skip(1)
-        .filter(|arg| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
-        .cloned()
+        .filter_map(|arg| pdf_uit_argument(arg))
+        .map(|pad| openaec_omgeving::absoluut_argument(&pad, startmap.as_deref()))
         .collect();
+    if !opened_files.is_empty() {
+        eprintln!("[startup] command-line files: {opened_files:?}");
+    }
 
     // Spawn the PDFium worker pool. Failures here are non-fatal — the
     // existing in-proc PDFium path serves as fallback when the pool is
     // unavailable.
     let pool: Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>> = Arc::new(tokio::sync::OnceCell::new());
     let pool_for_init = pool.clone();
+    // Shared-memory files (64 MB per worker) of earlier app processes that
+    // crashed or were killed stay behind in the temp dir; remove them in the
+    // background. Files of running instances are left alone.
+    std::thread::spawn(worker_pool::sweep_stale_shm_files);
     tauri::async_runtime::spawn(async move {
         // De pdfium-worker-sidecar staat na bundling naast de hoofdbinary. De
         // bestandsnaam is platform-afhankelijk (`pdfium-worker.exe` op Windows,
@@ -2554,6 +2978,7 @@ pub fn run(opts: StartupOpts) {
                     });
                 } else {
                     eprintln!("[pool] no workers became ready — pool disabled");
+                    pool.shutdown().await;
                 }
             }
             Err(e) => {
@@ -2565,6 +2990,8 @@ pub fn run(opts: StartupOpts) {
     let mut builder = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(opened_files)))
         .manage(LockedFiles(Mutex::new(HashMap::new())))
+        .manage(spraak::SpraakProces::default())
+        .manage(beveiligde_pdf::BeveiligdeKopieen::default())
         .manage(print_instelling::PrinterDevmodes::default())
         .manage(PdfBytesCache(Mutex::new(HashMap::new())))
         .manage(DocHandleCache(Mutex::new(HashMap::new())))
@@ -2577,14 +3004,27 @@ pub fn run(opts: StartupOpts) {
         .manage(cad_import::CadImportState::default())
         .manage(pool.clone())
         .manage(mcp_app_bridge::McpAppBridge::new())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
+        .manage(mcp_extensie_tools::ExtensieTools::default())
+        .plugin(tauri_plugin_fs::init());
+    // Headless: dezelfde plugin-naam en commando's, maar zonder native vensters.
+    builder = if headless::actief() {
+        builder.plugin(headless::dialoog_plugin())
+    } else {
+        builder.plugin(tauri_plugin_dialog::init())
+    };
+    builder = builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::default().build());
+    // Uitvallende WebView2-processen in het crashlog (crashlog.rs); alleen op
+    // het bureaublad (op Windows via WebView2, elders een lege plugin).
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(crashlog::plugin());
+    }
     // Drag-out window detach is desktop-only (no mobile backend in the crate).
     #[cfg(not(target_os = "android"))]
     {
@@ -2593,24 +3033,36 @@ pub fn run(opts: StartupOpts) {
 
     // Single-instance and updater plugins are desktop-only.
     //
-    // A DETACHED document window is launched as its own app process with the
-    // `OPDS_DETACHED=1` env var (see window_mgmt::spawn_window_with_pdf). Such
-    // a process must NOT register single-instance — otherwise it would just
-    // forward its PDF arg to the original instance and exit, instead of
-    // becoming an independent window. So we skip the plugin when detached.
+    // A torn-off tab opens in a SECOND app instance: its own process, started
+    // with `--new-instance` (see instantie.rs and
+    // window_mgmt::spawn_window_with_pdf). Such a process must NOT register
+    // single-instance — otherwise it would forward its PDF arg to the primary
+    // instance and exit. `OPDS_DETACHED=1` also skips it (test instances next
+    // to the installed app); add `OPDS_HEADLESS=1` to keep such a test
+    // instance off-screen and out of focus (headless.rs).
     #[cfg(not(target_os = "android"))]
     {
-        let is_detached = std::env::var("OPDS_DETACHED").as_deref() == Ok("1");
-        if !is_detached {
+        // Linux only (the plugin uses D-Bus there): without a usable session
+        // bus address zbus would panic inside the plugin; without any bus the
+        // plugin just runs every start on its own.
+        let skip_single_instance = instantie::slaat_single_instance_over(
+            &args,
+            std::env::var("OPDS_DETACHED").ok().as_deref(),
+        ) || (cfg!(target_os = "linux")
+            && !openaec_omgeving::sessiebus_bruikbaar(
+                std::env::var("DBUS_SESSION_BUS_ADDRESS").ok().as_deref(),
+            ));
+        if !skip_single_instance {
             builder = builder
                 .plugin(tauri_plugin_single_instance::init(|app: &tauri::AppHandle, argv: Vec<String>, _cwd: String| {
-                    if let Some(window) = app.get_webview_window("main") {
+                    if headless::actief() {
+                        headless::meld("single-instance focus");
+                    } else if let Some(window) = app.get_webview_window("main") {
                         let _ = window.unminimize();
                         let _ = window.set_focus();
                     }
                     let files: Vec<String> = argv.iter()
-                        .filter(|arg: &&String| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
-                        .cloned()
+                        .filter_map(|arg| pdf_uit_argument(arg))
                         .collect();
                     for path in &files {
                         let _ = app.fs_scope().allow_file(path);
@@ -2620,8 +3072,34 @@ pub fn run(opts: StartupOpts) {
                     }
                 }));
         }
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        // Managed mode (OPENAEC_BEHEERD=1): the SuperCloud refreshes the image,
+        // so no updater plugin at all: no check, no prompt, no download.
+        if !beheerd::is_beheerd() {
+            builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        } else {
+            eprintln!("[openaec] managed mode: updater disabled");
+        }
+        // Updates through the OpenAEC Installer (OpenAEC-Blueprint#33): on Windows
+        // with the installer the app hands the update over; otherwise the updater above.
+        // The plugin also lets the installer check in the background at start, so it
+        // is only registered where the installer may update this copy (see
+        // `openaec_installer_plugin`); without it the frontend uses the updater above.
+        // Markset: never. The OpenAEC Installer updates Open PDF Studio, not
+        // Markset; Markset updates itself.
+        const MARKSET_OPENAEC_INSTALLER: bool = false;
+        if MARKSET_OPENAEC_INSTALLER {
+        if openaec_installer_plugin(
+            cfg!(windows),
+            beheerd::is_beheerd(),
+            draagbaar::actief(),
+            headless::actief(),
+        ) {
+            builder = builder.plugin(openaec_update::init("open-pdf-studio"));
+        }
+        }
     }
+    // window.__OPENAEC__ for the frontend: managed mode and the work folder.
+    builder = builder.plugin(openaec_omgeving::plugin());
 
     // Global system hotkey (PrtScn) for the opt-in "screenshot annotate"
     // feature. The shortcut is NOT registered here — the plugin only installs
@@ -2637,7 +3115,9 @@ pub fn run(opts: StartupOpts) {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("main") {
+                        if headless::actief() {
+                            headless::meld("PrtScn show/focus");
+                        } else if let Some(window) = app.get_webview_window("main") {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
@@ -2649,14 +3129,50 @@ pub fn run(opts: StartupOpts) {
         );
     }
 
+    // Headless: vensters buiten beeld parkeren en zonder activeren tonen.
+    if headless::actief() {
+        builder = builder.plugin(headless::plugin());
+    }
+
+    let mut context = tauri::generate_context!();
+    // Draagbare modus (#881): eigen single-instance-sleutel per map.
+    draagbaar::pas_context_aan(&mut context);
+    if let Some(browser_args) = &headless_browser_args {
+        headless::pas_context_aan(&mut context, browser_args);
+    }
+
     builder
         .setup(move |app| {
+            // Mobiel (#596): voorkeuren, sessie en catalogi in de schrijfbare
+            // app-datamap, vóór er een commando draait dat ze leest.
+            #[cfg(mobile)]
+            match app.path().app_local_data_dir() {
+                Ok(map) => datamap::zet_platform_map(map),
+                Err(e) => eprintln!("[startup] geen app-datamap: {e}"),
+            }
+
             // Als eerste, zodat alles wat hierna met `log::` gemeld wordt ook
             // ergens aankomt. Zonder logger zijn die macro's lege hulzen.
             // Mislukt het opzetten, dan draait de app gewoon door.
             match logboek::registreer(app.handle()) {
                 Ok(map) => eprintln!("[startup] logboek in {}", map.display()),
                 Err(e) => eprintln!("[startup] geen logboek: {e}"),
+            }
+
+            // Herstel van niet-opgeslagen werk (herstel.rs): de paniekhaak
+            // kan nu de frontend bereiken, en de markering "deze instantie
+            // draait" gaat pas weg bij een nette afsluiting.
+            crashlog::koppel(app.handle());
+            herstel::start(tweede_instantie);
+            // SIGTERM (logout in the SuperCloud, `docker stop`): recovery
+            // files for unsaved work, then a normal exit.
+            // Only in a container or managed mode; a normal desktop keeps the
+            // default SIGTERM behaviour.
+            #[cfg(target_os = "linux")]
+            {
+                if openaec_omgeving::huidige().sigterm_afhandelen() {
+                    openaec_omgeving::installeer_sigterm(app.handle().clone());
+                }
             }
 
             let diagnostics_path = datamap::tauri_map(app.handle(), datamap::TauriMap::Logs)
@@ -2687,6 +3203,13 @@ pub fn run(opts: StartupOpts) {
                 });
             }
 
+            // Ontsleutelde werkkopieën van PDF's met een wachtwoord die van een
+            // vorige keer zijn blijven staan (beveiligde_pdf.rs). Kopieën van
+            // een andere, nog draaiende instantie blijven staan.
+            std::thread::spawn(|| {
+                beveiligde_pdf::ruim_oude_kopieen_op(&beveiligde_pdf::werkmap());
+            });
+
             // Grant FS plugin scope for command-line files (file association)
             for path in app.state::<OpenedFiles>().0.lock().unwrap().iter() {
                 let _ = app.fs_scope().allow_file(path);
@@ -2706,7 +3229,22 @@ pub fn run(opts: StartupOpts) {
             // the AppHandle stored in the server's AppState). Refuses to
             // start in release builds unless OPS_ENABLE_MCP=1 (handled
             // inside `mcp_server::start`).
-            if mcp_enabled {
+            // OpenAEC Linux: MCP server on OPENAEC_MCP_POORT, only with the
+            // secret from OPENAEC_MCP_GEHEIM and never for a browser (#863).
+            // A second instance (torn-off tab) inherits the environment but
+            // leaves the one port to the main instance.
+            let beheerde_mcp = openaec_omgeving::huidige().mcp.clone().filter(|_| !tweede_instantie);
+            if let Some(instelling) = beheerde_mcp {
+                if mcp_enabled {
+                    eprintln!("[openaec] --mcp-server ignored: the MCP server comes from OPENAEC_MCP_POORT");
+                }
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = mcp_server::start_beheerd(instelling, Some(app_handle)).await {
+                        eprintln!("[mcp] managed server failed: {e}");
+                    }
+                });
+            } else if mcp_enabled {
                 let app_handle = app.handle().clone();
                 let test_pdfs_dir = mcp_server::resolve_test_pdfs_dir(
                     std::env::var_os("OPS_TEST_PDFS_DIR").map(std::path::PathBuf::from),
@@ -2804,6 +3342,10 @@ pub fn run(opts: StartupOpts) {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            pdf_beveiliging::protect_pdf_file,
+            spraak::tts_info,
+            spraak::tts_speak,
+            spraak::tts_stop,
             get_opened_file,
             save_session,
             load_session,
@@ -2811,13 +3353,19 @@ pub fn run(opts: StartupOpts) {
             read_file,
             write_file,
             write_file_atomic,
+            cancel_file_write,
+            write_file_new,
+            write_downloaded_file_new,
             file_exists,
             open_url,
             is_dev_mode,
             lock_file,
             unlock_file,
             is_default_pdf_app,
+            default_pdf_app_status,
             open_default_apps_settings,
+            explorer_thumbnails_status,
+            explorer_thumbnails_set,
             get_printers,
             print_pdf,
             open_printer_properties,
@@ -2842,6 +3390,7 @@ pub fn run(opts: StartupOpts) {
             discard_spool_pdf,
             download_pdf_from_url,
             list_pdf_files,
+            list_pdf_file_stats,
             save_preferences,
             load_preferences,
             save_catalog,
@@ -2852,6 +3401,12 @@ pub fn run(opts: StartupOpts) {
             install_plugin,
             uninstall_plugin,
             read_plugin_file,
+            // Extensies installeren en herladen zonder dialoog (#550)
+            extensie_installatie::extensie_lijst,
+            extensie_installatie::extensie_inspecteer,
+            extensie_installatie::extensie_installeer,
+            extensie_installatie::extensie_bevestig,
+            extensie_installatie::extensie_terugdraaien,
             render_pdf_page,
             ocr_pdf_page,
             worker_pool_ready,
@@ -2864,6 +3419,7 @@ pub fn run(opts: StartupOpts) {
             handtekening::verifieer::pdf_signature_list,
             handtekening::verifieer::pdf_signed_revision,
             release_pdf_document,
+            set_layer_view,
             clear_pdf_cache,
             analyze_page_type,
             analyze_page_type_batch,
@@ -2876,6 +3432,9 @@ pub fn run(opts: StartupOpts) {
             cad_export::export_page_to_cad,
             cad_export::cancel_cad_export,
             cad_export::scan_page_for_cad,
+            pdfx_cmyk::pdfx_list_cmyk_profiles,
+            pdfx_cmyk::pdfx_inspect_profile,
+            pdfx_cmyk::pdfx_convert_to_cmyk,
             cad_import::scan_cad_file,
             cad_import::import_cad_to_pdf,
             cad_import::cancel_cad_import,
@@ -2887,8 +3446,12 @@ pub fn run(opts: StartupOpts) {
             cad_import::cad_import_limits,
             cad_import::cad_import_dir,
             allow_fs_scope,
+            beveiligde_pdf::open_protected_pdf,
+            beveiligde_pdf::release_protected_pdf,
             mcp_app_bridge::app_response,
             mcp_app_bridge::mcp_bridge_ready,
+            mcp_extensie_tools::mcp_set_extension_tools,
+            webview_opname::capture_webview_png,
             mcp_koppeling::mcp_instellen,
             mcp_koppeling::mcp_status,
             accounts::accounts_sign_in,
@@ -2907,15 +3470,51 @@ pub fn run(opts: StartupOpts) {
             window_mgmt::drag_icon_path,
             window_mgmt::tab_drag_preflight,
             window_mgmt::detach_diag,
+            instantie::instance_role,
+            beheerd::managed_mode,
+            instantie::tab_drop_target,
             startup_diagnostics::startup_diagnostic,
             startup_diagnostics::startup_diagnostics_path,
             datamap::app_data_dir_effectief,
+            draagbaar::portable_status,
+            herstel::herstel_info,
+            herstel::herstel_schrijf,
+            herstel::herstel_lees,
+            herstel::herstel_lees_tekst,
+            herstel::herstel_lijst,
+            herstel::herstel_verwijder,
+            herstel::herstel_hernoem,
+            herstel::herstel_processen,
+            herstel::herstel_claim,
+            herstel::herstel_werkkopie,
+            herstel::herstel_kopieer,
+            herstel::herstel_bron_info,
+            herstel::herstel_crashlog,
+            herstel::herstel_log,
+            herstel::herstel_schoon_afsluiten,
+            herstel::herstel_nood_klaar,
+            herstel::herstel_test_paniek,
             read_clipboard_image_png,
             set_prtscn_hotkey,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|_app, _event| {
+            // Bij afsluiten de ontsleutelde werkkopieën van deze instantie
+            // opruimen (best effort; wat blijft staan ruimt de volgende start op).
+            if let tauri::RunEvent::Exit = &_event {
+                beveiligde_pdf::ruim_eigen_kopieen_op(&_app.state::<beveiligde_pdf::BeveiligdeKopieen>());
+                // De markering "draait" alleen weg na een nette afsluiting van
+                // de frontend; anders ziet de volgende start een crash.
+                herstel::bij_afsluiten();
+                // Stop de PDFium-workers en verwijder hun SHM-bestanden
+                // (4 x 64 MB in de temp-map); anders blijven die na elke
+                // start staan. Als laatste, zodat een fout hier de twee
+                // stappen hierboven nooit overslaat.
+                if let Some(pool) = _app.try_state::<Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>() {
+                    worker_pool::shutdown_on_exit(&pool);
+                }
+            }
             // macOS (en iOS) leveren een dubbelklik in Finder NIET als
             // argv-argument aan (zoals Windows/Linux), maar als Apple Event
             // dat Tauri doorgeeft als RunEvent::Opened { urls }. Zonder deze
@@ -2935,30 +3534,187 @@ pub fn run(opts: StartupOpts) {
             //
             // Custom-scheme-URLs (deep-link-plugin) hebben scheme != "file"
             // en passeren dit filter niet — geen botsing met die plugin.
-            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            //
+            // Android (#593): "Openen met" uit een andere app komt als
+            // VIEW/SEND-intent binnen; tao zet de data-URI om in hetzelfde
+            // RunEvent::Opened. Dat is een content://-URI, geen pad: zonder
+            // deze tak verscheen de app wel, maar bleef het document weg (de
+            // deep-link-plugin negeert content://, het hoort niet bij zijn
+            // domein). Zie geopend_pdf_document().
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = &_event {
+                let android = cfg!(target_os = "android");
                 let files: Vec<String> = urls
                     .iter()
-                    .filter(|url| url.scheme() == "file")
-                    .filter_map(|url| url.to_file_path().ok())
-                    .map(|p| p.to_string_lossy().to_string())
-                    .filter(|p| p.to_lowercase().ends_with(".pdf"))
+                    .filter_map(|url| geopend_pdf_document(url, android))
                     .collect();
                 if !files.is_empty() {
-                    for path in &files {
+                    for path in files.iter().filter(|p| !p.starts_with("content://")) {
                         let _ = _app.fs_scope().allow_file(path);
                     }
                     {
                         let state = _app.state::<OpenedFiles>();
                         let mut buffered = state.0.lock().unwrap();
-                        buffered.extend(files.iter().cloned());
+                        for path in &files {
+                            if !buffered.contains(path) {
+                                buffered.push(path.clone());
+                            }
+                        }
                     }
                     let _ = _app.emit("open-files", &files);
-                    if let Some(window) = _app.get_webview_window("main") {
+                    #[cfg(desktop)]
+                    if headless::actief() {
+                        headless::meld("file-open activation");
+                    } else if let Some(window) = _app.get_webview_window("main") {
                         let _ = window.unminimize();
                         let _ = window.set_focus();
                     }
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod geopend_document_tests {
+    use super::{geopend_pdf_document, pdf_uit_argument};
+
+    fn url(s: &str) -> url::Url {
+        url::Url::parse(s).expect("geldige URL")
+    }
+
+    #[test]
+    fn android_content_uri_opent_ook_zonder_pdf_extensie() {
+        // "Openen met" uit een bestandsbeheerder (#593): opaak document-id.
+        let uri = "content://com.android.providers.downloads.documents/document/msf%3A1234";
+        assert_eq!(geopend_pdf_document(&url(uri), true).as_deref(), Some(uri));
+        let uri = "content://media/external/file/42";
+        assert_eq!(geopend_pdf_document(&url(uri), true).as_deref(), Some(uri));
+    }
+
+    #[test]
+    fn content_uri_telt_alleen_op_android() {
+        let uri = url("content://com.example.provider/plan.pdf");
+        assert_eq!(geopend_pdf_document(&uri, false), None);
+    }
+
+    #[test]
+    fn bestands_url_wordt_een_pad_en_alleen_voor_pdf() {
+        let pad = std::env::temp_dir().join("Plan.PDF");
+        let bestand = url::Url::from_file_path(&pad).expect("absoluut pad");
+        for android in [false, true] {
+            assert_eq!(
+                geopend_pdf_document(&bestand, android),
+                Some(pad.to_string_lossy().to_string())
+            );
+        }
+        let tekst = url::Url::from_file_path(std::env::temp_dir().join("notities.txt")).unwrap();
+        assert_eq!(geopend_pdf_document(&tekst, true), None);
+    }
+
+    #[test]
+    fn argument_pad_of_file_uri_wordt_een_pdf_pad() {
+        // Gewoon pad (Windows, %F-starters, terminal).
+        assert_eq!(pdf_uit_argument("/home/a/Plan.PDF").as_deref(), Some("/home/a/Plan.PDF"));
+        assert_eq!(pdf_uit_argument("C:\\tekening.pdf").as_deref(), Some("C:\\tekening.pdf"));
+        // %U-starter (#748): file-URI met procentcodering.
+        let pad = std::env::temp_dir().join("Bouw tekening #2.pdf");
+        let uri = url::Url::from_file_path(&pad).expect("absoluut pad");
+        assert!(uri.as_str().contains("%20"), "{uri}");
+        assert_eq!(pdf_uit_argument(uri.as_str()), Some(pad.to_string_lossy().to_string()));
+        assert_eq!(pdf_uit_argument(&uri.as_str().replacen("file", "FILE", 1)), Some(pad.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn argument_met_niet_ascii_tekens_raakt_niet_in_paniek() {
+        // Byte 7 valt midden in een UTF-8-teken: geen paniek bij de start.
+        for a in ["ééééé.pdf", "/tmp/€€€.pdf", "C:\\Bé€sd.pdf", "Ünterlagen/Plan.pdf"] {
+            assert_eq!(pdf_uit_argument(a).as_deref(), Some(a), "{a}");
+        }
+        assert_eq!(pdf_uit_argument("ééééé.txt"), None);
+        // Een file-URI van een pad met niet-ASCII-tekens wordt dat pad.
+        let pad = std::env::temp_dir().join("Bouwtekening é€ ü.pdf");
+        let uri = url::Url::from_file_path(&pad).expect("absoluut pad");
+        assert_eq!(pdf_uit_argument(uri.as_str()), Some(pad.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn argument_zonder_pdf_opties_en_andere_schemas_tellen_niet() {
+        for a in ["--version", "-psn_0_123.pdf", "notities.txt", "file:///tmp/notities.txt",
+                  "openpdfstudio://open/x.pdf", "https://example.com/a.pdf", "file://"] {
+            assert_eq!(pdf_uit_argument(a), None, "{a}");
+        }
+    }
+
+    #[test]
+    fn deep_links_en_web_urls_blijven_buiten_beschouwing() {
+        for s in ["openpdfstudio://open/x.pdf", "https://open/x.pdf", "http://example.com/a.pdf"] {
+            assert_eq!(geopend_pdf_document(&url(s), true), None, "{s}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod openaec_installer_tests {
+    use super::openaec_installer_plugin;
+
+    #[test]
+    fn alleen_windows_zonder_beheer_draagbaar_of_headless() {
+        assert!(openaec_installer_plugin(true, false, false, false));
+        // macOS en Linux: de installer werkt die (nog) niet bij.
+        assert!(!openaec_installer_plugin(false, false, false, false));
+        // Beheerde modus: de omgeving regelt de versie.
+        assert!(!openaec_installer_plugin(true, true, false, false));
+        // Draagbaar: de installer zou de geïnstalleerde kopie bijwerken.
+        assert!(!openaec_installer_plugin(true, false, true, false));
+        // Testinstantie: geen processen buiten de instantie.
+        assert!(!openaec_installer_plugin(true, false, false, true));
+    }
+}
+
+#[cfg(test)]
+mod vp_title_tests {
+    use super::vp_pdf_title;
+    use lopdf::{dictionary, Document, Object, StringFormat};
+
+    fn doc_with_info(info: Option<Object>) -> Document {
+        let mut doc = Document::with_version("1.7");
+        if let Some(info) = info {
+            let id = doc.add_object(info);
+            doc.trailer.set("Info", Object::Reference(id));
+        }
+        doc
+    }
+
+    #[test]
+    fn title_from_an_indirect_info_dictionary() {
+        let doc = doc_with_info(Some(Object::Dictionary(dictionary! {
+            "Title" => Object::String(b"Rapport fase 2.docx".to_vec(), StringFormat::Literal),
+        })));
+        assert_eq!(vp_pdf_title(&doc).as_deref(), Some("Rapport fase 2.docx"));
+    }
+
+    #[test]
+    fn title_in_utf16_with_a_byte_order_mark() {
+        let mut bytes = vec![0xFE, 0xFF];
+        for u in "Gevel noord – A1".encode_utf16() {
+            bytes.extend_from_slice(&u.to_be_bytes());
+        }
+        let doc = doc_with_info(Some(Object::Dictionary(dictionary! {
+            "Title" => Object::String(bytes, StringFormat::Hexadecimal),
+        })));
+        assert_eq!(vp_pdf_title(&doc).as_deref(), Some("Gevel noord – A1"));
+    }
+
+    #[test]
+    fn no_info_blank_title_or_no_title_give_none() {
+        assert_eq!(vp_pdf_title(&doc_with_info(None)), None);
+        let blank = doc_with_info(Some(Object::Dictionary(dictionary! {
+            "Title" => Object::String(b"   ".to_vec(), StringFormat::Literal),
+        })));
+        assert_eq!(vp_pdf_title(&blank), None);
+        let other = doc_with_info(Some(Object::Dictionary(dictionary! {
+            "Producer" => Object::String(b"x".to_vec(), StringFormat::Literal),
+        })));
+        assert_eq!(vp_pdf_title(&other), None);
+    }
 }

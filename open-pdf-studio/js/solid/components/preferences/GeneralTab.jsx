@@ -6,6 +6,7 @@ import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../../../core/sessie-herstel.
 import { knopUitInBrowser, meldingTekst } from '../../../core/webfuncties.js';
 import { LANGUAGES } from '../../../i18n/config.js';
 import PrefSelect from './PrefSelect.jsx';
+import { UI_SCALES, normalizeUiScale } from '../../../core/ui-scale.js';
 import LanguageSelect from './LanguageSelect.jsx';
 
 export default function GeneralTab(props) {
@@ -58,6 +59,12 @@ export default function GeneralTab(props) {
           <label>{t('general.applicationTheme')}</label>
           <PrefSelect value={p.theme[0]} setValue={p.theme[1]} options={themeOptions} style={{ width: '140px' }} />
         </div>
+        <div class="pref-row">
+          <label>{t('general.interfaceScale')}</label>
+          <PrefSelect id="pref-ui-scale" value={() => normalizeUiScale(p.uiScale[0]())}
+            setValue={(v) => p.uiScale[1](normalizeUiScale(v))}
+            options={UI_SCALES.map(value => ({ value, label: `${value}%` }))} style={{ width: '140px' }} />
+        </div>
       </fieldset>
       <fieldset class="pref-fieldset">
         <legend>{t('general.startup')}</legend>
@@ -96,7 +103,7 @@ export default function GeneralTab(props) {
         </div>
         <div class="pref-row">
           <label>{t('general.aiLinkPort')}</label>
-          <input type="number" min="1024" max="65535" style={{ width: '90px' }}
+          <input type="text" inputmode="decimal" data-getal min="1024" max="65535" style={{ width: '90px' }}
             value={p.mcpPort[0]()}
             onInput={e => { const n = parseInt(e.target.value, 10); if (n >= 1024 && n <= 65535) p.mcpPort[1](n); }} />
           <span style={{ 'margin-left': '8px', color: '#666' }}>{statusTekst()}</span>

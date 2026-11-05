@@ -44,6 +44,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::mcp_app_bridge::{self, McpAppBridge};
+use crate::mcp_extensie_tools::{self, ExtensieTools};
 use crate::mcp_tool_meta::{beschikbaar, meta, Profiel};
 
 /// Per-server state. Cloned (cheaply, via Arc) into every request handler.
@@ -61,6 +62,19 @@ pub struct AppState {
     pub profiel: Profiel,
     /// De poort waarop we luisteren; de Host-kop moet daarbij passen.
     pub poort: u16,
+    /// Wie de server mag gebruiken: lokale clients, of (OpenAEC Linux) wie het
+    /// geheim kent.
+    pub toegang: Toegang,
+}
+
+/// Toegangsregel van een MCP-server.
+#[derive(Clone)]
+pub enum Toegang {
+    /// Alleen 127.0.0.1/localhost (startvlag en instelling).
+    Lokaal,
+    /// OpenAEC Linux (#863): elk adres in het interne netwerk, maar alleen met
+    /// `Authorization: Bearer <geheim>` en zonder `Origin`-kop (geen browser).
+    Geheim(Arc<str>),
 }
 
 impl AppState {
@@ -72,6 +86,7 @@ impl AppState {
             app_handle,
             profiel,
             poort,
+            toegang: Toegang::Lokaal,
         }
     }
 }
@@ -220,6 +235,30 @@ fn export_cad_tool() -> Value {
     )
 }
 
+/// Beschrijving van `app_export_ifcx` (#876, beta): de PDF als IFCX (IFC5,
+/// JSON), langs dezelfde weg als het exportvenster (js/pdf/ifcx-export.js).
+fn export_ifcx_tool() -> Value {
+    json!(
+        {
+            "name": "app_export_ifcx",
+            "description": "Convert pages of the current document to an IFCX file (beta; the JSON-based IFC5 format, alpha schema) without opening the export dialog. It writes one sheet node per page with the page size, label, rotation and measurement scale, the vector paths, text runs and embedded images on their own layers, and the annotations of the app on a separate layer (drafting components keep their IFC class). Page content comes from the last saved state of the PDF; annotations are current. A page with more paths than the limit keeps the first ones and the answer warns about the rest; once the file reaches its size limit (320 M characters) the remaining pages are left out with a warning. Refused for a document opened with a password. Replaces an existing file at `path`.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path":            { "type": "string", "description": "Absolute path of the target file (.ifcx)." },
+                    "pages":           { "type": "string", "description": "\"all\" (default), \"current\" or a range like \"1-3,5\"." },
+                    "raster":          { "type": "boolean", "description": "Include embedded images (default true)." },
+                    "text":            { "type": "boolean", "description": "Include the text runs of the pages (default true)." },
+                    "annotations":     { "type": "boolean", "description": "Include the annotations on their own layer (default true)." },
+                    "maxPathsPerPage": { "type": "integer", "description": "Limit of paths per page (default 50000); the rest of a heavier page is left out with a warning." }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }
+        }
+    )
+}
+
 /// De papierformaten die de printgereedschappen kennen; dezelfde lijst en
 /// dezelfde schrijfwijze als de Pagina-instelling (js/pdf/print-pagina-
 /// instelling.js, PAPIERFORMATEN) en als js/pdf/print-opdracht.js.
@@ -339,6 +378,180 @@ fn floorplan_tool() -> Value {
     })
 }
 
+/// Het definitie-object van een systeemtype (#567), schema 1. Een eigen functie
+/// vanwege de recursielimiet van `json!` (zie lib.rs). `register`: bij
+/// registreren zijn naam, categorie en layout verplicht; bij bijwerken is niets
+/// verplicht en wist null een optioneel veld. De JS-kant
+/// (js/annotations/systeem-typen-contract.js) is de echte controle: Rust
+/// valideert het inputSchema niet.
+fn system_type_definition_schema(register: bool) -> Value {
+    let mut schema = json!({
+        "type": "object",
+        "properties": {
+            "naam":              { "type": "string", "description": "Display name (1-200 characters). Not an identity: references use the id." },
+            "categorie":         { "type": "string", "enum": ["plafond", "vloer", "wand", "overig"] },
+            "layout":            { "type": "string", "enum": ["raster", "strook"], "description": "raster: cells in two directions (needs celXMm and celYMm). strook: strips in one direction (needs strookBreedteMm and celYMm)." },
+            "ifcCategory":       { "type": "string", "enum": ["IfcCovering", "IfcWall", "IfcSlab", "IfcPlate"] },
+            "ifcPredefinedType": { "type": ["string", "null"], "enum": ["CEILING", "FLOORING", "FLOOR", "CLADDING", "ROOFING", null] },
+            "celXMm":            { "type": ["number", "null"], "minimum": 50, "maximum": 20000, "description": "Cell width in mm. Left out or null: unconfirmed, no default is applied." },
+            "celYMm":            { "type": ["number", "null"], "minimum": 50, "maximum": 20000, "description": "Cell height in mm. Left out or null: unconfirmed, no default is applied." },
+            "strookBreedteMm":   { "type": ["number", "null"], "minimum": 50, "maximum": 20000, "description": "Strip width in mm for the strook layout. Left out or null: unconfirmed." },
+            "edgeProfiel":       { "type": "string", "enum": ["geen", "hoeklijn", "schaduwvoeg"] },
+            "sparingRegels":     { "type": ["object", "null"], "properties": {
+                                     "kleineSparingMaxMm": { "type": "number", "minimum": 10, "maximum": 20000 },
+                                     "raveelVanafMm":      { "type": "number", "minimum": 10, "maximum": 20000 } },
+                                   "additionalProperties": false },
+            "paneelTypen":       { "type": "array", "minItems": 1, "maxItems": 50, "items": {
+                                     "type": "object",
+                                     "properties": {
+                                       "id":          { "type": "string" },
+                                       "naam":        { "type": "string" },
+                                       "renderStijl": { "type": "string", "enum": ["tegel", "ventilatie", "licht"] } },
+                                     "required": ["id", "naam", "renderStijl"],
+                                     "additionalProperties": false } },
+            "lagen":             { "type": "array", "maxItems": 0, "description": "Reserved. Schema 1 has one implicit layer; only an empty array is accepted." }
+        },
+        "additionalProperties": false
+    });
+    if register {
+        schema["required"] = json!(["naam", "categorie", "layout"]);
+    }
+    schema
+}
+
+/// `app_read_ui` (#584): de interface als compacte toegankelijkheidsboom
+/// lezen (rol, naam, staat), zodat een agent kan nalezen wat een klik deed.
+/// De regels staan in js/core/mcp-ui-boom.js.
+fn read_ui_tool() -> Value {
+    json!({
+        "name": "app_read_ui",
+        "description": "Read the LIVE app's interface as a compact accessibility-style tree, to check what a click did without a screenshot. Each node has a role (button, tab, tabpanel, group, combobox, option, checkbox, status, text, ...), a name and only the state that applies: disabled, checked, pressed, selected, expanded, active, focused, readonly, plus value/valueText for inputs. Ribbon tabs carry `tab` and the `command` 'ribbon-tab:<tab>'; ribbon buttons and extension controls carry the `command` that app_run_command runs. Without `selector` it reads the ribbon (only the active tab's content exists), the side panels, the bars above the document, floating palettes, open dialogs and the status bar, each as a region. With `selector` it reads the matching elements instead, for example an extension's panel. Reads only: it never switches ribbon tabs. maxDepth, maxNodes and maxText keep the output small; `truncated` says when something was left out.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector":      { "type": "string", "description": "CSS selector of the element(s) to read, e.g. '.ribbon-container', '#left-panel' or '.status-bar'. Default: the standard regions." },
+                "maxDepth":      { "type": "integer", "minimum": 1, "maximum": 40, "default": 12, "description": "Maximum depth of the tree." },
+                "maxNodes":      { "type": "integer", "minimum": 1, "maximum": 3000, "default": 400, "description": "Maximum number of nodes over all regions together." },
+                "maxText":       { "type": "integer", "minimum": 8, "maximum": 1000, "default": 80, "description": "Maximum length of a name, description or value." },
+                "includeHidden": { "type": "boolean", "default": false, "description": "Also list hidden elements, marked with state.hidden." }
+            },
+            "additionalProperties": false
+        }
+    })
+}
+
+/// `app_list_system_types` (#567): de bibliotheek met systeemtypen lezen.
+fn list_system_types_tool() -> Value {
+    json!({
+        "name": "app_list_system_types",
+        "description": "List the reusable system types (suspended ceilings, floor slabs, panel systems) of the app library, or one type by id. Each entry has its stable id, owner, revision, whether the user edited it, the validated definition, unconfirmed dimensions and stored values that fail validation. Compare libraryRevision between calls to detect changes. Reads only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "Stable id of one system type." }
+            },
+            "additionalProperties": false
+        }
+    })
+}
+
+/// `app_register_system_type` (#567): een type onder `mcp:<key>` registreren.
+/// Een andere definitie vervangt een bestaand, onbewerkt `mcp:`-type en
+/// hertekent alle systemen ermee: daarom `wijzigt` in mcp_tool_meta.rs.
+fn register_system_type_tool() -> Value {
+    json!({
+        "name": "app_register_system_type",
+        "description": "Register a system type owned by MCP under the id mcp:<key>. Repeating the call with the same definition changes nothing (status unchanged), and a definition the user edited in the app is kept (status kept-user-edit) and never overwritten. A different definition replaces an existing mcp:<key> type that the user has not edited (status updated) and redraws every system that uses it. Unknown fields, out-of-range values and layered definitions are rejected. Missing dimensions stay unconfirmed.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "key":        { "type": "string", "description": "Stable key: lowercase letters, digits, dot, underscore or hyphen (1-64)." },
+                "definition": system_type_definition_schema(true),
+                "schema":     { "type": "integer", "enum": [1] },
+                "restore":    { "type": "boolean", "description": "Recreate a type the user removed. Only on an explicit user request." }
+            },
+            "required": ["key", "definition"],
+            "additionalProperties": false
+        }
+    })
+}
+
+/// `app_update_system_type` (#567): een MCP-type bijwerken met revisiecontrole.
+fn update_system_type_tool() -> Value {
+    json!({
+        "name": "app_update_system_type",
+        "description": "Update a system type owned by MCP (id mcp:<key>). Pass the revision you last read as expectedRevision; a stale revision is rejected with the current revision. Types of the app or of extensions cannot be changed here. Nested values (sparingRegels, paneelTypen) are replaced as a whole; null clears an optional field.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id":               { "type": "string" },
+                "expectedRevision": { "type": "integer", "minimum": 1 },
+                "changes":          system_type_definition_schema(false),
+                "schema":           { "type": "integer", "enum": [1] }
+            },
+            "required": ["id", "expectedRevision", "changes"],
+            "additionalProperties": false
+        }
+    })
+}
+
+/// `app_open_system_type_editor` (#567): de native editor openen met de focus
+/// op een type. Keert meteen terug; de gebruiker past toe of annuleert.
+fn open_system_type_editor_tool() -> Value {
+    json!({
+        "name": "app_open_system_type_editor",
+        "description": "Open the app's system type editor with the given type selected, or select it in the editor that is already open without discarding unapplied edits. Returns immediately; the user applies or cancels in the app. Does not change any data.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "Stable id of the system type to select." }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+        }
+    })
+}
+
+/// `app_get_system_geometry` (#567, punt 7): de documentgebonden geometrie van
+/// één systeem in het actieve document, uit de eigen geometrie van de app.
+fn get_system_geometry_tool() -> Value {
+    json!({
+        "name": "app_get_system_geometry",
+        "description": "Get the geometry of one system (suspended ceiling, floor slab, panel field) in the active document, computed by the app's own geometry engine: panels with clipped outlines, grid lines, openings, trimmers, edge segments and component positions, in millimetres in the system's own frame (independent of zoom and view rotation; placement maps it onto the page). Includes the document and type revisions and whether every physical dimension is confirmed. Pass expectedDocumentRevision and expectedTypeRevision to reject a stale snapshot. Reads only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "annotationId":             { "type": "string", "description": "Id of the system annotation (type systeemraster) in the active document." },
+                "expectedDocumentRevision": { "type": "string", "description": "document.revision of an earlier snapshot; a different current revision is rejected." },
+                "expectedTypeRevision":     { "type": "integer", "minimum": 1, "description": "type.revision of an earlier snapshot; a different current revision is rejected." },
+                "schema":                   { "type": "integer", "enum": [1] }
+            },
+            "required": ["annotationId"],
+            "additionalProperties": false
+        }
+    })
+}
+
+/// `app_call_extension_command` (#575): een gestructureerde opdracht van een
+/// geladen extensie aanroepen. Elke opdracht staat ook als eigen tool
+/// (`ext_<extensie>__<opdracht>`) in tools/list; deze vaste tool is er voor
+/// een client die zijn lijst las voordat de extensie geladen was.
+fn call_extension_command_tool() -> Value {
+    json!({
+        "name": "app_call_extension_command",
+        "description": "Run a structured command of a loaded extension. Every such command is also listed as its own tool named ext_<extension>__<command>; use this tool when that tool is not in your list, for example after installing or reloading an extension. app_list_extensions with includeContributions lists each command with its input and output schema. The arguments are checked against the input schema before the extension runs; a mutating command also needs idempotencyKey and revisionContext. Returns ok, requestId, extension, command and result, or ok: false with an error code such as UNKNOWN_COMMAND, INVALID_ARGUMENT, STALE_REVISION, IDEMPOTENCY_KEY_REUSED, COMMAND_TIMEOUT or EXTENSION_UNLOADED.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tool":      { "type": "string", "description": "Tool name of the extension command, ext_<extension>__<command>." },
+                "arguments": { "type": "object", "description": "Arguments for the command, as described by its input schema.", "additionalProperties": true }
+            },
+            "required": ["tool"],
+            "additionalProperties": false
+        }
+    })
+}
+
 /// Beschrijving van `app_facade_element`: het gevelelement (#475) — een
 /// vliesgevel of kozijn als één object met stijlen op de veldgrenzen en een
 /// paneel per veld.
@@ -380,10 +593,258 @@ fn facade_element_tool() -> Value {
     })
 }
 
+/// Extensies beheren via MCP (#550): opvragen, installeren uit een lokaal
+/// `.oppx`-pakket en herladen, zonder dialoog en zonder herstart.
+fn extensie_tools() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "app_list_extensions",
+            "description": "List the app's extensions: every installed and every loaded extension with its id, name, version, installed version, whether it is loaded and activated, its status (active, failed, notLoaded, busy), the code and message of the last failure, who made the last change (ui, mcp or startup) and whether it uses an old-style id. Broken folders in the extensions directory are listed under problems instead of being skipped. Reads only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "includeContributions": { "type": "boolean", "description": "Also list each extension's registered contributions (ribbon tabs, command count, annotation types, palettes, property panels, and structured commands with their input and output schemas). Default false." }
+                },
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_install_extension",
+            "description": "Install or update an extension from a local .oppx package, without a file dialog and without restarting the app: the package is checked and unpacked by the app, then the new version is activated. If the new version fails to load or activate, the previous working version is restored and stays active (rolledBack: true). Open PDF tabs and unsaved changes are not touched. Returns ok, outcome (installed, updated, unchanged), id, version, previousVersion, activated and the registered contributions, or ok: false with an error code such as PATH_NOT_ALLOWED, PACKAGE_INVALID, MANIFEST_INVALID, ALREADY_INSTALLED, VERSION_NOT_NEWER, MODULE_LOAD_FAILED or ACTIVATION_FAILED.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Absolute path to a local .oppx package. Relative paths, network shares and URLs are refused." },
+                    "replace": { "type": "string", "enum": ["never", "ifNewer", "always"], "description": "What to do when the extension id is already installed: 'never' refuses, 'ifNewer' replaces only a lower version, 'always' replaces (also a downgrade). An identical package (same SHA-256) is always reported as 'unchanged'." },
+                    "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$", "description": "Caller-chosen key for this install request. Repeating a call with the same key, path and replace returns the stored result without installing again; the same key with a different path or replace is refused." }
+                },
+                "required": ["path", "replace", "idempotencyKey"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_reload_extension",
+            "description": "Reload an installed extension from disk: deactivate it, remove everything it registered (ribbon tabs, commands, annotation types, palettes, panels) and activate it again, without restarting the app. If the reloaded code fails, the previous code is activated again (rolledBack: true). Returns ok, outcome 'reloaded', id, version, activated and contributions, or ok: false with an error code such as NOT_INSTALLED, MODULE_LOAD_FAILED or ACTIVATION_FAILED.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Extension id from app_list_extensions." }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }),
+    ]
+}
+
+/// Agenttaken van extensies (#556): een MCP-agent pakt een gestructureerde
+/// taak op en levert een gestructureerd resultaat, zonder chatbericht. De
+/// regels staan in js/plugins/agent-tasks.js.
+fn agent_task_pending_tool() -> Value {
+    json!({
+        "name": "app_agent_task_pending",
+        "description": "Take the oldest structured agent task that an extension submitted: the task moves from pending to running and no other client gets it. Returns { ok, task, waiting }; task is null when no task waits. A task has id, kind, extensionId, document { id, page, pageCount, sourceFingerprint, pageRotation, scale }, context (only the fields the extension chose to share), resultSchema (what the answer must match), createdAt, deadline (ms timestamps) and attemptsLeft. No conversation, file name or other tasks are shared. Answer with app_agent_task_result before the deadline; the task is cancelled when the user switches or closes the document, or when its source, page or scale changes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$", "description": "Only take a task of this kind, for example floorplan.recognize. Left out: the oldest task of any kind." }
+            },
+            "additionalProperties": false
+        }
+    })
+}
+
+/// Het antwoord op precies die ene taak: een resultaat dat aan het
+/// resultaatschema van de taak voldoet, of een fout.
+fn agent_task_result_tool() -> Value {
+    json!({
+        "name": "app_agent_task_result",
+        "description": "Answer a running agent task by its id (from app_agent_task_pending) with either result, an object that must match the task's resultSchema (unknown fields are refused), or error { message, code } when the task cannot be done. The answer goes only to the extension that submitted this task, as a proposal: nothing is drawn until the extension applies it to the same document. Returns { ok, id, status }. A result that does not match returns ok false, code INVALID_RESULT, errors and attemptsLeft: send a corrected result; after the last attempt the task fails. Other codes: UNKNOWN_TASK, TASK_NOT_CLAIMED, TASK_NOT_RUNNING (with status and reason, for a task that was cancelled, failed or answered already) and STALE_TASK (the document, source, page or scale changed; the task is cancelled).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "Task id from app_agent_task_pending." },
+                "result": { "type": "object", "description": "The structured result; it must match the task's resultSchema." },
+                "error": {
+                    "type": "object",
+                    "description": "Instead of result: why the task cannot be done.",
+                    "properties": {
+                        "code": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$", "description": "Optional machine-readable code." },
+                        "message": { "type": "string", "maxLength": 2000, "description": "What went wrong." }
+                    },
+                    "required": ["message"],
+                    "additionalProperties": false
+                }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+        }
+    })
+}
+
+/// Paginabewerkingen, bladwijzers en watermerken (voorstel voor
+/// de Python-bibliotheek, #804). Elk gereedschap roept in de WebView dezelfde
+/// functie aan als het lint (js/pdf/mcp-paginabewerkingen.js,
+/// js/ui/panels/bladwijzers-mcp.js, js/watermark/watermerken-mcp.js). Ze staan
+/// in de lijst direct na `app_merge_pdf`.
+fn pagina_tools() -> Vec<Value> {
+    let paginas = |beschrijving: &str| json!({
+        "type": "array",
+        "items": { "type": "integer", "minimum": 1 },
+        "minItems": 1,
+        "description": beschrijving
+    });
+    vec![
+        json!({
+            "name": "app_rotate_pages",
+            "description": "Rotate pages of the active document by a quarter, half or three-quarter turn, as one undo step, the same way Organize > Rotate does: the markups on those pages and the measurement scales of the PDF turn along. Returns { ok, angle, pages, rotations: [{ page, rotation }] }, where rotation is the app's rotation on top of the page's own /Rotate; it is written into the file on save. Refused in a read-only document (PDF/A without editing enabled, password-protected).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pages": paginas("Page numbers (1-based) to rotate, each once."),
+                    "angle": { "type": "integer", "enum": [90, 180, 270, -90], "description": "Degrees clockwise; -90 turns counter-clockwise." }
+                },
+                "required": ["pages", "angle"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_delete_pages",
+            "description": "Delete pages from the active document, as one undo step, the same way Organize > Delete does: the markups on the deleted pages go with them, the others, the page labels and the measurement scales move along. A document keeps at least one page: deleting every page is refused. Returns { ok, deleted, pagesBefore, pagesAfter, currentPage }. Refused in a read-only document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pages": paginas("Page numbers (1-based) to delete, each once.")
+                },
+                "required": ["pages"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_insert_blank_pages",
+            "description": "Insert blank pages into the active document, as one undo step, the same way Organize > Insert does. Without widthPt and heightPt the new pages get the size of page `after` (the first page when after is 0). Returns { ok, inserted (the new page numbers), widthPt, heightPt, pagesBefore, pagesAfter, currentPage }. Refused in a read-only document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "after":    { "type": "integer", "minimum": 0, "description": "Insert after this page number; 0 inserts before the first page." },
+                    "count":    { "type": "integer", "minimum": 1, "maximum": 500, "default": 1, "description": "Number of blank pages." },
+                    "widthPt":  { "type": "number", "minimum": 3, "maximum": 14400, "description": "Page width in points (1/72 inch, A4 is 595.28 x 841.89). Give together with heightPt." },
+                    "heightPt": { "type": "number", "minimum": 3, "maximum": 14400, "description": "Page height in points. Give together with widthPt." }
+                },
+                "required": ["after"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_extract_pages",
+            "description": "Write pages of the active document, in the given order, to a new PDF file, the same way Organize > Extract does. An existing file is never replaced: choose a path that does not exist yet. With deleteFromOriginal the pages are then deleted from the document (one undo step); that is refused when it would remove every page. Returns { ok, outputPath, pages, pagesExtracted, deletedFromOriginal, pagesAfter }. Refused in a read-only document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pages":              paginas("Page numbers (1-based) to extract, each once, in the order they appear in the new file."),
+                    "outputPath":         { "type": "string", "description": "Absolute path of the new .pdf file; it must not exist yet." },
+                    "deleteFromOriginal": { "type": "boolean", "default": false, "description": "Also delete the extracted pages from the document." }
+                },
+                "required": ["pages", "outputPath"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_reorder_pages",
+            "description": "Put the pages of the active document in a new order, as one undo step, the same way dragging thumbnails does: markups, page labels and measurement scales move with their page. order[i] is the current page number that becomes page i+1, and lists every page exactly once (for 3 pages, [3, 1, 2] moves the last page to the front). Returns { ok, changed, order, pages, currentPage }; the current order gives changed false. Refused in a read-only document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "order": paginas("The new order: every current page number (1-based) exactly once.")
+                },
+                "required": ["order"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_shift_pages",
+            "description": "Shift the content of pages by a fixed distance, as one undo step, the same way Organize > Shift page does: the page content is moved (not rasterized), and the markups, links, form fields and measurement scales on those pages move along. Directions are as the page is displayed (including its rotation): dx positive to the right, dy positive up. Returns { ok, pages, dx, dy, shifted } with shifted the number of pages that moved; pages without content and markups are left alone. Refused in a read-only document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pages": paginas("Page numbers (1-based) to shift, each once."),
+                    "dx":    { "type": "number", "minimum": -5080, "maximum": 5080, "default": 0, "description": "Horizontal shift in millimetres; positive is to the right." },
+                    "dy":    { "type": "number", "minimum": -5080, "maximum": 5080, "default": 0, "description": "Vertical shift in millimetres; positive is up." }
+                },
+                "required": ["pages"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_bookmarks",
+            "description": "Read and edit the bookmarks (outline) of the active document, the same way the Bookmarks panel does; every change is one undo step and is written into the file on save. list returns { ok, count, bookmarks: [{ id, title, page, parentId, level, children, bold, italic, color }] } in panel order (a parent before its children). add takes title, optional page (default the current page), parentId, bold, italic and color, appends the bookmark at the end of its parent and returns { ok, bookmark }. update takes id and any of title (rename), page, bold, italic, color (null clears it). delete takes ids and removes them with everything under them: { ok, deleted, count, remaining }. move takes ids, position (before, after or inside targetId, or end of the top level without targetId) and refuses a move into a bookmark's own children. Edits are refused in a read-only document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action":   { "type": "string", "enum": ["list", "add", "update", "delete", "move"] },
+                    "id":       { "type": "string", "description": "update: the bookmark id (from list)." },
+                    "ids":      { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "delete, move: bookmark ids (from list)." },
+                    "title":    { "type": "string", "maxLength": 1000, "description": "add, update: the bookmark title (one line)." },
+                    "page":     { "type": "integer", "minimum": 1, "description": "add, update: the page the bookmark goes to (1-based)." },
+                    "parentId": { "type": ["string", "null"], "description": "add: put the new bookmark under this bookmark; left out or null: the top level." },
+                    "bold":     { "type": "boolean", "description": "add, update: bold title." },
+                    "italic":   { "type": "boolean", "description": "add, update: italic title." },
+                    "color":    { "type": ["string", "null"], "pattern": "^#[0-9A-Fa-f]{6}$", "description": "add, update: title colour #rrggbb; null clears it." },
+                    "targetId": { "type": "string", "description": "move: the bookmark to move before, after or inside. Not with position end." },
+                    "position": { "type": "string", "enum": ["before", "after", "inside", "end"], "description": "move: before or after targetId (same parent), inside targetId (as its last children), or end of the top level." }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "app_watermarks",
+            "description": "List, add and remove the watermarks and headers/footers of the active document, the same way the Watermark, Header & Footer and Manage dialogs do; every change is one undo step, shown at once and written into the pages on save. list returns { ok, count, watermarks } (an image watermark without its image data). add with type text (text, fontFamily, fontSize, color, opacity 0-1, rotation, position, customX/customY, layer), image (imagePath of a PNG or JPEG file, opacity, scale, rotation, position, customX/customY, layer) or headerFooter (headerLeft/Center/Right, footerLeft/Center/Right with the variables {page} {pages} {date} {time} {filename} {title} {bates}, fontFamily, fontSize, color, margins, Bates numbering); pages limits it to those pages, otherwise every page. Fields left out take the dialog defaults. Returns { ok, watermark, count }. remove takes id: { ok, removed, remaining }. Changes are refused in a read-only document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action":       { "type": "string", "enum": ["list", "add", "remove"] },
+                    "id":           { "type": "string", "description": "remove: the watermark id (from list)." },
+                    "type":         { "type": "string", "enum": ["text", "image", "headerFooter"], "description": "add: what to add." },
+                    "pages":        paginas("add: only on these page numbers (1-based); left out: every page."),
+                    "text":         { "type": "string", "maxLength": 500, "description": "text: the watermark text." },
+                    "imagePath":    { "type": "string", "description": "image: absolute path of a .png, .jpg or .jpeg file (at most 20 MB)." },
+                    "fontFamily":   { "type": "string", "enum": ["Helvetica", "Arial", "Times New Roman", "Courier", "Georgia"], "description": "text, headerFooter (not Georgia): font. Default Helvetica." },
+                    "fontSize":     { "type": "integer", "minimum": 1, "maximum": 288, "description": "text (4-288, default 72), headerFooter (1-200, default 10): font size in points." },
+                    "color":        { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "text (default #ff0000), headerFooter (default #000000): colour #rrggbb." },
+                    "opacity":      { "type": "number", "minimum": 0, "maximum": 1, "description": "text (default 0.3), image (default 0.2)." },
+                    "rotation":     { "type": "number", "minimum": -360, "maximum": 360, "description": "text (default -45), image (default 0): degrees." },
+                    "scale":        { "type": "number", "minimum": 0.01, "maximum": 10, "description": "image: size factor of the 200 x 200 pt image box (default 1)." },
+                    "position":     { "type": "string", "enum": ["center", "top-left", "top-right", "bottom-left", "bottom-right", "custom"], "description": "text, image: where on the page (default center); custom uses customX/customY." },
+                    "customX":      { "type": "number", "minimum": 0, "maximum": 14400, "description": "text, image with position custom: centre x in points from the left." },
+                    "customY":      { "type": "number", "minimum": 0, "maximum": 14400, "description": "text, image with position custom: centre y in points from the top." },
+                    "layer":        { "type": "string", "enum": ["behind", "infront"], "description": "text, image: behind (default) or in front of the page content." },
+                    "headerLeft":   { "type": "string", "maxLength": 500 },
+                    "headerCenter": { "type": "string", "maxLength": 500 },
+                    "headerRight":  { "type": "string", "maxLength": 500 },
+                    "footerLeft":   { "type": "string", "maxLength": 500 },
+                    "footerCenter": { "type": "string", "maxLength": 500 },
+                    "footerRight":  { "type": "string", "maxLength": 500 },
+                    "marginTop":    { "type": "number", "minimum": 0, "maximum": 1000, "description": "headerFooter: points (default 30)." },
+                    "marginBottom": { "type": "number", "minimum": 0, "maximum": 1000, "description": "headerFooter: points (default 30)." },
+                    "marginLeft":   { "type": "number", "minimum": 0, "maximum": 1000, "description": "headerFooter: points (default 40)." },
+                    "marginRight":  { "type": "number", "minimum": 0, "maximum": 1000, "description": "headerFooter: points (default 40)." },
+                    "batesPrefix":  { "type": "string", "maxLength": 500, "description": "headerFooter: text before the Bates number." },
+                    "batesStart":   { "type": "integer", "minimum": 0, "description": "headerFooter: first Bates number (default 1)." },
+                    "batesDigits":  { "type": "integer", "minimum": 1, "maximum": 12, "description": "headerFooter: digits with leading zeros (default 6)." },
+                    "batesSuffix":  { "type": "string", "maxLength": 500, "description": "headerFooter: text after the Bates number." }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            }
+        }),
+    ]
+}
+
 /// Handle `tools/list`. Tasks 7-9 will append their tool descriptors to
 /// this array.
 fn handle_tools_list() -> Value {
-    json!({
+    let mut lijst = json!({
         "tools": [
             {
                 "name": "list_test_pdfs",
@@ -433,7 +894,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_open_pdf",
-                "description": "Open a PDF file in a new tab of the running app. Returns once the document is loaded and the tab is active. A DWG or DXF opens the CAD import dialog instead (result `dialog: \"cad-import\"`).",
+                "description": "Open a PDF file in a new tab of the running app. Returns once the document is loaded and the tab is active. A DWG or DXF opens the CAD import dialog instead (result `dialog: \"cad-import\"`). A PDF with an open password shows the password dialog instead (result `dialog: \"pdf-password\"`); it opens read-only once the password is entered in the app.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -475,11 +936,32 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_screenshot_view",
-                "description": "Capture the LIVE app's current page view as a base64 PNG. Composites the PDF canvas with the annotation/highlight overlays (NOT the surrounding chrome — for that use OS-level screenshotting).",
+                "description": "Capture the LIVE app as a base64 PNG. scope 'document' (default) composites the PDF canvas with the annotation/highlight overlays, without the surrounding interface. scope 'window' captures the whole app window as it is shown: ribbon (including extension tabs), side panels such as an extension's workspace panel, the document view and the status bar. scope 'element' crops that window capture to the element matched by `selector`. The longer side is scaled down to `width`. Returns { png_base64, width, height, scope, bounds: { x, y, width, height } (the captured area in CSS px), devicePixelRatio }. 'window' and 'element' use a native capture of the web view and are available on Windows only for now; on other platforms they return an error.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "width": { "type": "integer", "minimum": 1, "default": 2000 }
+                        "width":    { "type": "integer", "minimum": 1, "default": 2000, "description": "Maximum length in px of the longer side of the PNG." },
+                        "scope":    { "type": "string", "enum": ["document", "window", "element"], "default": "document", "description": "'document' (the page view), 'window' (the whole app window) or 'element' (one element, needs selector)." },
+                        "selector": { "type": "string", "description": "CSS selector of the element to capture with scope 'element', e.g. '.ribbon-container', '#left-panel' or '.status-bar'." }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_capture_region",
+                "description": "Render an area of a page (or the whole page) of the active document as an image at a chosen resolution, the way Home > Screenshot does: the page is rendered again at `dpi` (not the screen pixels enlarged), with the annotations as printed (no selection frames), in the view rotation the user sees. Coordinates are app points (page space, top-left origin, 100% zoom); leave x, y, width and height out for the whole page. Very large images are scaled down to at most 16384 px per side and 64 megapixels (`limited` is then true and `dpi` the resolution used). Returns { page, rect, width, height, dpi, limited, mime } plus image_base64, or with `path` the image is written to that file and { path, bytes } is returned instead of the base64. Nothing is put on the clipboard.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "page":    { "type": "integer", "minimum": 1, "description": "Page number (default: the current page)." },
+                        "x":       { "type": "number", "description": "Left edge in app points." },
+                        "y":       { "type": "number", "description": "Top edge in app points." },
+                        "width":   { "type": "number", "description": "Width in app points." },
+                        "height":  { "type": "number", "description": "Height in app points." },
+                        "dpi":     { "type": "number", "minimum": 10, "maximum": 2400, "default": 150, "description": "Resolution in pixels per inch of paper." },
+                        "format":  { "type": "string", "enum": ["png", "jpeg"], "default": "png" },
+                        "quality": { "type": "integer", "minimum": 1, "maximum": 100, "default": 90, "description": "JPEG quality." },
+                        "path":    { "type": "string", "description": "Absolute file path to write the image to, instead of returning it as base64." }
                     },
                     "additionalProperties": false
                 }
@@ -660,7 +1142,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_click_element",
-                "description": "Click an arbitrary DOM element in the LIVE app by CSS selector (usually '#button-id'). If the element lives on an inactive ribbon tab, the matching tab is activated first (the ribbon only renders the active tab's content). Returns { ok, found, disabled, clicked, activatedTab }. Disabled elements are reported but NOT clicked. Set searchTabs=false to probe only the current DOM (e.g. for dialogs) without touching the ribbon tabs.",
+                "description": "Click an arbitrary DOM element in the LIVE app by CSS selector (usually '#button-id'). If the element lives on an inactive ribbon tab, the matching tab is activated first (the ribbon only renders the active tab's content). Returns { ok, found, disabled, clicked, activatedTab, activeTab }: activatedTab is the ribbon tab this call activated (the tab the search opened, the tab whose button was clicked, also an extension tab, or the tab the click switched to), activeTab the ribbon tab active afterwards. Disabled elements are reported but NOT clicked. Set searchTabs=false to probe only the current DOM (e.g. for dialogs) without touching the ribbon tabs.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -720,19 +1202,6 @@ fn handle_tools_list() -> Value {
                 }
             },
             {
-                "name": "app_ai_complete",
-                "description": "Ask the LIVE app's OpenAEC AI assistant a question (POST /me/ai/complete via the signed-in OpenAEC account). Returns { ok, signedInAs, text, credits }. Tests the assistant end-to-end without driving the chat UI; requires the app to be signed in to OpenAEC.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": { "type": "string", "description": "The question/prompt for the assistant." },
-                        "system": { "type": "string", "description": "Optional system prompt." }
-                    },
-                    "required": ["prompt"],
-                    "additionalProperties": false
-                }
-            },
-            {
                 "name": "app_accounts_status",
                 "description": "Report the LIVE app's OpenAEC sign-in state: { ok, signedIn, user:{sub,name,email}|null, brand|null }. Use to verify login from outside the WebView.",
                 "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -751,42 +1220,12 @@ fn handle_tools_list() -> Value {
                     "additionalProperties": false
                 }
             },
-            {
-                "name": "app_assistant_ask",
-                "description": "Submit a message into the app's assistant window as if the user typed it (opens the panel). Returns { ok }. The answer comes from whichever provider is available: OpenAEC AI, a personal Claude key, or the MCP relay (app_assistant_pending + app_assistant_answer).",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": { "text": { "type": "string", "description": "The user message to submit." } },
-                    "required": ["text"],
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "app_assistant_pending",
-                "description": "Take the oldest assistant question waiting for an MCP client to answer (the relay provider). Returns { ok, question:{ id, prompt, system, docName }|null }. When non-null, compute an answer and deliver it with app_assistant_answer — this is how an external Claude becomes the assistant's AI brain.",
-                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-            },
-            {
-                "name": "app_assistant_answer",
-                "description": "Answer a pending assistant question (id from app_assistant_pending). The text appears in the assistant window as the assistant's reply. Returns { ok, id }.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id":   { "type": "string", "description": "Question id from app_assistant_pending." },
-                        "text": { "type": "string", "description": "Answer text to show in the assistant window." }
-                    },
-                    "required": ["id", "text"],
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "app_assistant_history",
-                "description": "Return the LIVE assistant conversation: { ok, messages:[{ role, content }] }. Use to verify a delivered answer landed in the window.",
-                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-            },
+            // Agenttaken van extensies (#556)
+            agent_task_pending_tool(),
+            agent_task_result_tool(),
             {
                 "name": "app_create_annotation",
-                "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input. Builds the same object the interactive tool would, pushes it onto the document, records an undo step and redraws. Geometry goes in `props` (page coordinates at 100% zoom): line/arrow/measureDistance need startX/startY/endX/endY; box/circle/highlight/cloud/polygon/textbox/callout/scaleRegion need x/y/width/height; polyline/filledArea/measureArea/measurePerimeter need points:[{x,y},...]; spline needs controlPoints; draw needs path; comment needs x/y. Optional style props (color, strokeColor, fillColor, lineWidth, opacity, text, fontSize, scaleString, units, leaderStartX/Y, leaderEndX/Y, dimShowUnit (measureDistance: false shows the number only), dimLineOvershootMm / dimExtGapMm / dimExtOvershootMm (measureDistance: overshoot of the dimension line, gap and overshoot of the extension lines, in paper mm), measureShowLabel (measureArea: false hides its own label), ...) override the tool defaults. measure* annotations get measureText computed from the document scale automatically. Returns the new annotation id.",
+                "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input. Builds the same object the interactive tool would, pushes it onto the document, records an undo step and redraws. Geometry goes in `props` (page coordinates at 100% zoom): line/arrow/measureDistance need startX/startY/endX/endY; box/circle/highlight/cloud/textbox/callout/scaleRegion need x/y/width/height; polygon takes its corners as points:[{x,y},...] (>= 3), or x/y/width/height (+ optional sides, default 6) for a regular polygon in that box; polyline/filledArea/measureArea/measurePerimeter need points:[{x,y},...]; spline needs controlPoints; draw needs path; comment needs x/y. Optional style props (color, strokeColor, fillColor, lineWidth, opacity, text, fontSize, scaleString, units, leaderStartX/Y, leaderEndX/Y, dimShowUnit (measureDistance: false shows the number only), dimLineOvershootMm / dimExtGapMm / dimExtOvershootMm (measureDistance: overshoot of the dimension line, gap and overshoot of the extension lines, in paper mm), measureShowLabel (measureArea: false hides its own label), ...) override the tool defaults. measure* annotations get measureText computed from the document scale automatically. Returns the new annotation id.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -990,6 +1429,949 @@ fn handle_tools_list() -> Value {
                     "additionalProperties": false
                 }
             },
+{
+    "name": "app_portfolio",
+    "description": "Inspect or save a PDF Collection copy, preserving component bytes, folders, schema, sort and metadata. Save pending edits first. add[].path reads each named file from an explicit absolute local path (document and data types only) and embeds it. Folders use numeric parentId (0 for a new root); new IDs increase from the current maximum. Unsupported components are exported, never executed. saveCopy/exportComponent require a new absolute output path; existing files are refused. exportComponent writes document and data types only (no programs, scripts or shortcuts), never into autostart folders, and marks the file as downloaded. New collections get a fallback cover.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "inspect",
+                    "saveCopy",
+                    "exportComponent"
+                ]
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "outputPath": {
+                "type": "string"
+            },
+            "key": {
+                "type": "string"
+            },
+            "add": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "folderId": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "description": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "path",
+                        "name"
+                    ],
+                    "additionalProperties": false
+                },
+                "maxItems": 1000
+            },
+            "remove": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "folders": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        },
+                        "parentId": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    "required": [
+                        "name",
+                        "parentId"
+                    ],
+                    "additionalProperties": false
+                },
+                "maxItems": 1000
+            },
+            "descriptions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "key",
+                        "description"
+                    ],
+                    "additionalProperties": false
+                },
+                "maxItems": 1000
+            }
+        },
+        "required": [
+            "action",
+            "documentId"
+        ],
+        "additionalProperties": false
+    }
+},
+{
+    "name": "app_recognize_form",
+    "description": "Detect heuristic form-field candidates on selected saved PDF pages, excluding existing fields. Review/correct labels, type, bounds in unrotated PDF points, required flags, radio grouping and order before setting accepted=true. saveCopy requires the returned revision and sourceId plus a NEW PDF outputPath. Existing fields/artwork remain. OCR labels require desktop OCR; no fields are accepted automatically.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "detect",
+                    "saveCopy"
+                ]
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "pages": {
+                "type": "array",
+                "items": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "minItems": 1,
+                "maxItems": 50
+            },
+            "ocr": {
+                "type": "boolean"
+            },
+            "lang": {
+                "type": "string"
+            },
+            "revision": {
+                "type": "integer"
+            },
+            "sourceId": {
+                "type": "string"
+            },
+            "outputPath": {
+                "type": "string"
+            },
+            "candidates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "page": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "type": {
+                            "type": "string",
+                            "enum": [
+                                "text",
+                                "checkbox",
+                                "radio"
+                            ]
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "label": {
+                            "type": "string"
+                        },
+                        "required": {
+                            "type": "boolean"
+                        },
+                        "accepted": {
+                            "type": "boolean"
+                        },
+                        "order": {
+                            "type": "number"
+                        },
+                        "group": {
+                            "type": "string"
+                        },
+                        "groupLabel": {
+                            "type": "string"
+                        },
+                        "option": {
+                            "type": "string"
+                        },
+                        "bounds": {
+                            "type": "object",
+                            "properties": {
+                                "x": {
+                                    "type": "number"
+                                },
+                                "y": {
+                                    "type": "number"
+                                },
+                                "width": {
+                                    "type": "number"
+                                },
+                                "height": {
+                                    "type": "number"
+                                }
+                            },
+                            "required": [
+                                "x",
+                                "y",
+                                "width",
+                                "height"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "required": [
+                        "page",
+                        "type",
+                        "name",
+                        "label",
+                        "accepted",
+                        "order",
+                        "bounds"
+                    ],
+                    "additionalProperties": true
+                },
+                "maxItems": 1000
+            }
+        },
+        "required": [
+            "action",
+            "documentId"
+        ],
+        "additionalProperties": false
+    }
+},
+{
+    "name": "app_search_symbols",
+    "description": "Search page artwork for a selected symbol rectangle in current page-view coordinates at scale 1. Review candidates before accept, which creates undoable standard count annotations without duplicating same-category counts at the same location. Search bounded to 20 pages, 1200 pixels per edge and 1000 results. Similarity is not certainty. Results expire after 20 minutes or source changes. navigate reveals a result.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "search",
+                    "accept",
+                    "navigate"
+                ]
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "templatePage": {
+                "type": "integer",
+                "minimum": 1
+            },
+            "rect": {
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "number"
+                    },
+                    "y": {
+                        "type": "number"
+                    },
+                    "width": {
+                        "type": "number"
+                    },
+                    "height": {
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                ],
+                "additionalProperties": false
+            },
+            "pages": {
+                "type": "array",
+                "items": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxItems": 20
+            },
+            "threshold": {
+                "type": "number",
+                "minimum": 0.5,
+                "maximum": 1
+            },
+            "rotations": {
+                "type": "array",
+                "items": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        90,
+                        180,
+                        270
+                    ]
+                },
+                "maxItems": 4
+            },
+            "scales": {
+                "type": "array",
+                "items": {
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 2
+                },
+                "maxItems": 3
+            },
+            "queryId": {
+                "type": "string"
+            },
+            "id": {
+                "type": "string"
+            },
+            "ids": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "maxItems": 1000
+            },
+            "category": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "color": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "markerStyle": {
+                        "type": "string",
+                        "enum": [
+                            "dot"
+                        ]
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "required": [
+            "action",
+            "documentId"
+        ],
+        "additionalProperties": false
+    }
+},
+{
+    "name": "app_workbook_bindings",
+    "description": "Persist mappings from a named schedule on a source PDF to numeric XLSX cells. list reports source/schedule/workbook status; bind creates or explicitly rebinds an id to the active source. preview returns fresh values, CSV and provenance without writing. refresh explicitly updates only mapped workbook cells (desktop, source must be active), preserving other formulas/formatting and requesting recalculation. Formula/merged/protected targets are refused. inspectWorkbook lists worksheets; export returns portable binding data; remove disconnects.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "list",
+                    "bind",
+                    "preview",
+                    "refresh",
+                    "inspectWorkbook",
+                    "export",
+                    "remove"
+                ]
+            },
+            "id": {
+                "type": "string"
+            },
+            "name": {
+                "type": "string"
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "scheduleId": {
+                "type": "string"
+            },
+            "workbookPath": {
+                "type": "string"
+            },
+            "sheet": {
+                "type": "string"
+            },
+            "path": {
+                "type": "string"
+            },
+            "mappings": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field": {
+                            "type": "string"
+                        },
+                        "cell": {
+                            "type": "string"
+                        },
+                        "unit": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "field",
+                        "cell",
+                        "unit"
+                    ],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": [
+            "action"
+        ],
+        "additionalProperties": false
+    }
+},
+{
+    "name": "app_document_workflows",
+    "description": "Save/export (list) named version-1 document workflows, remove by name, run selected PDF paths into a separate output folder, start explicit watched input/output folders, or stop/cancel. Supported ordered steps: rotate {angle:0|90|180|270}, cropMargins {left,right,top,bottom} in unrotated PDF points, metadata {title,author,subject}. Workflow has version:1,name,suffix (letters/digits/_/-),steps. New outputs only, deterministic names and retry detection; no uploads. Watch requires the desktop app to stay open and does not resume automatically.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "list",
+                    "save",
+                    "remove",
+                    "run",
+                    "watch",
+                    "stop"
+                ]
+            },
+            "name": {
+                "type": "string"
+            },
+            "workflow": {
+                "type": "object"
+            },
+            "paths": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                    "type": "string"
+                }
+            },
+            "input": {
+                "type": "string"
+            },
+            "output": {
+                "type": "string"
+            }
+        },
+        "required": [
+            "action"
+        ],
+        "additionalProperties": false
+    }
+},
+{
+    "name": "app_drawing_sets",
+    "description": "Manage a portable version-1 multi-file drawing set. list returns manifest/root/report; capture stages active PDF pages; import validates a manifest; root selects local package root; preview returns matches/base; commit requires that base, sheets and one resolution per sheet (existing id/new/ignore). open accepts sheet id and version index. transferPreview requires source/target version records and optional dx/dy in points, both documents open and target active; transferApply requires preview id, selected source annotation ids and confirmed:true. No PDF writes; transferred markups are one undo step.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "list",
+                    "capture",
+                    "import",
+                    "root",
+                    "preview",
+                    "commit",
+                    "open",
+                    "transferPreview",
+                    "transferApply"
+                ]
+            },
+            "manifest": {
+                "type": "object"
+            },
+            "root": {
+                "type": "string"
+            },
+            "sheets": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                }
+            },
+            "resolutions": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "base": {
+                "type": "string"
+            },
+            "id": {
+                "type": "string"
+            },
+            "version": {
+                "type": "integer",
+                "minimum": 0
+            },
+            "source": {
+                "type": "object"
+            },
+            "target": {
+                "type": "object"
+            },
+            "dx": {
+                "type": "number"
+            },
+            "dy": {
+                "type": "number"
+            },
+            "selected": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "confirmed": {
+                "type": "boolean"
+            }
+        },
+        "required": [
+            "action"
+        ],
+        "additionalProperties": false
+    }
+},
+{
+    "name": "app_sheet_links",
+    "description": "Build reviewed relative PDF links across a package. index lists open saved PDFs and editable page labels; scan accepts files [{documentId,path}] and index [{id,path,page,label,region:null|[left,bottom,right,top]}], optional literal prefix and caseSensitive. Existing OCR text layers are included. Returns immutable hit ids with resolved/ambiguous/missing targets and existing-link overlaps. export accepts scan id, selections [{hitId,targetId}], optional replaceExisting and a new desktop outputPath ending .zip; exports all source copies with relative GoTo/GoToR links and report, never edits originals. cancel stops scanning. Max 100 pages, 250 MB and 2000 hits.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "index",
+                    "scan",
+                    "cancel",
+                    "export"
+                ]
+            },
+            "files": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                }
+            },
+            "index": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                }
+            },
+            "prefix": {
+                "type": "string"
+            },
+            "caseSensitive": {
+                "type": "boolean"
+            },
+            "id": {
+                "type": "string"
+            },
+            "selections": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                }
+            },
+            "replaceExisting": {
+                "type": "boolean"
+            },
+            "outputPath": {
+                "type": "string"
+            }
+        },
+        "required": [
+            "action"
+        ],
+        "additionalProperties": false
+    }
+},
+{
+    "name": "app_approval_routing",
+    "description": "Local-file-v1 electronic approval routing, no network sending or certificate signing. Explicit configure adapter/enabled:true first. draft captures the active saved PDF hash with title/revision, sequential|parallel mode, nullable expiresAt, recipients [{id,name,email}], fields [{id,recipientId,page,x,y,width,height,label}]. list shows immutable document identity, state and audit. submit requires id and confirmedHash after exact-source review; it releases for manual handoff only. receipt imports a self-reported decision bound to request/document/recipient. cancel and supersede track distinct states. createReceipt requires confirmed:true, the explicit confirmation the dialog asks for; events created over MCP record MCP as the actor. verify checks an exported record hash chain, not identity authenticity. export writes original PDF plus audit/request JSON into a new desktop ZIP outputPath; no permanent login.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "configure",
+                    "draft",
+                    "list",
+                    "submit",
+                    "receipt",
+                    "cancel",
+                    "supersede",
+                    "verify",
+                    "export",
+                    "createReceipt"
+                ]
+            },
+            "adapter": {
+                "type": "string"
+            },
+            "enabled": {
+                "type": "boolean"
+            },
+            "title": {
+                "type": "string"
+            },
+            "revision": {
+                "type": "string"
+            },
+            "mode": {
+                "type": "string",
+                "enum": [
+                    "sequential",
+                    "parallel"
+                ]
+            },
+            "expiresAt": {
+                "type": [
+                    "string",
+                    "null"
+                ]
+            },
+            "recipients": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                }
+            },
+            "fields": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                }
+            },
+            "id": {
+                "type": "string"
+            },
+            "confirmedHash": {
+                "type": "string"
+            },
+            "receipt": {
+                "type": "object"
+            },
+            "replacementId": {
+                "type": "string"
+            },
+            "record": {
+                "type": "object"
+            },
+            "outputPath": {
+                "type": "string"
+            },
+            "recipientId": {
+                "type": "string"
+            },
+            "decision": {
+                "type": "string",
+                "enum": [
+                    "approved",
+                    "rejected"
+                ]
+            },
+            "comment": {
+                "type": "string"
+            },
+            "confirmed": {
+                "type": "boolean"
+            }
+        },
+        "required": [
+            "action"
+        ],
+        "additionalProperties": false
+    }
+},
+            {
+                "name": "app_search_documents",
+                "description": "Search text and optional comments in the active PDF, all open PDFs, or PDF files directly in a desktop folder. Reads open unsaved documents in memory; never saves or uploads. Returns grouped file statuses and bounded matches with page labels, snippets and coordinates. Encrypted, unreadable and textless pages are reported separately. No persistent index. Refine the query when truncated.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                        },
+                        "scope": {
+                            "type": "string",
+                            "enum": [
+                                "active",
+                                "open",
+                                "folder"
+                            ],
+                            "default": "open"
+                        },
+                        "folder": {
+                            "type": "string",
+                            "description": "Required for folder scope; desktop only, non-recursive."
+                        },
+                        "annotations": {
+                            "type": "boolean",
+                            "default": true
+                        },
+                        "matchCase": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "wholeWord": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 2000,
+                            "default": 500
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ],
+                    "additionalProperties": false
+                }
+            },
+            {
+    "name": "app_locations",
+    "description": "List computed markup locations or edit named spatial zones and explicit location overrides. Mutations require the active documentId and annotationId. Zones use existing straight polygons or unrotated boxes. Reuses undo and saves metadata with the PDF.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "list",
+                    "zone",
+                    "removeZone",
+                    "override",
+                    "automatic"
+                ]
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "annotationId": {
+                "type": "string"
+            },
+            "name": {
+                "type": "string"
+            },
+            "parentId": {
+                "type": "string"
+            },
+            "value": {
+                "type": "string"
+            }
+        },
+        "required": [
+            "action"
+        ],
+        "additionalProperties": false
+    }
+},
+            {
+    "name": "app_hidden_information",
+    "description": "Inspect structural metadata, comments, embedded files, actions and optional-content indicators in the saved active PDF. Export selected removable categories to a NEW PDF and JSON report; existing files are never overwritten. Pending changes must be saved first. Hidden/covered text, image pixels and optional-content layers are not removed; existing signatures cannot survive rewriting.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "inspect",
+                    "export"
+                ]
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "categories": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "metadata",
+                        "comments",
+                        "attachments",
+                        "actions"
+                    ]
+                }
+            },
+            "outputPath": {
+                "type": "string"
+            }
+        },
+        "required": [
+            "action",
+            "documentId"
+        ],
+        "additionalProperties": false
+    }
+},
+            {
+    "name": "app_print_preflight",
+    "description": "Inspect the saved active PDF against a reusable print profile. Reports page/object, severity, expected and observed values for fonts, image DPI, color, transparency, page boxes and output intent. Not a PDF/X or PDF/A certificate. fixTrimBoxes explicitly writes a NEW copy and report and rechecks; existing files are refused. Save pending edits first.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "inspect",
+                    "fixTrimBoxes"
+                ]
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "profile": {
+                "type": "object",
+                "properties": {
+                    "version": {
+                        "type": "integer",
+                        "enum": [
+                            1
+                        ]
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "minDpi": {
+                        "type": "number",
+                        "minimum": 36,
+                        "maximum": 2400
+                    },
+                    "embeddedFonts": {
+                        "type": "boolean"
+                    },
+                    "allowRgb": {
+                        "type": "boolean"
+                    },
+                    "allowTransparency": {
+                        "type": "boolean"
+                    },
+                    "outputIntent": {
+                        "type": "boolean"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "outputPath": {
+                "type": "string"
+            }
+        },
+        "required": [
+            "action",
+            "documentId"
+        ],
+        "additionalProperties": false
+    }
+},
+            {
+    "name": "app_review_ocr",
+    "description": "List low/unknown-confidence OCR words with page coordinates and review state, or accept/correct one word. Requires documentId; mutations also require revision and expectedText from the list to reject stale edits. Save afterward to replace the invisible OCR text layer. Never paints over the scan. Results are paginated.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "list",
+                    "accept",
+                    "correct"
+                ]
+            },
+            "documentId": {
+                "type": "string"
+            },
+            "threshold": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+            },
+            "revision": {
+                "type": "integer"
+            },
+            "page": {
+                "type": "integer",
+                "minimum": 1
+            },
+            "index": {
+                "type": "integer",
+                "minimum": 0
+            },
+            "expectedText": {
+                "type": "string"
+            },
+            "text": {
+                "type": "string",
+                "maxLength": 2000
+            }
+        },
+        "required": [
+            "action",
+            "documentId"
+        ],
+        "additionalProperties": false
+    }
+},
             {
                 "name": "app_get_page_text",
                 "description": "Read existing PDF page text without mouse automation. Returns document-bound span IDs, readable merged text, page-space bounding boxes, PDF anchors, font family/size, rotation and fill colour when recoverable. Pass a page number or omit it for the current page. Text is never sent outside the local MCP connection.",
@@ -1003,7 +2385,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_replace_text",
-                "description": "Replace one existing PDF text span returned by app_get_page_text. Requires the exact expected text to reject stale IDs. Preserves the page artwork by refusing edits that cannot remove the original text in place; fits the replacement inside its original width and embeds a full fallback font when the subset lacks glyphs. Changes stay pending until app_save_pdf is called. One line per call; for translation, map translated lines to span IDs and call repeatedly.",
+                "description": "Replace one existing PDF text span returned by app_get_page_text. Requires the exact expected text to reject stale IDs. Preserves the page artwork by refusing edits that cannot remove the original text in place; fits the replacement inside its original width and embeds a full fallback font when the subset lacks glyphs. On a scanned page with an invisible OCR layer the scanned word is covered and the replacement is drawn visibly, as in the editor (reply: coveredScannedText). Changes stay pending until app_save_pdf is called. One line per call; for translation, map translated lines to span IDs and call repeatedly.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1013,6 +2395,35 @@ fn handle_tools_list() -> Value {
                         "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "Required only when the source fill colour could not be recovered." }
                     },
                     "required": ["spanId", "expectedText", "newText"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_translate_page",
+                "description": "Replace many text spans of one page in a single call, for example to translate the page. Takes spans from app_get_page_text with their exact expected text. All or nothing: if any replacement fails, nothing changes and the result lists the error per span. Same rules as app_replace_text (in-place removal, fit to the original width, full fallback font when the subset lacks glyphs), checked together on one copy of the PDF and applied as one undo step. Changes stay pending until app_save_pdf is called.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "page": { "type": "integer", "minimum": 1, "description": "1-based page number; defaults to the page of the first spanId." },
+                        "replacements": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 500,
+                            "description": "One entry per span to replace, each on one line.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "spanId": { "type": "string", "description": "Opaque span ID from app_get_page_text." },
+                                    "expectedText": { "type": "string", "description": "Exact current text returned for that span." },
+                                    "newText": { "type": "string", "description": "Replacement text on one line (may be empty to delete)." },
+                                    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "Required only when the source fill colour could not be recovered." }
+                                },
+                                "required": ["spanId", "expectedText", "newText"],
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "required": ["replacements"],
                     "additionalProperties": false
                 }
             },
@@ -1048,7 +2459,7 @@ fn handle_tools_list() -> Value {
                     "type": "object",
                     "properties": {
                         "scheduleId": { "type": "string", "description": "Reuse an existing schedule instead of creating one." },
-                        "templateId": { "type": "string", "description": "Template for a new schedule: area, length, count, symbol, text, image or full. Default: area." },
+                        "templateId": { "type": "string", "description": "Template for a new schedule: area, length, count, symbol, text, image, full, buigstaat (rebar bending schedule) or wapeningsstaat (rebar weight per diameter). Default: area." },
                         "name":       { "type": "string", "description": "Display name for the schedule." },
                         "config":     { "type": "object", "description": "Schedule config: categories, fields, filters, sort, itemize, format. Overrides the template.", "additionalProperties": true },
                         "page":       { "type": "number", "description": "Page to place the table on (default: current page)." },
@@ -1060,7 +2471,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_structural_layout",
-                "description": "Set out a structural floor plan in one undoable step: the grid (lettered and numbered grid lines with bubbles), columns on the grid intersections, beams along the grid lines, a span-direction arrow per floor bay carrying the real span, spot elevations, position tags (position number / section / level) and - unless switched off - a quantity schedule grouped by IFC category. Bay sizes are REAL millimetres; the app converts them to page points at `scale` and also calibrates the measuring scale so later measurements agree. Profiles: \"HE200B\", \"HEA 200\", \"IPE 300\", \"UNP 200\", \"Koker 100x100x5\", \"L 100x100x10\" (steel) or \"300x500\" (concrete b x h in mm). Use dryRun to see what would be placed without touching the drawing.",
+                "description": "Set out a structural floor plan in one undoable step: the grid (lettered and numbered grid lines with bubbles), columns on the grid intersections, beams along the grid lines, a span-direction arrow per floor bay carrying the real span, spot elevations, position tags (position number / section / level) and - unless switched off - a quantity schedule grouped by IFC category. Bay sizes are REAL millimetres; the app converts them to page points at `scale` and also calibrates the measuring scale so later measurements agree. Profiles: \"HE200B\", \"HEA 200\", \"IPE 300\", \"UNP 200\", \"K100/5\" (square hollow section; rectangular: \"Koker 100x50x5\"), \"L 100x100x10\" (steel) or \"300x500\" (concrete b x h in mm). Use dryRun to see what would be placed without touching the drawing.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1096,7 +2507,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_list_commands",
-                "description": "List EVERY function the app exposes: each ribbon button on every tab (label, tab, disabled/active state) plus every drawing tool. Use this to discover how a feature is called before running it with app_run_command. Command ids: 'ribbon:#<id>' (stable), 'ribbon:<tab>:<n>' (button without an id, only stable within one version), 'tool:<name>'. Optional `filter` narrows by text (matches id, label, title or tab).",
+                "description": "List EVERY function the app exposes: each ribbon tab, each ribbon button on every tab (label, tab, disabled/active state) plus every drawing tool. Use this to discover how a feature is called before running it with app_run_command. Command ids: 'ribbon-tab:<tab>' (activate a ribbon tab), 'ribbon:#<id>' (stable), 'ribbon:<tab>:<n>' (button without an id, only stable within one version), 'tool:<name>'. Optional `filter` narrows by text (matches id, label, title or tab). Tabs and buttons that an extension adds carry the extension tab id in `tab`, including tabs an extension put into the ribbon itself. Extension actions appear as 'ext:<extensionId>:<itemId>'.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1107,16 +2518,17 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_run_command",
-                "description": "Run any command returned by app_list_commands: clicks the ribbon button (switching to its tab first) or activates the tool. Disabled buttons are refused.",
+                "description": "Run any command returned by app_list_commands: activates a ribbon tab ('ribbon-tab:<tab>'), clicks the ribbon button (switching to its tab first), runs an extension action ('ext:...') or activates the tool. Disabled buttons are refused.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "command": { "type": "string", "description": "Command id from app_list_commands, e.g. 'ribbon:#btn-vector-snippet' or 'tool:measureArea'." }
+                        "command": { "type": "string", "description": "Command id from app_list_commands, e.g. 'ribbon:#btn-vector-snippet', 'ribbon-tab:view' or 'tool:measureArea'." }
                     },
                     "required": ["command"],
                     "additionalProperties": false
                 }
             },
+            read_ui_tool(),
             {
                 "name": "app_snippet_cut",
                 "description": "Cut a rectangular area from a page of the active document as a VECTOR snippet (not a raster screenshot) and put it on the app's snippet clipboard. Coordinates are app points (top-left origin, 100% zoom). Paste it into any open document with app_snippet_paste.",
@@ -1148,6 +2560,7 @@ fn handle_tools_list() -> Value {
             },
             import_cad_tool(),
             export_cad_tool(),
+            export_ifcx_tool(),
             print_to_pdf_tool(),
             print_tool(),
             {
@@ -1240,9 +2653,26 @@ fn handle_tools_list() -> Value {
                 }
             },
             floorplan_tool(),
-            facade_element_tool()
+            facade_element_tool(),
+            // Systeemtypen (#567)
+            list_system_types_tool(),
+            register_system_type_tool(),
+            update_system_type_tool(),
+            open_system_type_editor_tool(),
+            get_system_geometry_tool(),
+            // Opdrachten van extensies (#575)
+            call_extension_command_tool()
         ]
-    })
+    });
+    if let Some(tools) = lijst["tools"].as_array_mut() {
+        let na_samenvoegen = tools
+            .iter()
+            .position(|t| t["name"] == "app_merge_pdf")
+            .map_or(tools.len(), |i| i + 1);
+        tools.splice(na_samenvoegen..na_samenvoegen, pagina_tools());
+        tools.extend(extensie_tools());
+    }
+    lijst
 }
 
 /// De `tools/list` voor een profiel: gefilterd, en elk gereedschap met de
@@ -1286,6 +2716,8 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_zoom_in" => tool_app_request(state, "mcp:zoom-in", &arguments, Duration::from_secs(15)).await,
         "app_zoom_out" => tool_app_request(state, "mcp:zoom-out", &arguments, Duration::from_secs(15)).await,
         "app_screenshot_view" => tool_app_request(state, "mcp:screenshot-view", &arguments, Duration::from_secs(30)).await,
+        // A page at a high dpi can take a while to render.
+        "app_capture_region"  => tool_app_request(state, "mcp:capture-region",  &arguments, Duration::from_secs(120)).await,
         "app_mouse_move"  => tool_app_request(state, "mcp:mouse-move",  &arguments, Duration::from_secs(10)).await,
         "app_mouse_click" => tool_app_request(state, "mcp:mouse-click", &arguments, Duration::from_secs(10)).await,
         "app_mouse_drag"  => tool_app_request(state, "mcp:mouse-drag",  &arguments, Duration::from_secs(30)).await,
@@ -1304,13 +2736,20 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_set_window_size"    => tool_set_window_size(state, &arguments).await,
         "app_get_current_tool"   => tool_app_request(state, "mcp:get-current-tool",   &arguments, Duration::from_secs(5)).await,
         "app_merge_pdf"          => tool_app_request(state, "mcp:merge-pdf",           &arguments, Duration::from_secs(60)).await,
-        "app_ai_complete"        => tool_app_request(state, "mcp:ai-complete",         &arguments, Duration::from_secs(60)).await,
+        // Paginabewerkingen laden het document opnieuw: dezelfde grens als samenvoegen.
+        "app_rotate_pages"       => tool_app_request(state, "mcp:rotate-pages",        &arguments, Duration::from_secs(60)).await,
+        "app_delete_pages"       => tool_app_request(state, "mcp:delete-pages",        &arguments, Duration::from_secs(60)).await,
+        "app_insert_blank_pages" => tool_app_request(state, "mcp:insert-blank-pages",  &arguments, Duration::from_secs(60)).await,
+        "app_extract_pages"      => tool_app_request(state, "mcp:extract-pages",       &arguments, Duration::from_secs(120)).await,
+        "app_reorder_pages"      => tool_app_request(state, "mcp:reorder-pages",       &arguments, Duration::from_secs(60)).await,
+        "app_shift_pages"        => tool_app_request(state, "mcp:shift-pages",         &arguments, Duration::from_secs(120)).await,
+        "app_bookmarks"          => tool_app_request(state, "mcp:bookmarks",           &arguments, Duration::from_secs(15)).await,
+        "app_watermarks"         => tool_app_request(state, "mcp:watermarks",          &arguments, Duration::from_secs(30)).await,
         "app_accounts_status"    => tool_app_request(state, "mcp:accounts-status",     &arguments, Duration::from_secs(5)).await,
         "app_accounts_fetch"     => tool_app_request(state, "mcp:accounts-fetch",      &arguments, Duration::from_secs(30)).await,
-        "app_assistant_ask"      => tool_app_request(state, "mcp:assistant-ask",       &arguments, Duration::from_secs(10)).await,
-        "app_assistant_pending"  => tool_app_request(state, "mcp:assistant-pending",   &arguments, Duration::from_secs(10)).await,
-        "app_assistant_answer"   => tool_app_request(state, "mcp:assistant-answer",    &arguments, Duration::from_secs(10)).await,
-        "app_assistant_history"  => tool_app_request(state, "mcp:assistant-history",   &arguments, Duration::from_secs(10)).await,
+        // Agenttaken van extensies (#556): alleen de wachtrij, dus korte grenzen.
+        "app_agent_task_pending" => tool_app_request(state, "mcp:agent-task-pending",  &arguments, Duration::from_secs(10)).await,
+        "app_agent_task_result"  => tool_app_request(state, "mcp:agent-task-result",   &arguments, Duration::from_secs(10)).await,
         "app_create_annotation"  => tool_app_request(state, "mcp:create-annotation",  &arguments, Duration::from_secs(15)).await,
         "app_list_annotations"   => tool_app_request(state, "mcp:list-annotations",   &arguments, Duration::from_secs(10)).await,
         "app_get_annotation"     => tool_app_request(state, "mcp:get-annotation",     &arguments, Duration::from_secs(10)).await,
@@ -1329,14 +2768,29 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_fit_page"           => tool_app_request(state, "mcp:fit-page",           &arguments, Duration::from_secs(15)).await,
         "app_fit_width"          => tool_app_request(state, "mcp:fit-width",          &arguments, Duration::from_secs(15)).await,
         "app_get_page_count"     => tool_app_request(state, "mcp:get-page-count",     &arguments, Duration::from_secs(5)).await,
+        "app_search_documents"   => tool_app_request(state, "mcp:search-documents", &arguments, Duration::from_secs(300)).await,
+        "app_locations"          => tool_app_request(state, "mcp:locations", &arguments, Duration::from_secs(30)).await,
+        "app_hidden_information" => tool_app_request(state, "mcp:hidden-information", &arguments, Duration::from_secs(300)).await,
+        "app_print_preflight"    => tool_app_request(state, "mcp:print-preflight", &arguments, Duration::from_secs(300)).await,
+        "app_review_ocr"         => tool_app_request(state, "mcp:review-ocr", &arguments, Duration::from_secs(60)).await,
+        "app_portfolio"          => tool_app_request(state, "mcp:portfolio", &arguments, Duration::from_secs(300)).await,
+        "app_recognize_form"     => tool_app_request(state, "mcp:recognize-form", &arguments, Duration::from_secs(300)).await,
+        "app_search_symbols"     => tool_app_request(state, "mcp:search-symbols", &arguments, Duration::from_secs(300)).await,
+        "app_workbook_bindings"  => tool_app_request(state, "mcp:workbook-bindings", &arguments, Duration::from_secs(300)).await,
+        "app_document_workflows" => tool_app_request(state, "mcp:document-workflows", &arguments, Duration::from_secs(300)).await,
+        "app_drawing_sets" => tool_app_request(state, "mcp:drawing-sets", &arguments, Duration::from_secs(300)).await,
+        "app_sheet_links" => tool_app_request(state, "mcp:sheet-links", &arguments, Duration::from_secs(300)).await,
+        "app_approval_routing" => tool_app_request(state, "mcp:approval-routing", &arguments, Duration::from_secs(300)).await,
         "app_get_page_text"      => tool_app_request(state, "mcp:get-page-text",      &arguments, Duration::from_secs(60)).await,
         "app_replace_text"       => tool_app_request(state, "mcp:replace-text",       &arguments, Duration::from_secs(120)).await,
+        "app_translate_page"     => tool_app_request(state, "mcp:translate-page",     &arguments, Duration::from_secs(300)).await,
         "app_set_measure_scale"  => tool_app_request(state, "mcp:set-measure-scale",  &arguments, Duration::from_secs(15)).await,
         "app_get_takeoff"        => tool_app_request(state, "mcp:get-takeoff",        &arguments, Duration::from_secs(10)).await,
         "app_place_schedule"     => tool_app_request(state, "mcp:place-schedule",     &arguments, Duration::from_secs(15)).await,
         "app_structural_layout"  => tool_app_request(state, "mcp:structural-layout",  &arguments, Duration::from_secs(60)).await,
         "app_list_commands"      => tool_app_request(state, "mcp:list-commands",      &arguments, Duration::from_secs(30)).await,
         "app_run_command"        => tool_app_request(state, "mcp:run-command",        &arguments, Duration::from_secs(20)).await,
+        "app_read_ui"            => tool_app_request(state, "mcp:read-ui",            &arguments, Duration::from_secs(10)).await,
         "app_snippet_cut"        => tool_app_request(state, "mcp:snippet-cut",        &arguments, Duration::from_secs(60)).await,
         "app_snippet_paste"      => tool_app_request(state, "mcp:snippet-paste",      &arguments, Duration::from_secs(15)).await,
         "app_snippet_flatten"    => tool_app_request(state, "mcp:snippet-flatten",    &arguments, Duration::from_secs(10)).await,
@@ -1346,6 +2800,7 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_facade_element"     => tool_app_request(state, "mcp:facade-element",     &arguments, Duration::from_secs(30)).await,
         "app_import_cad"         => tool_app_request(state, "mcp:import-cad",         &arguments, Duration::from_secs(300)).await,
         "app_export_cad"         => tool_app_request(state, "mcp:export-cad",         &arguments, Duration::from_secs(300)).await,
+        "app_export_ifcx"        => tool_app_request(state, "mcp:export-ifcx",        &arguments, Duration::from_secs(300)).await,
         // Afdrukken: een A0 op 300 dpi renderen duurt minuten, dus dezelfde
         // ruime grens als de CAD-omzetting. De JS-kant breekt net eerder af
         // (print-opdracht.js TIJDGRENS_MS), zodat er na "timed out" geen
@@ -1357,11 +2812,63 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_list_layers"        => tool_app_request(state, "mcp:list-layers",        &arguments, Duration::from_secs(10)).await,
         "app_create_layer"       => tool_app_request(state, "mcp:create-layer",       &arguments, Duration::from_secs(10)).await,
         "app_set_layer"          => tool_app_request(state, "mcp:set-layer",          &arguments, Duration::from_secs(10)).await,
+        // Systeemtypen (#567): alleen de bibliotheek, dus korte grenzen.
+        "app_list_system_types"       => tool_app_request(state, "mcp:list-system-types",       &arguments, Duration::from_secs(10)).await,
+        "app_register_system_type"    => tool_app_request(state, "mcp:register-system-type",    &arguments, Duration::from_secs(10)).await,
+        "app_update_system_type"      => tool_app_request(state, "mcp:update-system-type",      &arguments, Duration::from_secs(10)).await,
+        "app_open_system_type_editor" => tool_app_request(state, "mcp:open-system-type-editor", &arguments, Duration::from_secs(10)).await,
+        "app_get_system_geometry"     => tool_app_request(state, "mcp:get-system-geometry",     &arguments, Duration::from_secs(10)).await,
+        // Opdrachten van extensies (#575); zonder JSON-RPC-id (mcp_handler geeft dat mee).
+        "app_call_extension_command" => extensie_aanroep(state, name, params, &Value::Null).await,
+        // Extensies (#550): installeren pakt uit en activeert; de JS-kant breekt eerder af.
+        "app_list_extensions"    => tool_app_request(state, "mcp:list-extensions",    &arguments, Duration::from_secs(10)).await,
+        "app_install_extension"  => tool_app_request(state, "mcp:install-extension",  &arguments, Duration::from_secs(60)).await,
+        "app_reload_extension"   => tool_app_request(state, "mcp:reload-extension",   &arguments, Duration::from_secs(30)).await,
         other => Err((
             jsonrpc_error::METHOD_NOT_FOUND,
             format!("method not found: {other}"),
         )),
     }
+}
+
+/// Een aanroep van een extensieopdracht (#575): een `ext_`-tool zelf, of
+/// `app_call_extension_command`. De WebView controleert de argumenten tegen
+/// het schema van de opdracht en houdt zich aan de tijdgrens van de opdracht
+/// (hooguit 120 s); Rust wacht iets langer. Het JSON-RPC-id gaat mee, zodat
+/// `notifications/cancelled` precies deze aanroep kan annuleren.
+async fn extensie_aanroep(
+    state: &AppState,
+    naam: &str,
+    params: &Value,
+    rpc_id: &Value,
+) -> Result<Value, (i32, String)> {
+    let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
+    let payload = if naam == "app_call_extension_command" {
+        json!({ "generic": true, "call": arguments, "rpcId": rpc_id })
+    } else {
+        json!({ "tool": naam, "arguments": arguments, "rpcId": rpc_id })
+    };
+    tool_app_request(state, "mcp:call-extension-command", &payload, Duration::from_secs(125)).await
+}
+
+/// Registreert een geladen extensie deze `ext_`-tool?
+fn extensie_tool_bekend(state: &AppState, naam: &str) -> bool {
+    state
+        .app_handle
+        .as_ref()
+        .and_then(|app| app.try_state::<ExtensieTools>())
+        .map_or(false, |et| et.bevat(naam))
+}
+
+/// De vaste lijst plus de opdrachten van geladen extensies (#575).
+fn tools_list_met_extensies(state: &AppState) -> Value {
+    let mut lijst = tools_list_voor(state.profiel);
+    if let Some(et) = state.app_handle.as_ref().and_then(|app| app.try_state::<ExtensieTools>()) {
+        if let Some(tools) = lijst["tools"].as_array_mut() {
+            tools.extend(et.lijst());
+        }
+    }
+    lijst
 }
 
 /// `app_set_window_size` — resize the main window from the Rust side.
@@ -1803,6 +3310,38 @@ pub fn verzoek_toegestaan(headers: &axum::http::HeaderMap, poort: u16) -> bool {
     true
 }
 
+/// OpenAEC Linux (#863): geen `Origin`-kop (een browser stuurt die altijd mee)
+/// en `Authorization: Bearer <geheim>`, in constante tijd vergeleken. De
+/// Host-kop telt hier niet: de server luistert op het interne netwerk.
+pub fn beheerd_verzoek_toegestaan(headers: &axum::http::HeaderMap, geheim: &str) -> bool {
+    if headers.contains_key("origin") {
+        return false;
+    }
+    let Some(kop) = headers.get("authorization").and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    let kop = kop.trim();
+    let Some((schema, token)) = kop.split_once(' ') else { return false };
+    if !schema.eq_ignore_ascii_case("bearer") {
+        return false;
+    }
+    gelijk_in_constante_tijd(token.trim().as_bytes(), geheim.as_bytes())
+}
+
+fn gelijk_in_constante_tijd(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() || b.is_empty() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+fn toegang_toegestaan(headers: &axum::http::HeaderMap, state: &AppState) -> bool {
+    match &state.toegang {
+        Toegang::Lokaal => verzoek_toegestaan(headers, state.poort),
+        Toegang::Geheim(geheim) => beheerd_verzoek_toegestaan(headers, geheim),
+    }
+}
+
 /// Axum POST handler for `/mcp`. Parses the JSON-RPC envelope and dispatches
 /// on the `method` field.
 async fn mcp_handler(
@@ -1814,14 +3353,14 @@ async fn mcp_handler(
     // well-formed if the client omitted it.
     let id = body.get("id").cloned().unwrap_or(Value::Null);
 
-    if !verzoek_toegestaan(&headers, state.poort) {
+    if !toegang_toegestaan(&headers, &state) {
+        let melding = match state.toegang {
+            Toegang::Lokaal => "only local clients may use this server",
+            Toegang::Geheim(_) => "a valid bearer secret is required and browser requests are refused",
+        };
         return (
             StatusCode::FORBIDDEN,
-            Json(rpc_error(
-                id,
-                jsonrpc_error::INVALID_REQUEST,
-                "only local clients may use this server",
-            )),
+            Json(rpc_error(id, jsonrpc_error::INVALID_REQUEST, melding)),
         );
     }
 
@@ -1839,14 +3378,48 @@ async fn mcp_handler(
         }
     };
 
+    // Signaal voor de statusbalk (mcp_signaal.rs): alleen soort, toolnaam,
+    // poort en tijd; nooit argumenten of documentinhoud.
+    match method {
+        "initialize" => crate::mcp_signaal::meld(state.app_handle.as_ref(), "connect", None, state.poort),
+        "tools/call" => {
+            let naam = body
+                .get("params")
+                .and_then(|p| p.get("name"))
+                .and_then(|v| v.as_str());
+            crate::mcp_signaal::meld(state.app_handle.as_ref(), "call", naam, state.poort);
+        }
+        _ => {}
+    }
+
     let response = match method {
         "initialize" => rpc_result(id, handle_initialize()),
-        "tools/list" => rpc_result(id, tools_list_voor(state.profiel)),
+        "tools/list" => rpc_result(id, tools_list_met_extensies(&state)),
         "tools/call" => {
             let empty = Value::Null;
             let params = body.get("params").unwrap_or(&empty);
             let naam = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            if !beschikbaar(naam, state.profiel) {
+            if naam.starts_with(mcp_extensie_tools::VOORVOEGSEL) {
+                // Opdracht van een extensie (#575): alleen als een geladen
+                // extensie hem registreert.
+                if !extensie_tool_bekend(&state, naam) {
+                    rpc_error(
+                        id,
+                        jsonrpc_error::INVALID_PARAMS,
+                        format!("tool '{naam}' is not available: no loaded extension registers it (see app_list_extensions)"),
+                    )
+                } else {
+                    match extensie_aanroep(&state, naam, params, &id).await {
+                        Ok(value) => rpc_result(id, value),
+                        Err((code, msg)) => rpc_error(id, code, msg),
+                    }
+                }
+            } else if naam == "app_call_extension_command" && beschikbaar(naam, state.profiel) {
+                match extensie_aanroep(&state, naam, params, &id).await {
+                    Ok(value) => rpc_result(id, value),
+                    Err((code, msg)) => rpc_error(id, code, msg),
+                }
+            } else if !beschikbaar(naam, state.profiel) {
                 rpc_error(
                     id,
                     jsonrpc_error::INVALID_PARAMS,
@@ -1863,6 +3436,18 @@ async fn mcp_handler(
         // id and expect no response. We still send back an empty result for
         // robustness; the harness ignores unknown ids.
         "notifications/initialized" | "initialized" => rpc_result(id, json!({})),
+        // Een client breekt een lopende aanroep af (#575): alleen opdrachten
+        // van extensies zijn af te breken; die krijgen hun AbortSignal.
+        "notifications/cancelled" => {
+            let request_id = body.get("params").and_then(|p| p.get("requestId")).cloned();
+            if let (Some(_), Some(rid)) = (&state.app_handle, request_id) {
+                let st = state.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = tool_app_request(&st, "mcp:cancel-extension-command", &json!({ "rpcId": rid }), Duration::from_secs(5)).await;
+                });
+            }
+            rpc_result(id, json!({}))
+        }
         other => rpc_error(
             id,
             jsonrpc_error::METHOD_NOT_FOUND,
@@ -1895,6 +3480,7 @@ pub async fn start(
         app_handle,
         profiel: Profiel::Ontwikkeling,
         poort: port,
+        toegang: Toegang::Lokaal,
     };
 
     let addr: SocketAddr = format!("127.0.0.1:{port}")
@@ -1907,7 +3493,28 @@ pub async fn start(
 
     eprintln!("MCP server listening on http://127.0.0.1:{port}/mcp");
     crate::mcp_koppeling::markeer_startvlag(port);
+    if let Some(app) = state.app_handle.as_ref() {
+        crate::mcp_signaal::meld_status(app, &crate::mcp_koppeling::mcp_status());
+    }
 
+    serveer(listener, state, None).await
+}
+
+/// OpenAEC Linux (#863): de server uit `OPENAEC_MCP_POORT`/`OPENAEC_MCP_GEHEIM`
+/// (openaec_omgeving.rs). Publiek profiel, zoals de instelling in de app; het
+/// geheim is de toestemming, dus geen `OPS_ENABLE_MCP`.
+pub async fn start_beheerd(
+    instelling: crate::openaec_omgeving::McpInstelling,
+    app_handle: Option<AppHandle>,
+) -> Result<(), String> {
+    let adres = instelling.adres;
+    let listener = tokio::net::TcpListener::bind(adres)
+        .await
+        .map_err(|e| format!("bind {adres}: {e}"))?;
+    let mut state = AppState::nieuw(Profiel::Publiek, adres.port(), app_handle);
+    state.toegang = Toegang::Geheim(Arc::from(instelling.geheim.as_str()));
+    eprintln!("MCP server (OPENAEC_MCP_POORT) listening on http://{adres}/mcp");
+    crate::mcp_koppeling::markeer_omgeving(adres.port());
     serveer(listener, state, None).await
 }
 
@@ -1932,6 +3539,39 @@ pub async fn serveer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn beheerde_server_wil_het_geheim_en_geen_browser() {
+        use axum::http::{HeaderMap, HeaderValue};
+        let kop = |paren: &[(&'static str, &'static str)]| {
+            let mut h = HeaderMap::new();
+            for (k, v) in paren {
+                h.insert(*k, HeaderValue::from_static(v));
+            }
+            h
+        };
+        let geheim = "0123456789abcdef";
+        let goed = [("host", "ops-container:9300"), ("authorization", "Bearer 0123456789abcdef")];
+        assert!(beheerd_verzoek_toegestaan(&kop(&goed), geheim));
+        assert!(beheerd_verzoek_toegestaan(&kop(&[("authorization", "bearer 0123456789abcdef")]), geheim));
+        assert!(!beheerd_verzoek_toegestaan(&kop(&[]), geheim), "zonder geheim");
+        assert!(!beheerd_verzoek_toegestaan(&kop(&[("authorization", "Bearer 0123456789abcdeX")]), geheim));
+        assert!(!beheerd_verzoek_toegestaan(&kop(&[("authorization", "Bearer 0123456789abcdef0")]), geheim));
+        assert!(!beheerd_verzoek_toegestaan(&kop(&[("authorization", "Basic 0123456789abcdef")]), geheim));
+        assert!(!beheerd_verzoek_toegestaan(&kop(&[("authorization", "0123456789abcdef")]), geheim));
+        // Een browser stuurt altijd Origin mee, ook met het juiste geheim.
+        let browser = [("authorization", "Bearer 0123456789abcdef"), ("origin", "http://localhost:3000")];
+        assert!(!beheerd_verzoek_toegestaan(&kop(&browser), geheim));
+        assert!(!beheerd_verzoek_toegestaan(&kop(&[("authorization", "Bearer ")]), ""), "leeg geheim nooit");
+
+        let mut state = AppState::nieuw(Profiel::Publiek, 9300, None);
+        state.toegang = Toegang::Geheim(Arc::from(geheim));
+        assert!(toegang_toegestaan(&kop(&goed), &state));
+        assert!(!toegang_toegestaan(&kop(&[("host", "127.0.0.1:9300")]), &state), "lokaal zonder geheim");
+        let lokaal = AppState::nieuw(Profiel::Publiek, 9300, None);
+        assert!(toegang_toegestaan(&kop(&[("host", "127.0.0.1:9300")]), &lokaal));
+        assert!(!toegang_toegestaan(&kop(&goed), &lokaal), "andere host blijft geweigerd");
+    }
 
     #[test]
     fn alleen_lokale_verzoeken_worden_toegelaten() {
@@ -1966,11 +3606,19 @@ mod tests {
     }
 
     #[test]
+    fn publieke_catalogus_is_gelijk_aan_verpakte_tools() {
+        let publiek = tools_list_voor(Profiel::Publiek);
+        let verpakt: Value = serde_json::from_str(include_str!("../../../mcp-stdio/tools.json"))
+            .expect("valid packaged MCP catalog");
+        assert_eq!(publiek["tools"], verpakt, "native and stdio schemas/metadata/order must match");
+    }
+
+    #[test]
     fn publiek_profiel_laat_ontwikkelgereedschap_weg_en_annoteert_alles() {
         use crate::mcp_tool_meta::Profiel;
         let publiek = tools_list_voor(Profiel::Publiek);
         let arr = publiek["tools"].as_array().unwrap();
-        assert_eq!(arr.len(), 62);
+        assert_eq!(arr.len(), 94);
         for t in arr {
             let a = &t["annotations"];
             assert!(a["title"].as_str().map_or(false, |s| !s.is_empty()), "{} zonder titel", t["name"]);
@@ -2023,6 +3671,95 @@ mod tests {
         let maak = meta("app_create_layer").unwrap();
         assert!(!maak.alleen_lezen && !maak.wijzigt);
         assert!(meta("app_set_layer").unwrap().wijzigt);
+    }
+
+    #[test]
+    fn extensies_zijn_te_beheren_via_mcp() {
+        let v = handle_tools_list();
+        let zoek = |naam: &str| {
+            v["tools"].as_array().unwrap().iter()
+                .find(|t| t["name"] == naam)
+                .unwrap_or_else(|| panic!("{naam} staat in de lijst"))
+                .clone()
+        };
+        assert_eq!(zoek("app_install_extension")["inputSchema"]["required"], json!(["path", "replace", "idempotencyKey"]));
+        assert_eq!(zoek("app_install_extension")["inputSchema"]["properties"]["replace"]["enum"], json!(["never", "ifNewer", "always"]));
+        assert_eq!(zoek("app_reload_extension")["inputSchema"]["required"], json!(["id"]));
+        assert!(zoek("app_list_commands")["description"].as_str().unwrap().contains("'ext:<extensionId>:<itemId>'"));
+        use crate::mcp_tool_meta::meta;
+        assert!(meta("app_list_extensions").unwrap().alleen_lezen);
+        assert!(meta("app_install_extension").unwrap().wijzigt, "installeren kan een installatie vervangen");
+        let herladen = meta("app_reload_extension").unwrap();
+        assert!(!herladen.alleen_lezen && !herladen.wijzigt);
+    }
+
+    #[test]
+    fn extensieopdrachten_zijn_aan_te_roepen_via_mcp() {
+        let v = handle_tools_list();
+        let tool = v["tools"].as_array().unwrap().iter()
+            .find(|t| t["name"] == "app_call_extension_command")
+            .expect("app_call_extension_command staat in de lijst")
+            .clone();
+        assert_eq!(tool["inputSchema"]["required"], json!(["tool"]));
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        assert!(tool["description"].as_str().unwrap().contains("ext_<extension>__<command>"));
+        assert!(crate::mcp_tool_meta::meta("app_call_extension_command").unwrap().wijzigt);
+        // Zonder app is er geen extensielijst: alleen de vaste gereedschappen.
+        let state = AppState::nieuw(Profiel::Publiek, 9999, None);
+        assert_eq!(
+            tools_list_met_extensies(&state)["tools"].as_array().unwrap().len(),
+            tools_list_voor(Profiel::Publiek)["tools"].as_array().unwrap().len()
+        );
+        assert!(!extensie_tool_bekend(&state, "ext_a__x"));
+    }
+
+    #[test]
+    fn agenttaken_zijn_te_beantwoorden_via_mcp() {
+        let v = handle_tools_list();
+        let tools = v["tools"].as_array().unwrap();
+        let zoek = |naam: &str| {
+            tools.iter()
+                .find(|t| t["name"] == naam)
+                .unwrap_or_else(|| panic!("{naam} staat in de lijst"))
+                .clone()
+        };
+        let ophalen = zoek("app_agent_task_pending");
+        assert_eq!(ophalen["inputSchema"]["additionalProperties"], false);
+        assert_eq!(ophalen["inputSchema"]["properties"]["kind"]["type"], "string");
+        assert!(ophalen["inputSchema"].get("required").is_none());
+        let antwoord = zoek("app_agent_task_result");
+        assert_eq!(antwoord["inputSchema"]["required"], json!(["id"]));
+        assert_eq!(antwoord["inputSchema"]["properties"]["error"]["required"], json!(["message"]));
+        assert_eq!(antwoord["inputSchema"]["properties"]["error"]["additionalProperties"], false);
+        // Direct na de accountgereedschappen, in deze volgorde.
+        let pos = |naam: &str| tools.iter().position(|t| t["name"] == naam).unwrap();
+        assert_eq!(pos("app_agent_task_pending"), pos("app_accounts_fetch") + 1);
+        assert_eq!(pos("app_agent_task_result"), pos("app_agent_task_pending") + 1);
+        use crate::mcp_tool_meta::{beschikbaar, meta, Profiel};
+        for naam in ["app_agent_task_pending", "app_agent_task_result"] {
+            let m = meta(naam).unwrap();
+            assert!(!m.alleen_lezen && !m.wijzigt, "{naam}: wijzigt geen documentgegevens");
+            assert!(beschikbaar(naam, Profiel::Publiek), "{naam} hoort in het publieke profiel");
+        }
+    }
+
+    #[test]
+    fn interface_is_te_lezen_via_mcp() {
+        let v = handle_tools_list();
+        let tools = v["tools"].as_array().unwrap();
+        let lezen = tools.iter().find(|t| t["name"] == "app_read_ui").expect("app_read_ui staat in de lijst");
+        let schema = &lezen["inputSchema"];
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(schema.get("required").is_none(), "zonder argumenten leest hij de standaardgebieden");
+        assert_eq!(schema["properties"]["maxNodes"]["maximum"], 3000);
+        assert_eq!(schema["properties"]["includeHidden"]["type"], "boolean");
+        assert!(crate::mcp_tool_meta::meta("app_read_ui").unwrap().alleen_lezen);
+        // Direct na app_run_command, in dezelfde volgorde als de brug en tools.json.
+        let namen: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        let i = namen.iter().position(|n| *n == "app_run_command").unwrap();
+        assert_eq!(namen[i + 1], "app_read_ui");
+        let lijst = tools.iter().find(|t| t["name"] == "app_list_commands").unwrap();
+        assert!(lijst["description"].as_str().unwrap().contains("'ribbon-tab:<tab>'"));
     }
 
     #[test]
@@ -2081,6 +3818,24 @@ mod tests {
         assert!(!m.alleen_lezen && m.wijzigt);
         let publiek = tools_list_voor(crate::mcp_tool_meta::Profiel::Publiek);
         assert!(publiek["tools"].as_array().unwrap().iter().any(|t| t["name"] == "app_export_cad"));
+    }
+
+    #[test]
+    fn app_export_ifcx_beschrijft_de_beta_export() {
+        let v = handle_tools_list();
+        let tool = v["tools"].as_array().unwrap().iter()
+            .find(|t| t["name"] == "app_export_ifcx")
+            .expect("app_export_ifcx staat in de lijst");
+        assert!(tool["description"].as_str().unwrap().contains("(beta;"));
+        let schema = &tool["inputSchema"];
+        assert_eq!(schema["additionalProperties"], false);
+        assert_eq!(schema["required"], json!(["path"]));
+        let props = schema["properties"].as_object().unwrap();
+        for naam in ["path", "pages", "raster", "text", "annotations", "maxPathsPerPage"] {
+            assert!(props.contains_key(naam), "{naam} ontbreekt in het schema");
+        }
+        let m = crate::mcp_tool_meta::meta("app_export_ifcx").unwrap();
+        assert!(!m.alleen_lezen && m.wijzigt);
     }
 
     #[test]
@@ -2209,6 +3964,7 @@ mod tests {
             app_handle: None,
             profiel: Profiel::Ontwikkeling,
             poort: 9223,
+            toegang: Toegang::Lokaal,
         };
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -2283,7 +4039,7 @@ mod tests {
         pdfs.sort_by_key(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX));
         let smallest = pdfs.first().expect("no pdfs in corpus").clone();
 
-        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223 };
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223, toegang: Toegang::Lokaal };
         let args = serde_json::json!({
             "path": smallest.to_string_lossy(),
             "page_index": 0,
@@ -2336,6 +4092,7 @@ mod tests {
             app_handle: None,
             profiel: Profiel::Ontwikkeling,
             poort: 9223,
+            toegang: Toegang::Lokaal,
         };
         let args = serde_json::json!({ "path": pdf.to_string_lossy() });
         let result = tool_get_pdf_metadata(&state, &args).await.expect("metadata ok");
@@ -2388,7 +4145,7 @@ mod tests {
             .expect("no pdfs in corpus")
             .clone();
 
-        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223 };
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223, toegang: Toegang::Lokaal };
         let args = serde_json::json!({
             "path": smallest.to_string_lossy(),
             "width": 200
@@ -2451,10 +4208,6 @@ mod tests {
             "app_click_element",
             "app_ui_state",
             "app_set_window_size",
-            "app_assistant_ask",
-            "app_assistant_pending",
-            "app_assistant_answer",
-            "app_assistant_history",
             "app_create_annotation",
             "app_list_annotations",
             "app_get_annotation",
@@ -2479,6 +4232,7 @@ mod tests {
             "app_structural_layout",
             "app_list_commands",
             "app_run_command",
+            "app_read_ui",
             "app_snippet_cut",
             "app_snippet_paste",
             "app_snippet_flatten",
@@ -2488,12 +4242,21 @@ mod tests {
             "app_facade_element",
             "app_import_cad",
             "app_export_cad",
+            "app_export_ifcx",
             "app_print_to_pdf",
             "app_print",
             "app_list_printers",
             "app_list_layers",
             "app_create_layer",
             "app_set_layer",
+            "app_list_system_types",
+            "app_register_system_type",
+            "app_update_system_type",
+            "app_open_system_type_editor",
+            "app_get_system_geometry",
+            "app_list_extensions",
+            "app_install_extension",
+            "app_reload_extension",
         ] {
             assert!(names.contains(&tool), "missing tool: {tool} (got {names:?})");
             let descr = arr.iter().find(|t| t["name"] == tool).unwrap();
@@ -2518,6 +4281,7 @@ mod tests {
             app_handle: None,
             profiel: Profiel::Ontwikkeling,
             poort: 9223,
+            toegang: Toegang::Lokaal,
         };
         for (name, args) in [
             ("app_mouse_move",  serde_json::json!({"x": 100, "y": 100})),

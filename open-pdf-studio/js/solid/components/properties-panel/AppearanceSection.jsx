@@ -16,6 +16,16 @@ export default function AppearanceSection() {
   const { t } = useTranslation('properties');
   const { t: tCommon } = useTranslation('common');
   const isLocked = () => annotProps.locked === true || annotProps.locked === 'mixed';
+  // Aparte dekking voor lijn en vulling (#685): zonder vulling of zonder rand
+  // heeft die dekking niets om op te werken; het veld blijft zichtbaar maar
+  // staat uit.
+  const geenVulling = () => {
+    const fc = annotProps.fillColor;
+    return !fc || fc === 'none' || fc === 'transparent';
+  };
+  const geenRand = () => annotProps.strokeColor === 'none' || annotProps.strokeColor === 'transparent';
+  const lijnDekkingUit = () => isLocked() || (sectionVis.aparteDekking && geenRand());
+  const vulDekkingUit = () => isLocked() || (sectionVis.aparteDekking && geenVulling());
 
   // ── Benoemde lijnstijl-presets (issue #268) ──────────────────────────────
   const [createOpen, setCreateOpen] = createSignal(false);
@@ -27,7 +37,7 @@ export default function AppearanceSection() {
   // Preset-UI alleen tonen wanneer de sectie echte stijl-controls bevat.
   const showsStyleControls = () =>
     sectionVis.fillColorGroup || sectionVis.strokeColorGroup || sectionVis.colorGroup ||
-    sectionVis.opacityGroup || sectionVis.lineWidthGroup || sectionVis.borderStyleGroup;
+    sectionVis.opacityGroup || sectionVis.lineWidthGroup || sectionVis.borderStyleGroup || sectionVis.boxShapeGroup;
 
   const handleApplyPreset = (e) => {
     const id = e.target.value;
@@ -84,17 +94,25 @@ export default function AppearanceSection() {
               <Show when={annotProps.icon === 'mixed'}>
                 <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
               </Show>
-              <option value="comment">{t('appearance.iconComment')}</option>
-              <option value="note">{t('appearance.iconNote')}</option>
-              <option value="help">{t('appearance.iconHelp')}</option>
-              <option value="insert">{t('appearance.iconInsert')}</option>
-              <option value="key">{t('appearance.iconKey')}</option>
-              <option value="newparagraph">{t('appearance.iconNewParagraph')}</option>
-              <option value="paragraph">{t('appearance.iconParagraph')}</option>
-              <option value="check">{t('appearance.iconCheck')}</option>
-              <option value="circle">{t('appearance.iconCircle')}</option>
-              <option value="cross">{t('appearance.iconCross')}</option>
-              <option value="star">{t('appearance.iconStar')}</option>
+              <Show when={sectionVis.attachmentGroup} fallback={<>
+                <option value="comment">{t('appearance.iconComment')}</option>
+                <option value="note">{t('appearance.iconNote')}</option>
+                <option value="help">{t('appearance.iconHelp')}</option>
+                <option value="insert">{t('appearance.iconInsert')}</option>
+                <option value="key">{t('appearance.iconKey')}</option>
+                <option value="newparagraph">{t('appearance.iconNewParagraph')}</option>
+                <option value="paragraph">{t('appearance.iconParagraph')}</option>
+                <option value="check">{t('appearance.iconCheck')}</option>
+                <option value="circle">{t('appearance.iconCircle')}</option>
+                <option value="cross">{t('appearance.iconCross')}</option>
+                <option value="star">{t('appearance.iconStar')}</option>
+              </>}>
+                {/* Bijlage-annotatie (#376): de vier /Name-waarden van de specificatie. */}
+                <option value="paperclip">{t('appearance.iconPaperclip')}</option>
+                <option value="pushpin">{t('appearance.iconPushPin')}</option>
+                <option value="graph">{t('appearance.iconGraph')}</option>
+                <option value="tag">{t('appearance.iconTag')}</option>
+              </Show>
             </select>
           </div>
         </Show>
@@ -103,7 +121,7 @@ export default function AppearanceSection() {
           <ColorPalettePicker
             label={t('appearance.fillColor')}
             color={() => annotProps.fillColor}
-            showNone={true}
+            showNone={sectionVis.fillNoneAllowed !== false}
             disabled={isLocked()}
             onColorChange={(color) => updateAnnotProp('fillColor', color)}
             onNone={() => updateAnnotProp('fillColor', null)}
@@ -140,13 +158,29 @@ export default function AppearanceSection() {
 
         <Show when={sectionVis.opacityGroup}>
           <div class="property-group">
-            <label>{t('appearance.opacity')}</label>
+            <label>{sectionVis.aparteDekking ? t('appearance.strokeOpacity') : t('appearance.opacity')}</label>
             <PrefComboBox
               value={() => annotProps.opacity}
               setValue={(val) => updateAnnotProp('opacity', val)}
               options={[100, 90, 80, 70, 60, 50, 40, 30, 20, 10]}
               min={0} max={100} fallback={100} suffix="%"
-              disabled={isLocked}
+              disabled={lijnDekkingUit}
+            />
+          </div>
+        </Show>
+
+        {/* Vul-doorzichtigheid: waar de vulling een eigen alfa heeft
+            (schaalgebied #611; rechthoek, ellips, veelhoek en wolk #685); de
+            doorzichtigheid hierboven geldt dan voor de rand. */}
+        <Show when={sectionVis.fillOpacityGroup}>
+          <div class="property-group">
+            <label>{t('appearance.fillOpacity')}</label>
+            <PrefComboBox
+              value={() => annotProps.fillOpacity}
+              setValue={(val) => updateAnnotProp('fillOpacity', val)}
+              options={[100, 75, 50, 25, 10, 5, 0]}
+              min={0} max={100} fallback={10} suffix="%"
+              disabled={vulDekkingUit}
             />
           </div>
         </Show>
@@ -161,6 +195,22 @@ export default function AppearanceSection() {
               min={0} max={20} fallback={1} suffix="pt"
               disabled={isLocked}
             />
+          </div>
+        </Show>
+
+        <Show when={sectionVis.boxShapeGroup}>
+          <div class="property-group">
+            <label>{t('appearance.boxShape')}</label>
+            <select value={annotProps.boxShape} disabled={isLocked()}
+              onDblClick={cycleSelectNext}
+              onChange={(e) => updateAnnotProp('boxShape', e.target.value)}>
+              <Show when={annotProps.boxShape === 'mixed'}>
+                <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+              </Show>
+              <option value="rect">{t('appearance.boxShapeRect')}</option>
+              <option value="rounded">{t('appearance.boxShapeRounded')}</option>
+              <option value="ellipse">{t('appearance.boxShapeEllipse')}</option>
+            </select>
           </div>
         </Show>
 

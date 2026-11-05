@@ -2932,6 +2932,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcms2"
+version = "6.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80205450f4d8b4de92f18111de879f3df4a6b728915e89b73c38f7a59a81ad90"
+dependencies = [
+ "bytemuck",
+ "foreign-types",
+ "lcms2-sys",
+]
+
+[[package]]
+name = "lcms2-sys"
+version = "4.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "264db0b78119c5a37d78bb41fb355daab29b3b29430b53cd92e3da51f0ab06cc"
+dependencies = [
+ "cc",
+ "dunce",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3637,7 +3660,7 @@ dependencies = [
 
 [[package]]
 name = "open-pdf-cad"
-version = "0.1.0"
+version = "2026.45.0"
 dependencies = [
  "acadrust",
  "flate2",
@@ -3648,8 +3671,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-pdf-cmyk"
+version = "2026.45.0"
+dependencies = [
+ "flate2",
+ "image",
+ "lcms2",
+ "lopdf",
+ "serde",
+ "serde_json",
+ "turbojpeg",
+]
+
+[[package]]
 name = "open-pdf-render"
-version = "0.1.0"
+version = "2026.45.0"
 dependencies = [
  "flate2",
  "hayro-font",
@@ -3664,8 +3700,9 @@ dependencies = [
 
 [[package]]
 name = "open-pdf-studio"
-version = "0.1.0"
+version = "2026.45.0"
 dependencies = [
+ "aes",
  "anyhow",
  "axum",
  "base64 0.22.1",
@@ -3681,12 +3718,16 @@ dependencies = [
  "hmac",
  "image",
  "keyring",
+ "libloading 0.9.0",
  "log",
  "lopdf",
+ "memchr",
  "memmap2",
  "open",
  "open-pdf-cad",
+ "open-pdf-cmyk",
  "open-pdf-render",
+ "openaec-update",
  "p256",
  "p384",
  "pdfium-render",
@@ -3702,6 +3743,7 @@ dependencies = [
  "sha1",
  "sha2",
  "spki",
+ "stringprep",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -3719,13 +3761,37 @@ dependencies = [
  "tauri-plugin-updater",
  "tesseract-rs",
  "tokio",
+ "unicode-normalization",
  "url",
  "urlencoding",
+ "webview2-com",
  "whoami",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
  "x509-cert",
+ "zbus",
  "zeroize",
  "zip 2.4.2",
+]
+
+[[package]]
+name = "open-pdf-thumbnails"
+version = "2026.45.0"
+dependencies = [
+ "libloading 0.9.0",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
+]
+
+[[package]]
+name = "openaec-update"
+version = "0.1.0"
+source = "git+https://github.com/OpenAEC-Foundation/openaec-installer?rev=2b66f84#2b66f84c93c0becc7d5dbb82bb4ba18d68e393df"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]
@@ -3922,9 +3988,12 @@ dependencies = [
 
 [[package]]
 name = "pdfium-worker"
-version = "0.1.0"
+version = "2026.45.0"
 dependencies = [
  "anyhow",
+ "flate2",
+ "lopdf",
+ "memchr",
  "memmap2",
  "pdfium-render",
  "serde",
@@ -5486,6 +5555,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "stringprep"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b4df3d392d81bd458a8a621b8bffbd2302a12ffe288a9d931670948749463b1"
+dependencies = [
+ "unicode-bidi",
+ "unicode-normalization",
+ "unicode-properties",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6172,7 +6252,6 @@ dependencies = [
  "cmake",
  "glob",
  "libc",
- "pkg-config",
  "reqwest 0.13.5",
  "thiserror 2.0.18",
  "zip 8.6.0",
@@ -6740,10 +6819,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142"
 
 [[package]]
+name = "unicode-bidi"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
+name = "unicode-properties"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
 
 [[package]]
 name = "unicode-segmentation"

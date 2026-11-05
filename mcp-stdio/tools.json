@@ -6,7 +6,7 @@
       "readOnlyHint": true,
       "title": "Open PDF"
     },
-    "description": "Open a PDF file in a new tab of the running app. Returns once the document is loaded and the tab is active. A DWG or DXF opens the CAD import dialog instead (result `dialog: \"cad-import\"`).",
+    "description": "Open a PDF file in a new tab of the running app. Returns once the document is loaded and the tab is active. A DWG or DXF opens the CAD import dialog instead (result `dialog: \"cad-import\"`). A PDF with an open password shows the password dialog instead (result `dialog: \"pdf-password\"`); it opens read-only once the password is entered in the app.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -82,12 +82,27 @@
       "readOnlyHint": true,
       "title": "Capture page view"
     },
-    "description": "Capture the LIVE app's current page view as a base64 PNG. Composites the PDF canvas with the annotation/highlight overlays (NOT the surrounding chrome — for that use OS-level screenshotting).",
+    "description": "Capture the LIVE app as a base64 PNG. scope 'document' (default) composites the PDF canvas with the annotation/highlight overlays, without the surrounding interface. scope 'window' captures the whole app window as it is shown: ribbon (including extension tabs), side panels such as an extension's workspace panel, the document view and the status bar. scope 'element' crops that window capture to the element matched by `selector`. The longer side is scaled down to `width`. Returns { png_base64, width, height, scope, bounds: { x, y, width, height } (the captured area in CSS px), devicePixelRatio }. 'window' and 'element' use a native capture of the web view and are available on Windows only for now; on other platforms they return an error.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "scope": {
+          "default": "document",
+          "description": "'document' (the page view), 'window' (the whole app window) or 'element' (one element, needs selector).",
+          "enum": [
+            "document",
+            "window",
+            "element"
+          ],
+          "type": "string"
+        },
+        "selector": {
+          "description": "CSS selector of the element to capture with scope 'element', e.g. '.ribbon-container', '#left-panel' or '.status-bar'.",
+          "type": "string"
+        },
         "width": {
           "default": 2000,
+          "description": "Maximum length in px of the longer side of the PNG.",
           "minimum": 1,
           "type": "integer"
         }
@@ -95,6 +110,69 @@
       "type": "object"
     },
     "name": "app_screenshot_view"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Capture page area as image"
+    },
+    "description": "Render an area of a page (or the whole page) of the active document as an image at a chosen resolution, the way Home > Screenshot does: the page is rendered again at `dpi` (not the screen pixels enlarged), with the annotations as printed (no selection frames), in the view rotation the user sees. Coordinates are app points (page space, top-left origin, 100% zoom); leave x, y, width and height out for the whole page. Very large images are scaled down to at most 16384 px per side and 64 megapixels (`limited` is then true and `dpi` the resolution used). Returns { page, rect, width, height, dpi, limited, mime } plus image_base64, or with `path` the image is written to that file and { path, bytes } is returned instead of the base64. Nothing is put on the clipboard.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dpi": {
+          "default": 150,
+          "description": "Resolution in pixels per inch of paper.",
+          "maximum": 2400,
+          "minimum": 10,
+          "type": "number"
+        },
+        "format": {
+          "default": "png",
+          "enum": [
+            "png",
+            "jpeg"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "description": "Height in app points.",
+          "type": "number"
+        },
+        "page": {
+          "description": "Page number (default: the current page).",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Absolute file path to write the image to, instead of returning it as base64.",
+          "type": "string"
+        },
+        "quality": {
+          "default": 90,
+          "description": "JPEG quality.",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "width": {
+          "description": "Width in app points.",
+          "type": "number"
+        },
+        "x": {
+          "description": "Left edge in app points.",
+          "type": "number"
+        },
+        "y": {
+          "description": "Top edge in app points.",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "name": "app_capture_region"
   },
   {
     "annotations": {
@@ -385,7 +463,7 @@
       "readOnlyHint": false,
       "title": "Click interface element"
     },
-    "description": "Click an arbitrary DOM element in the LIVE app by CSS selector (usually '#button-id'). If the element lives on an inactive ribbon tab, the matching tab is activated first (the ribbon only renders the active tab's content). Returns { ok, found, disabled, clicked, activatedTab }. Disabled elements are reported but NOT clicked. Set searchTabs=false to probe only the current DOM (e.g. for dialogs) without touching the ribbon tabs.",
+    "description": "Click an arbitrary DOM element in the LIVE app by CSS selector (usually '#button-id'). If the element lives on an inactive ribbon tab, the matching tab is activated first (the ribbon only renders the active tab's content). Returns { ok, found, disabled, clicked, activatedTab, activeTab }: activatedTab is the ribbon tab this call activated (the tab the search opened, the tab whose button was clicked, also an extension tab, or the tab the click switched to), activeTab the ribbon tab active afterwards. Disabled elements are reported but NOT clicked. Set searchTabs=false to probe only the current DOM (e.g. for dialogs) without touching the ribbon tabs.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -459,84 +537,576 @@
   },
   {
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "openWorldHint": false,
       "readOnlyHint": false,
-      "title": "Ask assistant"
+      "title": "Rotate pages"
     },
-    "description": "Submit a message into the app's assistant window as if the user typed it (opens the panel). Returns { ok }. The answer comes from whichever provider is available: OpenAEC AI, a personal Claude key, or the MCP relay (app_assistant_pending + app_assistant_answer).",
+    "description": "Rotate pages of the active document by a quarter, half or three-quarter turn, as one undo step, the same way Organize > Rotate does: the markups on those pages and the measurement scales of the PDF turn along. Returns { ok, angle, pages, rotations: [{ page, rotation }] }, where rotation is the app's rotation on top of the page's own /Rotate; it is written into the file on save. Refused in a read-only document (PDF/A without editing enabled, password-protected).",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "text": {
-          "description": "The user message to submit.",
-          "type": "string"
+        "angle": {
+          "description": "Degrees clockwise; -90 turns counter-clockwise.",
+          "enum": [
+            90,
+            180,
+            270,
+            -90
+          ],
+          "type": "integer"
+        },
+        "pages": {
+          "description": "Page numbers (1-based) to rotate, each once.",
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
         }
       },
       "required": [
-        "text"
+        "pages",
+        "angle"
       ],
       "type": "object"
     },
-    "name": "app_assistant_ask"
+    "name": "app_rotate_pages"
   },
   {
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "openWorldHint": false,
       "readOnlyHint": false,
-      "title": "Take pending assistant question"
+      "title": "Delete pages"
     },
-    "description": "Take the oldest assistant question waiting for an MCP client to answer (the relay provider). Returns { ok, question:{ id, prompt, system, docName }|null }. When non-null, compute an answer and deliver it with app_assistant_answer — this is how an external Claude becomes the assistant's AI brain.",
-    "inputSchema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    },
-    "name": "app_assistant_pending"
-  },
-  {
-    "annotations": {
-      "destructiveHint": false,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Answer assistant question"
-    },
-    "description": "Answer a pending assistant question (id from app_assistant_pending). The text appears in the assistant window as the assistant's reply. Returns { ok, id }.",
+    "description": "Delete pages from the active document, as one undo step, the same way Organize > Delete does: the markups on the deleted pages go with them, the others, the page labels and the measurement scales move along. A document keeps at least one page: deleting every page is refused. Returns { ok, deleted, pagesBefore, pagesAfter, currentPage }. Refused in a read-only document.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "description": "Question id from app_assistant_pending.",
+        "pages": {
+          "description": "Page numbers (1-based) to delete, each once.",
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "pages"
+      ],
+      "type": "object"
+    },
+    "name": "app_delete_pages"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Insert blank pages"
+    },
+    "description": "Insert blank pages into the active document, as one undo step, the same way Organize > Insert does. Without widthPt and heightPt the new pages get the size of page `after` (the first page when after is 0). Returns { ok, inserted (the new page numbers), widthPt, heightPt, pagesBefore, pagesAfter, currentPage }. Refused in a read-only document.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "description": "Insert after this page number; 0 inserts before the first page.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "count": {
+          "default": 1,
+          "description": "Number of blank pages.",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "heightPt": {
+          "description": "Page height in points. Give together with widthPt.",
+          "maximum": 14400,
+          "minimum": 3,
+          "type": "number"
+        },
+        "widthPt": {
+          "description": "Page width in points (1/72 inch, A4 is 595.28 x 841.89). Give together with heightPt.",
+          "maximum": 14400,
+          "minimum": 3,
+          "type": "number"
+        }
+      },
+      "required": [
+        "after"
+      ],
+      "type": "object"
+    },
+    "name": "app_insert_blank_pages"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Extract pages to a new file"
+    },
+    "description": "Write pages of the active document, in the given order, to a new PDF file, the same way Organize > Extract does. An existing file is never replaced: choose a path that does not exist yet. With deleteFromOriginal the pages are then deleted from the document (one undo step); that is refused when it would remove every page. Returns { ok, outputPath, pages, pagesExtracted, deletedFromOriginal, pagesAfter }. Refused in a read-only document.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "deleteFromOriginal": {
+          "default": false,
+          "description": "Also delete the extracted pages from the document.",
+          "type": "boolean"
+        },
+        "outputPath": {
+          "description": "Absolute path of the new .pdf file; it must not exist yet.",
           "type": "string"
         },
-        "text": {
-          "description": "Answer text to show in the assistant window.",
+        "pages": {
+          "description": "Page numbers (1-based) to extract, each once, in the order they appear in the new file.",
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "pages",
+        "outputPath"
+      ],
+      "type": "object"
+    },
+    "name": "app_extract_pages"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Reorder pages"
+    },
+    "description": "Put the pages of the active document in a new order, as one undo step, the same way dragging thumbnails does: markups, page labels and measurement scales move with their page. order[i] is the current page number that becomes page i+1, and lists every page exactly once (for 3 pages, [3, 1, 2] moves the last page to the front). Returns { ok, changed, order, pages, currentPage }; the current order gives changed false. Refused in a read-only document.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "order": {
+          "description": "The new order: every current page number (1-based) exactly once.",
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "order"
+      ],
+      "type": "object"
+    },
+    "name": "app_reorder_pages"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Shift page content"
+    },
+    "description": "Shift the content of pages by a fixed distance, as one undo step, the same way Organize > Shift page does: the page content is moved (not rasterized), and the markups, links, form fields and measurement scales on those pages move along. Directions are as the page is displayed (including its rotation): dx positive to the right, dy positive up. Returns { ok, pages, dx, dy, shifted } with shifted the number of pages that moved; pages without content and markups are left alone. Refused in a read-only document.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dx": {
+          "default": 0,
+          "description": "Horizontal shift in millimetres; positive is to the right.",
+          "maximum": 5080,
+          "minimum": -5080,
+          "type": "number"
+        },
+        "dy": {
+          "default": 0,
+          "description": "Vertical shift in millimetres; positive is up.",
+          "maximum": 5080,
+          "minimum": -5080,
+          "type": "number"
+        },
+        "pages": {
+          "description": "Page numbers (1-based) to shift, each once.",
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "pages"
+      ],
+      "type": "object"
+    },
+    "name": "app_shift_pages"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Manage bookmarks"
+    },
+    "description": "Read and edit the bookmarks (outline) of the active document, the same way the Bookmarks panel does; every change is one undo step and is written into the file on save. list returns { ok, count, bookmarks: [{ id, title, page, parentId, level, children, bold, italic, color }] } in panel order (a parent before its children). add takes title, optional page (default the current page), parentId, bold, italic and color, appends the bookmark at the end of its parent and returns { ok, bookmark }. update takes id and any of title (rename), page, bold, italic, color (null clears it). delete takes ids and removes them with everything under them: { ok, deleted, count, remaining }. move takes ids, position (before, after or inside targetId, or end of the top level without targetId) and refuses a move into a bookmark's own children. Edits are refused in a read-only document.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "list",
+            "add",
+            "update",
+            "delete",
+            "move"
+          ],
+          "type": "string"
+        },
+        "bold": {
+          "description": "add, update: bold title.",
+          "type": "boolean"
+        },
+        "color": {
+          "description": "add, update: title colour #rrggbb; null clears it.",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "update: the bookmark id (from list).",
+          "type": "string"
+        },
+        "ids": {
+          "description": "delete, move: bookmark ids (from list).",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "italic": {
+          "description": "add, update: italic title.",
+          "type": "boolean"
+        },
+        "page": {
+          "description": "add, update: the page the bookmark goes to (1-based).",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "parentId": {
+          "description": "add: put the new bookmark under this bookmark; left out or null: the top level.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "position": {
+          "description": "move: before or after targetId (same parent), inside targetId (as its last children), or end of the top level.",
+          "enum": [
+            "before",
+            "after",
+            "inside",
+            "end"
+          ],
+          "type": "string"
+        },
+        "targetId": {
+          "description": "move: the bookmark to move before, after or inside. Not with position end.",
+          "type": "string"
+        },
+        "title": {
+          "description": "add, update: the bookmark title (one line).",
+          "maxLength": 1000,
           "type": "string"
         }
       },
       "required": [
-        "id",
-        "text"
+        "action"
       ],
       "type": "object"
     },
-    "name": "app_assistant_answer"
+    "name": "app_bookmarks"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Manage watermarks and headers/footers"
+    },
+    "description": "List, add and remove the watermarks and headers/footers of the active document, the same way the Watermark, Header & Footer and Manage dialogs do; every change is one undo step, shown at once and written into the pages on save. list returns { ok, count, watermarks } (an image watermark without its image data). add with type text (text, fontFamily, fontSize, color, opacity 0-1, rotation, position, customX/customY, layer), image (imagePath of a PNG or JPEG file, opacity, scale, rotation, position, customX/customY, layer) or headerFooter (headerLeft/Center/Right, footerLeft/Center/Right with the variables {page} {pages} {date} {time} {filename} {title} {bates}, fontFamily, fontSize, color, margins, Bates numbering); pages limits it to those pages, otherwise every page. Fields left out take the dialog defaults. Returns { ok, watermark, count }. remove takes id: { ok, removed, remaining }. Changes are refused in a read-only document.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "list",
+            "add",
+            "remove"
+          ],
+          "type": "string"
+        },
+        "batesDigits": {
+          "description": "headerFooter: digits with leading zeros (default 6).",
+          "maximum": 12,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "batesPrefix": {
+          "description": "headerFooter: text before the Bates number.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "batesStart": {
+          "description": "headerFooter: first Bates number (default 1).",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "batesSuffix": {
+          "description": "headerFooter: text after the Bates number.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "color": {
+          "description": "text (default #ff0000), headerFooter (default #000000): colour #rrggbb.",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "type": "string"
+        },
+        "customX": {
+          "description": "text, image with position custom: centre x in points from the left.",
+          "maximum": 14400,
+          "minimum": 0,
+          "type": "number"
+        },
+        "customY": {
+          "description": "text, image with position custom: centre y in points from the top.",
+          "maximum": 14400,
+          "minimum": 0,
+          "type": "number"
+        },
+        "fontFamily": {
+          "description": "text, headerFooter (not Georgia): font. Default Helvetica.",
+          "enum": [
+            "Helvetica",
+            "Arial",
+            "Times New Roman",
+            "Courier",
+            "Georgia"
+          ],
+          "type": "string"
+        },
+        "fontSize": {
+          "description": "text (4-288, default 72), headerFooter (1-200, default 10): font size in points.",
+          "maximum": 288,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "footerCenter": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "footerLeft": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "footerRight": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "headerCenter": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "headerLeft": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "headerRight": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "id": {
+          "description": "remove: the watermark id (from list).",
+          "type": "string"
+        },
+        "imagePath": {
+          "description": "image: absolute path of a .png, .jpg or .jpeg file (at most 20 MB).",
+          "type": "string"
+        },
+        "layer": {
+          "description": "text, image: behind (default) or in front of the page content.",
+          "enum": [
+            "behind",
+            "infront"
+          ],
+          "type": "string"
+        },
+        "marginBottom": {
+          "description": "headerFooter: points (default 30).",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "marginLeft": {
+          "description": "headerFooter: points (default 40).",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "marginRight": {
+          "description": "headerFooter: points (default 40).",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "marginTop": {
+          "description": "headerFooter: points (default 30).",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "opacity": {
+          "description": "text (default 0.3), image (default 0.2).",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "pages": {
+          "description": "add: only on these page numbers (1-based); left out: every page.",
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "position": {
+          "description": "text, image: where on the page (default center); custom uses customX/customY.",
+          "enum": [
+            "center",
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right",
+            "custom"
+          ],
+          "type": "string"
+        },
+        "rotation": {
+          "description": "text (default -45), image (default 0): degrees.",
+          "maximum": 360,
+          "minimum": -360,
+          "type": "number"
+        },
+        "scale": {
+          "description": "image: size factor of the 200 x 200 pt image box (default 1).",
+          "maximum": 10,
+          "minimum": 0.01,
+          "type": "number"
+        },
+        "text": {
+          "description": "text: the watermark text.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "type": {
+          "description": "add: what to add.",
+          "enum": [
+            "text",
+            "image",
+            "headerFooter"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "name": "app_watermarks"
   },
   {
     "annotations": {
       "destructiveHint": false,
       "openWorldHint": false,
-      "readOnlyHint": true,
-      "title": "Get assistant conversation"
+      "readOnlyHint": false,
+      "title": "Take pending agent task"
     },
-    "description": "Return the LIVE assistant conversation: { ok, messages:[{ role, content }] }. Use to verify a delivered answer landed in the window.",
+    "description": "Take the oldest structured agent task that an extension submitted: the task moves from pending to running and no other client gets it. Returns { ok, task, waiting }; task is null when no task waits. A task has id, kind, extensionId, document { id, page, pageCount, sourceFingerprint, pageRotation, scale }, context (only the fields the extension chose to share), resultSchema (what the answer must match), createdAt, deadline (ms timestamps) and attemptsLeft. No conversation, file name or other tasks are shared. Answer with app_agent_task_result before the deadline; the task is cancelled when the user switches or closes the document, or when its source, page or scale changes.",
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "kind": {
+          "description": "Only take a task of this kind, for example floorplan.recognize. Left out: the oldest task of any kind.",
+          "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
-    "name": "app_assistant_history"
+    "name": "app_agent_task_pending"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Answer agent task"
+    },
+    "description": "Answer a running agent task by its id (from app_agent_task_pending) with either result, an object that must match the task's resultSchema (unknown fields are refused), or error { message, code } when the task cannot be done. The answer goes only to the extension that submitted this task, as a proposal: nothing is drawn until the extension applies it to the same document. Returns { ok, id, status }. A result that does not match returns ok false, code INVALID_RESULT, errors and attemptsLeft: send a corrected result; after the last attempt the task fails. Other codes: UNKNOWN_TASK, TASK_NOT_CLAIMED, TASK_NOT_RUNNING (with status and reason, for a task that was cancelled, failed or answered already) and STALE_TASK (the document, source, page or scale changed; the task is cancelled).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "additionalProperties": false,
+          "description": "Instead of result: why the task cannot be done.",
+          "properties": {
+            "code": {
+              "description": "Optional machine-readable code.",
+              "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+              "type": "string"
+            },
+            "message": {
+              "description": "What went wrong.",
+              "maxLength": 2000,
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "description": "Task id from app_agent_task_pending.",
+          "type": "string"
+        },
+        "result": {
+          "description": "The structured result; it must match the task's resultSchema.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "app_agent_task_result"
   },
   {
     "annotations": {
@@ -545,7 +1115,7 @@
       "readOnlyHint": false,
       "title": "Create annotation"
     },
-    "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input. Builds the same object the interactive tool would, pushes it onto the document, records an undo step and redraws. Geometry goes in `props` (page coordinates at 100% zoom): line/arrow/measureDistance need startX/startY/endX/endY; box/circle/highlight/cloud/polygon/textbox/callout/scaleRegion need x/y/width/height; polyline/filledArea/measureArea/measurePerimeter need points:[{x,y},...]; spline needs controlPoints; draw needs path; comment needs x/y. Optional style props (color, strokeColor, fillColor, lineWidth, opacity, text, fontSize, scaleString, units, leaderStartX/Y, leaderEndX/Y, dimShowUnit (measureDistance: false shows the number only), dimLineOvershootMm / dimExtGapMm / dimExtOvershootMm (measureDistance: overshoot of the dimension line, gap and overshoot of the extension lines, in paper mm), measureShowLabel (measureArea: false hides its own label), ...) override the tool defaults. measure* annotations get measureText computed from the document scale automatically. Returns the new annotation id.",
+    "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input. Builds the same object the interactive tool would, pushes it onto the document, records an undo step and redraws. Geometry goes in `props` (page coordinates at 100% zoom): line/arrow/measureDistance need startX/startY/endX/endY; box/circle/highlight/cloud/textbox/callout/scaleRegion need x/y/width/height; polygon takes its corners as points:[{x,y},...] (>= 3), or x/y/width/height (+ optional sides, default 6) for a regular polygon in that box; polyline/filledArea/measureArea/measurePerimeter need points:[{x,y},...]; spline needs controlPoints; draw needs path; comment needs x/y. Optional style props (color, strokeColor, fillColor, lineWidth, opacity, text, fontSize, scaleString, units, leaderStartX/Y, leaderEndX/Y, dimShowUnit (measureDistance: false shows the number only), dimLineOvershootMm / dimExtGapMm / dimExtOvershootMm (measureDistance: overshoot of the dimension line, gap and overshoot of the extension lines, in paper mm), measureShowLabel (measureArea: false hides its own label), ...) override the tool defaults. measure* annotations get measureText computed from the document scale automatically. Returns the new annotation id.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -968,6 +1538,1027 @@
     "name": "app_get_page_count"
   },
   {
+    "name": "app_portfolio",
+    "description": "Inspect or save a PDF Collection copy, preserving component bytes, folders, schema, sort and metadata. Save pending edits first. add[].path reads each named file from an explicit absolute local path (document and data types only) and embeds it. Folders use numeric parentId (0 for a new root); new IDs increase from the current maximum. Unsupported components are exported, never executed. saveCopy/exportComponent require a new absolute output path; existing files are refused. exportComponent writes document and data types only (no programs, scripts or shortcuts), never into autostart folders, and marks the file as downloaded. New collections get a fallback cover.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "inspect",
+            "saveCopy",
+            "exportComponent"
+          ]
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "outputPath": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "add": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "folderId": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 1000
+        },
+        "remove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "parentId": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "name",
+              "parentId"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 1000
+        },
+        "descriptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "description"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 1000
+        }
+      },
+      "required": [
+        "action",
+        "documentId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Manage PDF collections",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_recognize_form",
+    "description": "Detect heuristic form-field candidates on selected saved PDF pages, excluding existing fields. Review/correct labels, type, bounds in unrotated PDF points, required flags, radio grouping and order before setting accepted=true. saveCopy requires the returned revision and sourceId plus a NEW PDF outputPath. Existing fields/artwork remain. OCR labels require desktop OCR; no fields are accepted automatically.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "detect",
+            "saveCopy"
+          ]
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 1,
+          "maxItems": 50
+        },
+        "ocr": {
+          "type": "boolean"
+        },
+        "lang": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "sourceId": {
+          "type": "string"
+        },
+        "outputPath": {
+          "type": "string"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "checkbox",
+                  "radio"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "accepted": {
+                "type": "boolean"
+              },
+              "order": {
+                "type": "number"
+              },
+              "group": {
+                "type": "string"
+              },
+              "groupLabel": {
+                "type": "string"
+              },
+              "option": {
+                "type": "string"
+              },
+              "bounds": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "width": {
+                    "type": "number"
+                  },
+                  "height": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "page",
+              "type",
+              "name",
+              "label",
+              "accepted",
+              "order",
+              "bounds"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 1000
+        }
+      },
+      "required": [
+        "action",
+        "documentId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Recognize form fields",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_search_symbols",
+    "description": "Search page artwork for a selected symbol rectangle in current page-view coordinates at scale 1. Review candidates before accept, which creates undoable standard count annotations without duplicating same-category counts at the same location. Search bounded to 20 pages, 1200 pixels per edge and 1000 results. Similarity is not certainty. Results expire after 20 minutes or source changes. navigate reveals a result.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "search",
+            "accept",
+            "navigate"
+          ]
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "templatePage": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rect": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxItems": 20
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 1
+        },
+        "rotations": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ]
+          },
+          "maxItems": 4
+        },
+        "scales": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2
+          },
+          "maxItems": 3
+        },
+        "queryId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1000
+        },
+        "category": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "markerStyle": {
+              "type": "string",
+              "enum": [
+                "dot"
+              ]
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "action",
+        "documentId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Find repeated symbols",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_workbook_bindings",
+    "description": "Persist mappings from a named schedule on a source PDF to numeric XLSX cells. list reports source/schedule/workbook status; bind creates or explicitly rebinds an id to the active source. preview returns fresh values, CSV and provenance without writing. refresh explicitly updates only mapped workbook cells (desktop, source must be active), preserving other formulas/formatting and requesting recalculation. Formula/merged/protected targets are refused. inspectWorkbook lists worksheets; export returns portable binding data; remove disconnects.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "bind",
+            "preview",
+            "refresh",
+            "inspectWorkbook",
+            "export",
+            "remove"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "scheduleId": {
+          "type": "string"
+        },
+        "workbookPath": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "mappings": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "cell": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "cell",
+              "unit"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Refresh spreadsheet quantities",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_document_workflows",
+    "description": "Save/export (list) named version-1 document workflows, remove by name, run selected PDF paths into a separate output folder, start explicit watched input/output folders, or stop/cancel. Supported ordered steps: rotate {angle:0|90|180|270}, cropMargins {left,right,top,bottom} in unrotated PDF points, metadata {title,author,subject}. Workflow has version:1,name,suffix (letters/digits/_/-),steps. New outputs only, deterministic names and retry detection; no uploads. Watch requires the desktop app to stay open and does not resume automatically.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "save",
+            "remove",
+            "run",
+            "watch",
+            "stop"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "workflow": {
+          "type": "object"
+        },
+        "paths": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "string"
+          }
+        },
+        "input": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Run document workflows",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_drawing_sets",
+    "description": "Manage a portable version-1 multi-file drawing set. list returns manifest/root/report; capture stages active PDF pages; import validates a manifest; root selects local package root; preview returns matches/base; commit requires that base, sheets and one resolution per sheet (existing id/new/ignore). open accepts sheet id and version index. transferPreview requires source/target version records and optional dx/dy in points, both documents open and target active; transferApply requires preview id, selected source annotation ids and confirmed:true. No PDF writes; transferred markups are one undo step.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "capture",
+            "import",
+            "root",
+            "preview",
+            "commit",
+            "open",
+            "transferPreview",
+            "transferApply"
+          ]
+        },
+        "manifest": {
+          "type": "object"
+        },
+        "root": {
+          "type": "string"
+        },
+        "sheets": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "resolutions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "base": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source": {
+          "type": "object"
+        },
+        "target": {
+          "type": "object"
+        },
+        "dx": {
+          "type": "number"
+        },
+        "dy": {
+          "type": "number"
+        },
+        "selected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirmed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Drawing sets",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_sheet_links",
+    "description": "Build reviewed relative PDF links across a package. index lists open saved PDFs and editable page labels; scan accepts files [{documentId,path}] and index [{id,path,page,label,region:null|[left,bottom,right,top]}], optional literal prefix and caseSensitive. Existing OCR text layers are included. Returns immutable hit ids with resolved/ambiguous/missing targets and existing-link overlaps. export accepts scan id, selections [{hitId,targetId}], optional replaceExisting and a new desktop outputPath ending .zip; exports all source copies with relative GoTo/GoToR links and report, never edits originals. cancel stops scanning. Max 100 pages, 250 MB and 2000 hits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "index",
+            "scan",
+            "cancel",
+            "export"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "index": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "caseSensitive": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "selections": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "replaceExisting": {
+          "type": "boolean"
+        },
+        "outputPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Cross-sheet links",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_approval_routing",
+    "description": "Local-file-v1 electronic approval routing, no network sending or certificate signing. Explicit configure adapter/enabled:true first. draft captures the active saved PDF hash with title/revision, sequential|parallel mode, nullable expiresAt, recipients [{id,name,email}], fields [{id,recipientId,page,x,y,width,height,label}]. list shows immutable document identity, state and audit. submit requires id and confirmedHash after exact-source review; it releases for manual handoff only. receipt imports a self-reported decision bound to request/document/recipient. cancel and supersede track distinct states. createReceipt requires confirmed:true, the explicit confirmation the dialog asks for; events created over MCP record MCP as the actor. verify checks an exported record hash chain, not identity authenticity. export writes original PDF plus audit/request JSON into a new desktop ZIP outputPath; no permanent login.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "configure",
+            "draft",
+            "list",
+            "submit",
+            "receipt",
+            "cancel",
+            "supersede",
+            "verify",
+            "export",
+            "createReceipt"
+          ]
+        },
+        "adapter": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "sequential",
+            "parallel"
+          ]
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recipients": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "confirmedHash": {
+          "type": "string"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "replacementId": {
+          "type": "string"
+        },
+        "record": {
+          "type": "object"
+        },
+        "outputPath": {
+          "type": "string"
+        },
+        "recipientId": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "comment": {
+          "type": "string"
+        },
+        "confirmed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Approval routing",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_search_documents",
+    "description": "Search text and optional comments in the active PDF, all open PDFs, or PDF files directly in a desktop folder. Reads open unsaved documents in memory; never saves or uploads. Returns grouped file statuses and bounded matches with page labels, snippets and coordinates. Encrypted, unreadable and textless pages are reported separately. No persistent index. Refine the query when truncated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "active",
+            "open",
+            "folder"
+          ],
+          "default": "open"
+        },
+        "folder": {
+          "type": "string",
+          "description": "Required for folder scope; desktop only, non-recursive."
+        },
+        "annotations": {
+          "type": "boolean",
+          "default": true
+        },
+        "matchCase": {
+          "type": "boolean",
+          "default": false
+        },
+        "wholeWord": {
+          "type": "boolean",
+          "default": false
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000,
+          "default": 500
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Search documents",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_locations",
+    "description": "List computed markup locations or edit named spatial zones and explicit location overrides. Mutations require the active documentId and annotationId. Zones use existing straight polygons or unrotated boxes. Reuses undo and saves metadata with the PDF.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "zone",
+            "removeZone",
+            "override",
+            "automatic"
+          ]
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "annotationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Manage spatial locations",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_hidden_information",
+    "description": "Inspect structural metadata, comments, embedded files, actions and optional-content indicators in the saved active PDF. Export selected removable categories to a NEW PDF and JSON report; existing files are never overwritten. Pending changes must be saved first. Hidden/covered text, image pixels and optional-content layers are not removed; existing signatures cannot survive rewriting.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "inspect",
+            "export"
+          ]
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "metadata",
+              "comments",
+              "attachments",
+              "actions"
+            ]
+          }
+        },
+        "outputPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "documentId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Inspect and export cleaned copy",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_print_preflight",
+    "description": "Inspect the saved active PDF against a reusable print profile. Reports page/object, severity, expected and observed values for fonts, image DPI, color, transparency, page boxes and output intent. Not a PDF/X or PDF/A certificate. fixTrimBoxes explicitly writes a NEW copy and report and rechecks; existing files are refused. Save pending edits first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "inspect",
+            "fixTrimBoxes"
+          ]
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "minDpi": {
+              "type": "number",
+              "minimum": 36,
+              "maximum": 2400
+            },
+            "embeddedFonts": {
+              "type": "boolean"
+            },
+            "allowRgb": {
+              "type": "boolean"
+            },
+            "allowTransparency": {
+              "type": "boolean"
+            },
+            "outputIntent": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "documentId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Inspect print readiness",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "app_review_ocr",
+    "description": "List low/unknown-confidence OCR words with page coordinates and review state, or accept/correct one word. Requires documentId; mutations also require revision and expectedText from the list to reject stale edits. Save afterward to replace the invisible OCR text layer. Never paints over the scan. Results are paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "accept",
+            "correct"
+          ]
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expectedText": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "action",
+        "documentId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Verify OCR text",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
     "annotations": {
       "destructiveHint": false,
       "openWorldHint": false,
@@ -995,7 +2586,7 @@
       "readOnlyHint": false,
       "title": "Replace existing page text"
     },
-    "description": "Replace one existing PDF text span returned by app_get_page_text. Requires the exact expected text to reject stale IDs. Preserves the page artwork by refusing edits that cannot remove the original text in place; fits the replacement inside its original width and embeds a full fallback font when the subset lacks glyphs. Changes stay pending until app_save_pdf is called. One line per call; for translation, map translated lines to span IDs and call repeatedly.",
+    "description": "Replace one existing PDF text span returned by app_get_page_text. Requires the exact expected text to reject stale IDs. Preserves the page artwork by refusing edits that cannot remove the original text in place; fits the replacement inside its original width and embeds a full fallback font when the subset lacks glyphs. On a scanned page with an invisible OCR layer the scanned word is covered and the replacement is drawn visibly, as in the editor (reply: coveredScannedText). Changes stay pending until app_save_pdf is called. One line per call; for translation, map translated lines to span IDs and call repeatedly.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1025,6 +2616,64 @@
       "type": "object"
     },
     "name": "app_replace_text"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Replace page text in bulk"
+    },
+    "description": "Replace many text spans of one page in a single call, for example to translate the page. Takes spans from app_get_page_text with their exact expected text. All or nothing: if any replacement fails, nothing changes and the result lists the error per span. Same rules as app_replace_text (in-place removal, fit to the original width, full fallback font when the subset lacks glyphs), checked together on one copy of the PDF and applied as one undo step. Changes stay pending until app_save_pdf is called.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "description": "1-based page number; defaults to the page of the first spanId.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "replacements": {
+          "description": "One entry per span to replace, each on one line.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "color": {
+                "description": "Required only when the source fill colour could not be recovered.",
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "expectedText": {
+                "description": "Exact current text returned for that span.",
+                "type": "string"
+              },
+              "newText": {
+                "description": "Replacement text on one line (may be empty to delete).",
+                "type": "string"
+              },
+              "spanId": {
+                "description": "Opaque span ID from app_get_page_text.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "spanId",
+              "expectedText",
+              "newText"
+            ],
+            "type": "object"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "replacements"
+      ],
+      "type": "object"
+    },
+    "name": "app_translate_page"
   },
   {
     "annotations": {
@@ -1107,7 +2756,7 @@
           "type": "string"
         },
         "templateId": {
-          "description": "Template for a new schedule: area, length, count, symbol, text, image or full. Default: area.",
+          "description": "Template for a new schedule: area, length, count, symbol, text, image, full, buigstaat (rebar bending schedule) or wapeningsstaat (rebar weight per diameter). Default: area.",
           "type": "string"
         },
         "x": {
@@ -1130,7 +2779,7 @@
       "readOnlyHint": false,
       "title": "Set out structural layout"
     },
-    "description": "Set out a structural floor plan in one undoable step: the grid (lettered and numbered grid lines with bubbles), columns on the grid intersections, beams along the grid lines, a span-direction arrow per floor bay carrying the real span, spot elevations, position tags (position number / section / level) and - unless switched off - a quantity schedule grouped by IFC category. Bay sizes are REAL millimetres; the app converts them to page points at `scale` and also calibrates the measuring scale so later measurements agree. Profiles: \"HE200B\", \"HEA 200\", \"IPE 300\", \"UNP 200\", \"Koker 100x100x5\", \"L 100x100x10\" (steel) or \"300x500\" (concrete b x h in mm). Use dryRun to see what would be placed without touching the drawing.",
+    "description": "Set out a structural floor plan in one undoable step: the grid (lettered and numbered grid lines with bubbles), columns on the grid intersections, beams along the grid lines, a span-direction arrow per floor bay carrying the real span, spot elevations, position tags (position number / section / level) and - unless switched off - a quantity schedule grouped by IFC category. Bay sizes are REAL millimetres; the app converts them to page points at `scale` and also calibrates the measuring scale so later measurements agree. Profiles: \"HE200B\", \"HEA 200\", \"IPE 300\", \"UNP 200\", \"K100/5\" (square hollow section; rectangular: \"Koker 100x50x5\"), \"L 100x100x10\" (steel) or \"300x500\" (concrete b x h in mm). Use dryRun to see what would be placed without touching the drawing.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1242,7 +2891,7 @@
       "readOnlyHint": true,
       "title": "List app commands"
     },
-    "description": "List EVERY function the app exposes: each ribbon button on every tab (label, tab, disabled/active state) plus every drawing tool. Use this to discover how a feature is called before running it with app_run_command. Command ids: 'ribbon:#<id>' (stable), 'ribbon:<tab>:<n>' (button without an id, only stable within one version), 'tool:<name>'. Optional `filter` narrows by text (matches id, label, title or tab).",
+    "description": "List EVERY function the app exposes: each ribbon tab, each ribbon button on every tab (label, tab, disabled/active state) plus every drawing tool. Use this to discover how a feature is called before running it with app_run_command. Command ids: 'ribbon-tab:<tab>' (activate a ribbon tab), 'ribbon:#<id>' (stable), 'ribbon:<tab>:<n>' (button without an id, only stable within one version), 'tool:<name>'. Optional `filter` narrows by text (matches id, label, title or tab). Tabs and buttons that an extension adds carry the extension tab id in `tab`, including tabs an extension put into the ribbon itself. Extension actions appear as 'ext:<extensionId>:<itemId>'.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1262,12 +2911,12 @@
       "readOnlyHint": false,
       "title": "Run app command"
     },
-    "description": "Run any command returned by app_list_commands: clicks the ribbon button (switching to its tab first) or activates the tool. Disabled buttons are refused.",
+    "description": "Run any command returned by app_list_commands: activates a ribbon tab ('ribbon-tab:<tab>'), clicks the ribbon button (switching to its tab first), runs an extension action ('ext:...') or activates the tool. Disabled buttons are refused.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "command": {
-          "description": "Command id from app_list_commands, e.g. 'ribbon:#btn-vector-snippet' or 'tool:measureArea'.",
+          "description": "Command id from app_list_commands, e.g. 'ribbon:#btn-vector-snippet', 'ribbon-tab:view' or 'tool:measureArea'.",
           "type": "string"
         }
       },
@@ -1277,6 +2926,52 @@
       "type": "object"
     },
     "name": "app_run_command"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Read interface state"
+    },
+    "description": "Read the LIVE app's interface as a compact accessibility-style tree, to check what a click did without a screenshot. Each node has a role (button, tab, tabpanel, group, combobox, option, checkbox, status, text, ...), a name and only the state that applies: disabled, checked, pressed, selected, expanded, active, focused, readonly, plus value/valueText for inputs. Ribbon tabs carry `tab` and the `command` 'ribbon-tab:<tab>'; ribbon buttons and extension controls carry the `command` that app_run_command runs. Without `selector` it reads the ribbon (only the active tab's content exists), the side panels, the bars above the document, floating palettes, open dialogs and the status bar, each as a region. With `selector` it reads the matching elements instead, for example an extension's panel. Reads only: it never switches ribbon tabs. maxDepth, maxNodes and maxText keep the output small; `truncated` says when something was left out.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "includeHidden": {
+          "default": false,
+          "description": "Also list hidden elements, marked with state.hidden.",
+          "type": "boolean"
+        },
+        "maxDepth": {
+          "default": 12,
+          "description": "Maximum depth of the tree.",
+          "maximum": 40,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxNodes": {
+          "default": 400,
+          "description": "Maximum number of nodes over all regions together.",
+          "maximum": 3000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxText": {
+          "default": 80,
+          "description": "Maximum length of a name, description or value.",
+          "maximum": 1000,
+          "minimum": 8,
+          "type": "integer"
+        },
+        "selector": {
+          "description": "CSS selector of the element(s) to read, e.g. '.ribbon-container', '#left-panel' or '.status-bar'. Default: the standard regions.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "app_read_ui"
   },
   {
     "annotations": {
@@ -1675,6 +3370,49 @@
       "type": "object"
     },
     "name": "app_export_cad"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Export to IFCX (beta)"
+    },
+    "description": "Convert pages of the current document to an IFCX file (beta; the JSON-based IFC5 format, alpha schema) without opening the export dialog. It writes one sheet node per page with the page size, label, rotation and measurement scale, the vector paths, text runs and embedded images on their own layers, and the annotations of the app on a separate layer (drafting components keep their IFC class). Page content comes from the last saved state of the PDF; annotations are current. A page with more paths than the limit keeps the first ones and the answer warns about the rest; once the file reaches its size limit (320 M characters) the remaining pages are left out with a warning. Refused for a document opened with a password. Replaces an existing file at `path`.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "annotations": {
+          "description": "Include the annotations on their own layer (default true).",
+          "type": "boolean"
+        },
+        "maxPathsPerPage": {
+          "description": "Limit of paths per page (default 50000); the rest of a heavier page is left out with a warning.",
+          "type": "integer"
+        },
+        "pages": {
+          "description": "\"all\" (default), \"current\" or a range like \"1-3,5\".",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute path of the target file (.ifcx).",
+          "type": "string"
+        },
+        "raster": {
+          "description": "Include embedded images (default true).",
+          "type": "boolean"
+        },
+        "text": {
+          "description": "Include the text runs of the pages (default true).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "app_export_ifcx"
   },
   {
     "annotations": {
@@ -2334,5 +4072,549 @@
       "type": "object"
     },
     "name": "app_facade_element"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List system types"
+    },
+    "description": "List the reusable system types (suspended ceilings, floor slabs, panel systems) of the app library, or one type by id. Each entry has its stable id, owner, revision, whether the user edited it, the validated definition, unconfirmed dimensions and stored values that fail validation. Compare libraryRevision between calls to detect changes. Reads only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable id of one system type.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "app_list_system_types"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Register system type"
+    },
+    "description": "Register a system type owned by MCP under the id mcp:<key>. Repeating the call with the same definition changes nothing (status unchanged), and a definition the user edited in the app is kept (status kept-user-edit) and never overwritten. A different definition replaces an existing mcp:<key> type that the user has not edited (status updated) and redraws every system that uses it. Unknown fields, out-of-range values and layered definitions are rejected. Missing dimensions stay unconfirmed.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "definition": {
+          "additionalProperties": false,
+          "properties": {
+            "categorie": {
+              "enum": [
+                "plafond",
+                "vloer",
+                "wand",
+                "overig"
+              ],
+              "type": "string"
+            },
+            "celXMm": {
+              "description": "Cell width in mm. Left out or null: unconfirmed, no default is applied.",
+              "maximum": 20000,
+              "minimum": 50,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "celYMm": {
+              "description": "Cell height in mm. Left out or null: unconfirmed, no default is applied.",
+              "maximum": 20000,
+              "minimum": 50,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "edgeProfiel": {
+              "enum": [
+                "geen",
+                "hoeklijn",
+                "schaduwvoeg"
+              ],
+              "type": "string"
+            },
+            "ifcCategory": {
+              "enum": [
+                "IfcCovering",
+                "IfcWall",
+                "IfcSlab",
+                "IfcPlate"
+              ],
+              "type": "string"
+            },
+            "ifcPredefinedType": {
+              "enum": [
+                "CEILING",
+                "FLOORING",
+                "FLOOR",
+                "CLADDING",
+                "ROOFING",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lagen": {
+              "description": "Reserved. Schema 1 has one implicit layer; only an empty array is accepted.",
+              "maxItems": 0,
+              "type": "array"
+            },
+            "layout": {
+              "description": "raster: cells in two directions (needs celXMm and celYMm). strook: strips in one direction (needs strookBreedteMm and celYMm).",
+              "enum": [
+                "raster",
+                "strook"
+              ],
+              "type": "string"
+            },
+            "naam": {
+              "description": "Display name (1-200 characters). Not an identity: references use the id.",
+              "type": "string"
+            },
+            "paneelTypen": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "naam": {
+                    "type": "string"
+                  },
+                  "renderStijl": {
+                    "enum": [
+                      "tegel",
+                      "ventilatie",
+                      "licht"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "naam",
+                  "renderStijl"
+                ],
+                "type": "object"
+              },
+              "maxItems": 50,
+              "minItems": 1,
+              "type": "array"
+            },
+            "sparingRegels": {
+              "additionalProperties": false,
+              "properties": {
+                "kleineSparingMaxMm": {
+                  "maximum": 20000,
+                  "minimum": 10,
+                  "type": "number"
+                },
+                "raveelVanafMm": {
+                  "maximum": 20000,
+                  "minimum": 10,
+                  "type": "number"
+                }
+              },
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "strookBreedteMm": {
+              "description": "Strip width in mm for the strook layout. Left out or null: unconfirmed.",
+              "maximum": 20000,
+              "minimum": 50,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "naam",
+            "categorie",
+            "layout"
+          ],
+          "type": "object"
+        },
+        "key": {
+          "description": "Stable key: lowercase letters, digits, dot, underscore or hyphen (1-64).",
+          "type": "string"
+        },
+        "restore": {
+          "description": "Recreate a type the user removed. Only on an explicit user request.",
+          "type": "boolean"
+        },
+        "schema": {
+          "enum": [
+            1
+          ],
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "definition"
+      ],
+      "type": "object"
+    },
+    "name": "app_register_system_type"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Update system type"
+    },
+    "description": "Update a system type owned by MCP (id mcp:<key>). Pass the revision you last read as expectedRevision; a stale revision is rejected with the current revision. Types of the app or of extensions cannot be changed here. Nested values (sparingRegels, paneelTypen) are replaced as a whole; null clears an optional field.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "additionalProperties": false,
+          "properties": {
+            "categorie": {
+              "enum": [
+                "plafond",
+                "vloer",
+                "wand",
+                "overig"
+              ],
+              "type": "string"
+            },
+            "celXMm": {
+              "description": "Cell width in mm. Left out or null: unconfirmed, no default is applied.",
+              "maximum": 20000,
+              "minimum": 50,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "celYMm": {
+              "description": "Cell height in mm. Left out or null: unconfirmed, no default is applied.",
+              "maximum": 20000,
+              "minimum": 50,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "edgeProfiel": {
+              "enum": [
+                "geen",
+                "hoeklijn",
+                "schaduwvoeg"
+              ],
+              "type": "string"
+            },
+            "ifcCategory": {
+              "enum": [
+                "IfcCovering",
+                "IfcWall",
+                "IfcSlab",
+                "IfcPlate"
+              ],
+              "type": "string"
+            },
+            "ifcPredefinedType": {
+              "enum": [
+                "CEILING",
+                "FLOORING",
+                "FLOOR",
+                "CLADDING",
+                "ROOFING",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lagen": {
+              "description": "Reserved. Schema 1 has one implicit layer; only an empty array is accepted.",
+              "maxItems": 0,
+              "type": "array"
+            },
+            "layout": {
+              "description": "raster: cells in two directions (needs celXMm and celYMm). strook: strips in one direction (needs strookBreedteMm and celYMm).",
+              "enum": [
+                "raster",
+                "strook"
+              ],
+              "type": "string"
+            },
+            "naam": {
+              "description": "Display name (1-200 characters). Not an identity: references use the id.",
+              "type": "string"
+            },
+            "paneelTypen": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "naam": {
+                    "type": "string"
+                  },
+                  "renderStijl": {
+                    "enum": [
+                      "tegel",
+                      "ventilatie",
+                      "licht"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "naam",
+                  "renderStijl"
+                ],
+                "type": "object"
+              },
+              "maxItems": 50,
+              "minItems": 1,
+              "type": "array"
+            },
+            "sparingRegels": {
+              "additionalProperties": false,
+              "properties": {
+                "kleineSparingMaxMm": {
+                  "maximum": 20000,
+                  "minimum": 10,
+                  "type": "number"
+                },
+                "raveelVanafMm": {
+                  "maximum": 20000,
+                  "minimum": 10,
+                  "type": "number"
+                }
+              },
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "strookBreedteMm": {
+              "description": "Strip width in mm for the strook layout. Left out or null: unconfirmed.",
+              "maximum": 20000,
+              "minimum": 50,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "expectedRevision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "schema": {
+          "enum": [
+            1
+          ],
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "expectedRevision",
+        "changes"
+      ],
+      "type": "object"
+    },
+    "name": "app_update_system_type"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Open system type editor"
+    },
+    "description": "Open the app's system type editor with the given type selected, or select it in the editor that is already open without discarding unapplied edits. Returns immediately; the user applies or cancels in the app. Does not change any data.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable id of the system type to select.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "app_open_system_type_editor"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Get system geometry"
+    },
+    "description": "Get the geometry of one system (suspended ceiling, floor slab, panel field) in the active document, computed by the app's own geometry engine: panels with clipped outlines, grid lines, openings, trimmers, edge segments and component positions, in millimetres in the system's own frame (independent of zoom and view rotation; placement maps it onto the page). Includes the document and type revisions and whether every physical dimension is confirmed. Pass expectedDocumentRevision and expectedTypeRevision to reject a stale snapshot. Reads only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "annotationId": {
+          "description": "Id of the system annotation (type systeemraster) in the active document.",
+          "type": "string"
+        },
+        "expectedDocumentRevision": {
+          "description": "document.revision of an earlier snapshot; a different current revision is rejected.",
+          "type": "string"
+        },
+        "expectedTypeRevision": {
+          "description": "type.revision of an earlier snapshot; a different current revision is rejected.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "schema": {
+          "enum": [
+            1
+          ],
+          "type": "integer"
+        }
+      },
+      "required": [
+        "annotationId"
+      ],
+      "type": "object"
+    },
+    "name": "app_get_system_geometry"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Run extension command"
+    },
+    "description": "Run a structured command of a loaded extension. Every such command is also listed as its own tool named ext_<extension>__<command>; use this tool when that tool is not in your list, for example after installing or reloading an extension. app_list_extensions with includeContributions lists each command with its input and output schema. The arguments are checked against the input schema before the extension runs; a mutating command also needs idempotencyKey and revisionContext. Returns ok, requestId, extension, command and result, or ok: false with an error code such as UNKNOWN_COMMAND, INVALID_ARGUMENT, STALE_REVISION, IDEMPOTENCY_KEY_REUSED, COMMAND_TIMEOUT or EXTENSION_UNLOADED.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "description": "Arguments for the command, as described by its input schema.",
+          "type": "object"
+        },
+        "tool": {
+          "description": "Tool name of the extension command, ext_<extension>__<command>.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "type": "object"
+    },
+    "name": "app_call_extension_command"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List extensions"
+    },
+    "description": "List the app's extensions: every installed and every loaded extension with its id, name, version, installed version, whether it is loaded and activated, its status (active, failed, notLoaded, busy), the code and message of the last failure, who made the last change (ui, mcp or startup) and whether it uses an old-style id. Broken folders in the extensions directory are listed under problems instead of being skipped. Reads only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "includeContributions": {
+          "description": "Also list each extension's registered contributions (ribbon tabs, command count, annotation types, palettes, property panels, and structured commands with their input and output schemas). Default false.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "app_list_extensions"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Install extension"
+    },
+    "description": "Install or update an extension from a local .oppx package, without a file dialog and without restarting the app: the package is checked and unpacked by the app, then the new version is activated. If the new version fails to load or activate, the previous working version is restored and stays active (rolledBack: true). Open PDF tabs and unsaved changes are not touched. Returns ok, outcome (installed, updated, unchanged), id, version, previousVersion, activated and the registered contributions, or ok: false with an error code such as PATH_NOT_ALLOWED, PACKAGE_INVALID, MANIFEST_INVALID, ALREADY_INSTALLED, VERSION_NOT_NEWER, MODULE_LOAD_FAILED or ACTIVATION_FAILED.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "idempotencyKey": {
+          "description": "Caller-chosen key for this install request. Repeating a call with the same key, path and replace returns the stored result without installing again; the same key with a different path or replace is refused.",
+          "maxLength": 128,
+          "minLength": 8,
+          "pattern": "^[A-Za-z0-9._:-]+$",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute path to a local .oppx package. Relative paths, network shares and URLs are refused.",
+          "type": "string"
+        },
+        "replace": {
+          "description": "What to do when the extension id is already installed: 'never' refuses, 'ifNewer' replaces only a lower version, 'always' replaces (also a downgrade). An identical package (same SHA-256) is always reported as 'unchanged'.",
+          "enum": [
+            "never",
+            "ifNewer",
+            "always"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "replace",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "name": "app_install_extension"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Reload extension"
+    },
+    "description": "Reload an installed extension from disk: deactivate it, remove everything it registered (ribbon tabs, commands, annotation types, palettes, panels) and activate it again, without restarting the app. If the reloaded code fails, the previous code is activated again (rolledBack: true). Returns ok, outcome 'reloaded', id, version, activated and contributions, or ok: false with an error code such as NOT_INSTALLED, MODULE_LOAD_FAILED or ACTIVATION_FAILED.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Extension id from app_list_extensions.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "app_reload_extension"
   }
 ]

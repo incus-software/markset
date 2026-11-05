@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { detectChanges } from '../../js/compare/change-detector.js';
 import {
@@ -72,6 +74,10 @@ test('finds drawing changes on rendered PDF revisions', async (t) => {
   let createCanvas;
   try { ({ createCanvas } = await import('@napi-rs/canvas')); } catch { t.skip('no canvas backend'); return; }
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  // pdf.js's own Helvetica, so the labels draw the same on every OS (Linux
+  // has no system Helvetica). It needs forward slashes and a trailing slash.
+  const pkg = createRequire(import.meta.url).resolve('pdfjs-dist/package.json');
+  const standardFontDataUrl = path.join(path.dirname(pkg), 'standard_fonts').split(path.sep).join('/') + '/';
 
   async function plan(rev) {
     const pdf = await PDFDocument.create();
@@ -88,7 +94,7 @@ test('finds drawing changes on rendered PDF revisions', async (t) => {
     return pdf.save();
   }
   async function render(bytes) {
-    const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), verbosity: 0 }).promise;
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), verbosity: 0, standardFontDataUrl, useSystemFonts: false }).promise;
     const page = await doc.getPage(1);
     const scale = Math.min(1.5, 1600 / 2592); // compare-viewport.js DETECTION_MAX_DIM
     const vp = page.getViewport({ scale });
@@ -101,7 +107,7 @@ test('finds drawing changes on rendered PDF revisions', async (t) => {
   const [a, b] = await Promise.all([plan(1).then(render), plan(2).then(render)]);
   const [o, n] = markChangedPixels(a, b);
   const found = detectChanges(o, n);
-  assert.ok(found.length >= 3, `expected the door, window and label, got ${found.length}`);
+  assert.ok(found.length >= 3, `expected the door, window and label, got ${JSON.stringify(found)}`);
   const [sa, sb] = markChangedPixels(a, a);
   assert.equal(detectChanges(sa, sb).length, 0);
 });

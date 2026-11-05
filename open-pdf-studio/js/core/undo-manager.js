@@ -3,6 +3,7 @@ import { state, getActiveDocument, getPageRotation, setPageRotation, imageCache 
 import { cloneAnnotation } from '../annotations/factory.js';
 import { stampRasterStale } from '../annotations/stamp-appearance-sync.js';
 import { applyOcrShift } from '../pdf/shift-page-geometry.js';
+import { toonOrigineelInTekstlaag, toonBewerkingInTekstlaag } from '../text/tekstlaag-bewerking.js';
 const MAX_UNDO_STACK = 100;
 let undoTransactionDepth = 0;
 let undoTransactionCommands = null;
@@ -14,13 +15,31 @@ function clonePlainValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function verhoogInhoudRevisie(doc) {
+  doc.inhoudRevisie = (Number.isInteger(doc.inhoudRevisie) ? doc.inhoudRevisie : 0) + 1;
+}
+
 // Sync the modified flag based on whether the undo stack matches the saved clean point
 function syncModifiedState() {
   const doc = getActiveDocument();
   if (!doc) return;
+  // Elke stap in de undo-geschiedenis (ook ongedaan maken en opnieuw) geeft
+  // het document een nieuwe inhoudsrevisie (#575, documentRevisie).
+  verhoogInhoudRevisie(doc);
   const isClean = doc.savedUndoStackLength >= 0 &&
                   (doc.undoStack || []).length === doc.savedUndoStackLength;
   doc.modified = !isClean;
+}
+
+/**
+ * De inhoudsrevisie van een document ('d<n>'): verandert bij elke wijziging
+ * die in de undo-geschiedenis komt, en bij ongedaan maken en opnieuw. Een
+ * vergelijking met een eerder gelezen revisie zegt dus of het document sinds
+ * dat moment is gewijzigd (#575: revisionContext van extensieopdrachten).
+ */
+export function documentRevisie(doc) {
+  if (!doc) return null;
+  return `d${Number.isInteger(doc.inhoudRevisie) ? doc.inhoudRevisie : 0}`;
 }
 
 // Per-document undo stack stored on the document object
@@ -102,8 +121,9 @@ function pagesForCommand(cmd) {
   // Watermark/bookmark commands don't carry a page and don't affect the page
   // thumbnail composite — skip them entirely (empty set = no refresh).
   const skipTypes = new Set([
+    'ocrWord', 'ocrPage', 'ocrPages',
     'addWatermark', 'removeWatermark', 'modifyWatermark',
-    'addBookmark', 'removeBookmark', 'modifyBookmark',
+    'addBookmark', 'removeBookmark', 'modifyBookmark', 'setBookmarks',
     // pageStructure (insert/delete/reorder pages) shifts page numbers and is
     // handled by restorePageState → clearThumbnailCache + generateThumbnails,
     // which regenerates every thumbnail. A per-page hook here would be wrong.
@@ -210,7 +230,7 @@ export async function undo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
-    await restorePageState(cmd.oldBytes, cmd.oldAnnotations, cmd.oldRotations, cmd.oldPage);
+    await restorePageState(cmd.oldBytes, cmd.oldAnnotations, cmd.oldRotations, cmd.oldPage, { bookmarks: cmd.bookmarks?.old });
     applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, -1);
     syncModifiedState();
     updateButtons();
@@ -264,7 +284,7 @@ export async function redo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
-    await restorePageState(cmd.newBytes, cmd.newAnnotations, cmd.newRotations, cmd.newPage);
+    await restorePageState(cmd.newBytes, cmd.newAnnotations, cmd.newRotations, cmd.newPage, { bookmarks: cmd.bookmarks?.new });
     applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, 1);
     syncModifiedState();
     updateButtons();
@@ -422,12 +442,27 @@ function restoreSelectionByIds(doc, ids) {
 }
 
 // Apply undo for a command
+// OCR results per page. An empty list is kept (not deleted): the saver then
+// removes the OCR layer an earlier save of this session wrote on that page.
+function setOcrPage(doc, page, words) {
+  if (!doc.ocrResults) doc.ocrResults = {};
+  doc.ocrResults[page] = clonePlainValue(words) || [];
+}
+
+function setOcrWord(doc, page, index, word) {
+  const words = doc.ocrResults?.[page];
+  if (Array.isArray(words) && index >= 0 && index < words.length) words[index] = clonePlainValue(word);
+}
+
 function applyUndo(cmd, lookup) {
   const doc = getActiveDocument();
   if (!doc) return;
   if (!lookup) lookup = annotationsById(doc);
 
   switch (cmd.type) {
+    case 'ocrWord': setOcrWord(doc, cmd.page, cmd.index, cmd.oldWord); break;
+    case 'ocrPage': setOcrPage(doc, cmd.page, cmd.oldWords); break;
+    case 'ocrPages': cmd.pages.forEach((p) => setOcrPage(doc, p.page, p.oldWords)); break;
     case 'addAnnotation': {
       const idx = doc.annotations.findIndex(a => a.id === cmd.annotation.id);
       if (idx !== -1) doc.annotations.splice(idx, 1);
@@ -504,60 +539,9 @@ function applyUndo(cmd, lookup) {
       if (!doc.textEdits) doc.textEdits = [];
       const idx = doc.textEdits.findIndex(e => e.id === cmd.textEdit.id);
       if (idx !== -1) doc.textEdits.splice(idx, 1);
-      // Restore original span text in the text layer
-      if (cmd.textEdit.originalSpanTexts) {
-        const pageNum = cmd.textEdit.page;
-        const textLayer = document.querySelector(`.textLayer[data-page="${pageNum}"]`)
-          || document.querySelector('.textLayer');
-        if (textLayer) {
-          const spans = Array.from(textLayer.querySelectorAll('span[data-pdf-transform]'));
-          // Find spans matching the edit's PDF position
-          const editPdfY = cmd.textEdit.pdfY;
-          const editPdfX = cmd.textEdit.pdfX;
-          const fontSize = cmd.textEdit.fontSize;
-          const tolerance = fontSize * 0.3;
-          // Group spans into lines by pdfY
-          const lineMap = new Map();
-          for (const span of spans) {
-            const transform = JSON.parse(span.dataset.pdfTransform);
-            const pdfY = transform[5];
-            let foundKey = null;
-            for (const key of lineMap.keys()) {
-              if (Math.abs(pdfY - key) <= tolerance) { foundKey = key; break; }
-            }
-            if (foundKey !== null) {
-              lineMap.get(foundKey).push({ span, pdfX: transform[4], pdfY });
-            } else {
-              lineMap.set(pdfY, [{ span, pdfX: transform[4], pdfY }]);
-            }
-          }
-          // Match lines from originalSpanTexts to text layer lines
-          const origTexts = cmd.textEdit.originalSpanTexts;
-          const ls = cmd.textEdit.lineSpacing || fontSize * 1.2;
-          for (let li = 0; li < origTexts.length; li++) {
-            const expectedY = editPdfY - li * ls;
-            let bestLine = null;
-            let bestDist = Infinity;
-            for (const [key, lineSpans] of lineMap) {
-              const dist = Math.abs(key - expectedY);
-              if (dist < bestDist) { bestDist = dist; bestLine = lineSpans; }
-            }
-            if (bestLine && bestDist <= tolerance * 3) {
-              bestLine.sort((a, b) => a.pdfX - b.pdfX);
-              // Find starting span that matches the edit's pdfX position
-              let startIdx = 0;
-              let bestXDist = Infinity;
-              for (let si = 0; si < bestLine.length; si++) {
-                const dist = Math.abs(bestLine[si].pdfX - editPdfX);
-                if (dist < bestXDist) { bestXDist = dist; startIdx = si; }
-              }
-              for (let si = 0; si < origTexts[li].length && (startIdx + si) < bestLine.length; si++) {
-                bestLine[startIdx + si].span.textContent = origTexts[li][si];
-              }
-            }
-          }
-        }
-      }
+      // De originele tekst terug in de tekstlaag.
+      const laag = tekstlaagVan(cmd.textEdit.page);
+      if (laag) toonOrigineelInTekstlaag(laag, cmd.textEdit, cmd.tekstlaagNa || null);
       break;
     }
     case 'removeTextEdit': {
@@ -570,6 +554,8 @@ function applyUndo(cmd, lookup) {
       if (!doc.textEdits) doc.textEdits = [];
       const idx = doc.textEdits.findIndex(e => e.id === cmd.newTextEdit.id);
       if (idx !== -1) doc.textEdits[idx] = { ...cmd.oldTextEdit };
+      const laag = tekstlaagVan(cmd.oldTextEdit.page);
+      if (laag) toonBewerkingInTekstlaag(laag, cmd.oldTextEdit, { vorige: cmd.newTextEdit });
       break;
     }
     case 'addWatermark': {
@@ -584,7 +570,7 @@ function applyUndo(cmd, lookup) {
     }
     case 'modifyWatermark': {
       const idx = doc.watermarks.findIndex(w => w.id === cmd.id);
-      if (idx !== -1) Object.assign(doc.watermarks[idx], cmd.oldState);
+      if (idx !== -1) zetWatermerkStaat(doc.watermarks[idx], cmd.oldState);
       break;
     }
     case 'addBookmark': {
@@ -606,7 +592,20 @@ function applyUndo(cmd, lookup) {
       if (idx !== -1) Object.assign(doc.bookmarks[idx], cmd.oldState);
       break;
     }
+    case 'setBookmarks': {
+      // Hele bladwijzerlijst terug (stijl, verplaatsen, nesten, meervoudig
+      // verwijderen: één stap). Eén toewijzing: het document kopieert.
+      doc.bookmarks = cmd.oldBookmarks.map(b => ({ ...b }));
+      break;
+    }
   }
+}
+
+// De tekstlaag van een pagina (enkele pagina: de enige laag).
+function tekstlaagVan(pageNum) {
+  if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return null;
+  return document.querySelector(`.textLayer[data-page="${pageNum}"]`)
+    || document.querySelector('.textLayer');
 }
 
 // Apply redo for a command
@@ -616,6 +615,9 @@ function applyRedo(cmd, lookup) {
   if (!lookup) lookup = annotationsById(doc);
 
   switch (cmd.type) {
+    case 'ocrWord': setOcrWord(doc, cmd.page, cmd.index, cmd.newWord); break;
+    case 'ocrPage': setOcrPage(doc, cmd.page, cmd.newWords); break;
+    case 'ocrPages': cmd.pages.forEach((p) => setOcrPage(doc, p.page, p.newWords)); break;
     case 'addAnnotation': {
       doc.annotations.push(cloneAnnotation(cmd.annotation));
       lookup.reset();
@@ -681,6 +683,10 @@ function applyRedo(cmd, lookup) {
     case 'addTextEdit': {
       if (!doc.textEdits) doc.textEdits = [];
       doc.textEdits.push({ ...cmd.textEdit });
+      // De bewerkte tekst weer in de tekstlaag, zoals finishPdfTextEditing
+      // hem zette (#719); anders vonden zoeken en selecteren de oude tekst.
+      const laag = tekstlaagVan(cmd.textEdit.page);
+      if (laag) toonBewerkingInTekstlaag(laag, cmd.textEdit, { teksten: cmd.tekstlaagNa || null });
       break;
     }
     case 'removeTextEdit': {
@@ -693,6 +699,8 @@ function applyRedo(cmd, lookup) {
       if (!doc.textEdits) doc.textEdits = [];
       const idx = doc.textEdits.findIndex(e => e.id === cmd.oldTextEdit.id);
       if (idx !== -1) doc.textEdits[idx] = { ...cmd.newTextEdit };
+      const laag = tekstlaagVan(cmd.newTextEdit.page);
+      if (laag) toonBewerkingInTekstlaag(laag, cmd.newTextEdit, { vorige: cmd.oldTextEdit });
       break;
     }
     case 'addWatermark': {
@@ -706,7 +714,7 @@ function applyRedo(cmd, lookup) {
     }
     case 'modifyWatermark': {
       const idx = doc.watermarks.findIndex(w => w.id === cmd.id);
-      if (idx !== -1) Object.assign(doc.watermarks[idx], cmd.newState);
+      if (idx !== -1) zetWatermerkStaat(doc.watermarks[idx], cmd.newState);
       break;
     }
     case 'addBookmark': {
@@ -724,6 +732,10 @@ function applyRedo(cmd, lookup) {
       if (!doc.bookmarks) doc.bookmarks = [];
       const idx = doc.bookmarks.findIndex(b => b.id === cmd.id);
       if (idx !== -1) Object.assign(doc.bookmarks[idx], cmd.newState);
+      break;
+    }
+    case 'setBookmarks': {
+      doc.bookmarks = cmd.newBookmarks.map(b => ({ ...b }));
       break;
     }
   }
@@ -748,7 +760,24 @@ async function refresh() {
 
 // ---- Helper recorders ----
 
-export function recordAdd(annotation) {
+// Called with every annotation the user adds, before it is recorded: the
+// Tool Sets feature (#311) puts the properties of its active item on it here, so
+// the undo record and redo hold the finished annotation.
+let _addAnnotationHook = null;
+export function setAddAnnotationHook(fn) {
+  _addAnnotationHook = typeof fn === 'function' ? fn : null;
+}
+
+/**
+ * Record an added annotation. `options.copy`: the annotation is an exact copy
+ * (paste, duplicate) or fully described by its caller (automation); the add
+ * hook leaves it as it is, so pasting while a tool set item is the active
+ * tool does not restyle the pasted annotation as if it were drawn with it.
+ */
+export function recordAdd(annotation, options) {
+  if (_addAnnotationHook && annotation && !options?.copy) {
+    try { _addAnnotationHook(annotation); } catch (e) { console.warn('Add-annotation hook failed:', e); }
+  }
   execute({
     type: 'addAnnotation',
     annotation: cloneAnnotation(annotation)
@@ -838,6 +867,28 @@ export function recordBulkAdd(annotations) {
     annotation: cloneAnnotation(ann)
   }));
   execute({ type: 'bulkAdd', items });
+}
+
+// A correction that keeps growing in the proofreading mode (#508: pressing
+// Delete again extends the strike-through) stays one undo step: the add at
+// the top of the stack takes the new shape, so one undo removes the whole
+// correction. Only while that add is the last step, nothing can be redone,
+// no transaction is open and the document was not saved after it; otherwise
+// false, and the caller records an ordinary modify step.
+export function amendLastAdd(annotation) {
+  if (!annotation || undoTransactionDepth > 0) return false;
+  const doc = getActiveDocument();
+  if (!doc) return false;
+  const stack = getUndoStack();
+  const top = stack[stack.length - 1];
+  if (!top || top.type !== 'addAnnotation' || top.annotation?.id !== annotation.id) return false;
+  if ((doc.redoStack || []).length > 0) return false;
+  if (doc.savedUndoStackLength === stack.length) return false;
+  if (pendingPropertyChange) flushPropertyChange();
+  top.annotation = cloneAnnotation(annotation);
+  syncModifiedState();
+  scheduleThumbnailRefresh(top);
+  return true;
 }
 
 export function recordAnnotationOrder(oldOrder, newOrder) {
@@ -955,15 +1006,29 @@ export function flushPropertyChange() {
       }
     }
     targetDoc.redoStack = [];
+    // Ook een wijziging uit het eigenschappenpaneel is een nieuwe stap in de
+    // undo-geschiedenis: nieuwe inhoudsrevisie, anders blijft een verouderde
+    // revisionContext van een extensieopdracht geldig (#575).
+    verhoogInhoudRevisie(targetDoc);
     // Sync modified state
     const isClean = targetDoc.savedUndoStackLength >= 0 &&
                     targetDoc.undoStack.length === targetDoc.savedUndoStackLength;
     targetDoc.modified = !isClean;
+    // Kleur, lijndikte enz. uit het eigenschappenpaneel komen hier binnen,
+    // niet via execute(): ook dan de miniatuur van die pagina verversen (#579).
+    if (targetDoc.id === getActiveDocument()?.id) scheduleThumbnailRefresh(cmd);
   }
 
   pendingPropertyChange = null;
   clearTimeout(propertyChangeTimer);
   updateButtons();
+}
+
+// Een watermerk krijgt precies de bewaarde stand terug: ook instellingen die
+// de wijziging toevoegde (zoals autoFit, #849) verdwijnen weer.
+function zetWatermerkStaat(wm, staat) {
+  for (const sleutel of Object.keys(wm)) if (!(sleutel in staat)) delete wm[sleutel];
+  Object.assign(wm, staat);
 }
 
 // Watermark undo/redo helpers
@@ -992,6 +1057,16 @@ export function recordModifyBookmark(id, oldState, newState) {
   execute({ type: 'modifyBookmark', id, oldState: { ...oldState }, newState: { ...newState } });
 }
 
+// Eén undo-stap voor een wijziging aan meerdere bladwijzers tegelijk: de hele
+// lijst ervoor en erna (#689 stijl op een selectie, #690 verplaatsen/nesten).
+export function recordBookmarksChange(oldBookmarks, newBookmarks) {
+  execute({
+    type: 'setBookmarks',
+    oldBookmarks: (oldBookmarks || []).map(b => ({ ...b })),
+    newBookmarks: (newBookmarks || []).map(b => ({ ...b })),
+  });
+}
+
 // Record a page structure change (insert, delete, reorder) for undo/redo.
 // `extra.ocrShift` ({pages, dx, dy}) is set by Shift Page: the pending OCR word
 // boxes of those pages moved with the content and move back on undo.
@@ -1007,5 +1082,34 @@ export function recordPageStructure(oldBytes, oldAnnotations, oldRotations, oldP
     newRotations: { ...newRotations },
     newPage: newPage,
     ...(extra.ocrShift ? { ocrShift: { ...extra.ocrShift, pages: [...extra.ocrShift.pages] } } : {}),
+    // Bladwijzers vóór en na (samenvoegen): de bewerking verandert ze.
+    ...(extra.bookmarks ? { bookmarks: {
+      old: extra.bookmarks.old.map((b) => ({ ...b })),
+      new: extra.bookmarks.new.map((b) => ({ ...b })),
+    } } : {}),
   });
+}
+
+
+// OCR can finish in a background tab. Never push its command onto the active tab.
+export function recordOcrPage(doc, page, oldWords, newWords) {
+  recordOcrPages(doc, [{ page, oldWords, newWords }]);
+}
+
+// Several pages of one OCR run: a single undo step.
+export function recordOcrPages(doc, pages) {
+  if (!pages.length) return;
+  const changes = pages.map((p) => ({
+    page: p.page, oldWords: clonePlainValue(p.oldWords), newWords: clonePlainValue(p.newWords),
+  }));
+  const cmd = changes.length === 1 ? { type: 'ocrPage', ...changes[0] } : { type: 'ocrPages', pages: changes };
+  if (getActiveDocument() === doc) {
+    execute(cmd);
+    return;
+  }
+  doc.undoStack.push(cmd);
+  if (doc.undoStack.length > MAX_UNDO_STACK) doc.undoStack.shift();
+  doc.redoStack = [];
+  doc.savedUndoStackLength = -1;
+  verhoogInhoudRevisie(doc);
 }

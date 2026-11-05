@@ -15,6 +15,7 @@ import {
   SYSTEEMRASTER_DEFAULTS,
   SYSTEEMRASTER_PLAAT_RANGE,
   buildSysteemraster,
+  randstukkenVoorPaneel,
 } from '../../../annotations/systeemraster.js';
 import { systeemrasterBuildOpts } from '../../../annotations/systeemraster-scale.js';
 
@@ -23,17 +24,26 @@ export default function SysteemrasterSection() {
   const breedte = () => annotProps.plaatBreedteMm ?? SYSTEEMRASTER_DEFAULTS.plaatBreedteMm;
   const hoogte = () => annotProps.plaatHoogteMm ?? SYSTEEMRASTER_DEFAULTS.plaatHoogteMm;
   const heeftType = () => !!annotProps.sgTypeId;
+  // Weergave: bij een type is een onbevestigde maat (null) een leeg veld met
+  // de placeholder "onbevestigd" — nooit een verzonnen standaardmaat (#567).
+  const breedteVeld = () => (heeftType() ? (annotProps.plaatBreedteMm ?? '') : breedte());
+  const hoogteVeld = () => (heeftType() ? (annotProps.plaatHoogteMm ?? '') : hoogte());
   const isStrook = () => annotProps.sgLayout === 'strook';
 
   // Randstuk-maten per zijde uit dezelfde geometrie als de rendering,
   // reactief herbouwd uit de paneel-kopie (annotProps.sgPoints + waarden) —
-  // ververst dus bij elke paneel-bewerking en bij (her)selectie.
-  const randMm = createMemo(() => {
+  // ververst dus bij elke paneel-bewerking en bij (her)selectie. Mist het
+  // type een vereiste maat, dan is er geen indeling: "onbevestigd", nooit
+  // "volle plaat" (randstukkenVoorPaneel, #567).
+  const randstukken = createMemo(() => {
     if (!Array.isArray(annotProps.sgPoints) || annotProps.sgPoints.length < 3) return null;
     const pseudo = {
       type: 'systeemraster',
       page: annotProps.sgPage,
       points: annotProps.sgPoints,
+      // Met type rekent de geometrie met de typematen (en bij een
+      // onbevestigde maat zonder indeling: randstukken 0).
+      systeemTypeId: annotProps.sgTypeId || undefined,
       plaatBreedteMm: breedte(),
       plaatHoogteMm: hoogte(),
       originXMm: annotProps.sgOriginXMm,
@@ -44,9 +54,9 @@ export default function SysteemrasterSection() {
       minRandMm: annotProps.minRandMm,
       rasterHoek: annotProps.sgRasterHoek,
     };
-    const geom = buildSysteemraster(pseudo, systeemrasterBuildOpts(pseudo));
-    return geom ? geom.randMm : null;
+    return randstukkenVoorPaneel(buildSysteemraster(pseudo, systeemrasterBuildOpts(pseudo)));
   });
+  const randMm = () => randstukken()?.randMm || null;
 
   const fmt = (v) => (v > 0 ? `${Math.round(v)} mm` : '— (volle plaat)');
 
@@ -67,7 +77,7 @@ export default function SysteemrasterSection() {
                 </For>
               </select>
               <button type="button" id="prop-sg-typen-beheren" title="Typen beheren…"
-                onClick={() => openDialog('systeemtypen')}
+                onClick={() => openDialog('systeemtypen', { typeId: annotProps.sgTypeId })}
               >…</button>
             </div>
           </div>
@@ -76,9 +86,9 @@ export default function SysteemrasterSection() {
         <div class="property-group">
           <label>{isStrook() ? 'Strookbreedte (mm) — type'
             : heeftType() ? 'Celmaat X (mm) — type' : 'Plaatbreedte (mm)'}</label>
-          <input type="number" id="prop-sg-breedte"
+          <input type="text" inputmode="decimal" data-getal id="prop-sg-breedte"
             min={SYSTEEMRASTER_PLAAT_RANGE.min} max={SYSTEEMRASTER_PLAAT_RANGE.max} step="50"
-            value={breedte()}
+            value={breedteVeld()} placeholder="onbevestigd"
             disabled={locked()}
             onChange={(e) => updateAnnotProp('sgTypeCelX', e.target.value)}
           />
@@ -87,9 +97,9 @@ export default function SysteemrasterSection() {
         <Show when={!isStrook()}>
           <div class="property-group">
             <label>{heeftType() ? 'Celmaat Y (mm) — type' : 'Plaathoogte (mm)'}</label>
-            <input type="number" id="prop-sg-hoogte"
+            <input type="text" inputmode="decimal" data-getal id="prop-sg-hoogte"
               min={SYSTEEMRASTER_PLAAT_RANGE.min} max={SYSTEEMRASTER_PLAAT_RANGE.max} step="50"
-              value={hoogte()}
+              value={hoogteVeld()} placeholder="onbevestigd"
               disabled={locked()}
               onChange={(e) => updateAnnotProp('sgTypeCelY', e.target.value)}
             />
@@ -118,7 +128,7 @@ export default function SysteemrasterSection() {
 
         <div class="property-group">
           <label>Rasterhoek (°)</label>
-          <input type="number" id="prop-sg-hoek"
+          <input type="text" inputmode="decimal" data-getal id="prop-sg-hoek"
             min="0" max="360" step="5"
             value={annotProps.sgRasterHoek ?? 0}
             disabled={locked()}
@@ -168,7 +178,7 @@ export default function SysteemrasterSection() {
         <Show when={(annotProps.randConditie || SYSTEEMRASTER_DEFAULTS.randConditie) === 'minmaat'}>
           <div class="property-group">
             <label>Minimale randmaat (mm)</label>
-            <input type="number" id="prop-sg-minrand"
+            <input type="text" inputmode="decimal" data-getal id="prop-sg-minrand"
               min="0" step="50"
               value={annotProps.minRandMm ?? SYSTEEMRASTER_DEFAULTS.minRandMm}
               disabled={locked()}
@@ -271,12 +281,12 @@ export default function SysteemrasterSection() {
               <label>Afmeting sparing (mm)</label>
               <div style={{ display: 'flex', gap: '6px', 'align-items': 'center' }}>
                 <span>B</span>
-                <input type="number" id="prop-sg-sparing-b" style={{ width: '70px' }}
+                <input type="text" inputmode="decimal" data-getal id="prop-sg-sparing-b" style={{ width: '70px' }}
                   min="10" step="50" value={Math.round(annotProps.sgSelectedSub.bMm || 0)}
                   disabled={locked()}
                   onChange={(e) => updateAnnotProp('sgSparingB', e.target.value)} />
                 <span>H</span>
-                <input type="number" id="prop-sg-sparing-h" style={{ width: '70px' }}
+                <input type="text" inputmode="decimal" data-getal id="prop-sg-sparing-h" style={{ width: '70px' }}
                   min="10" step="50" value={Math.round(annotProps.sgSelectedSub.hMm || 0)}
                   disabled={locked()}
                   onChange={(e) => updateAnnotProp('sgSparingH', e.target.value)} />
@@ -286,12 +296,12 @@ export default function SysteemrasterSection() {
               <label>Positie (mm, t.o.v. linksboven)</label>
               <div style={{ display: 'flex', gap: '6px', 'align-items': 'center' }}>
                 <span>X</span>
-                <input type="number" id="prop-sg-sparing-x" style={{ width: '70px' }}
+                <input type="text" inputmode="decimal" data-getal id="prop-sg-sparing-x" style={{ width: '70px' }}
                   step="50" value={Math.round(annotProps.sgSelectedSub.xMm || 0)}
                   disabled={locked()}
                   onChange={(e) => updateAnnotProp('sgSparingX', e.target.value)} />
                 <span>Y</span>
-                <input type="number" id="prop-sg-sparing-y" style={{ width: '70px' }}
+                <input type="text" inputmode="decimal" data-getal id="prop-sg-sparing-y" style={{ width: '70px' }}
                   step="50" value={Math.round(annotProps.sgSelectedSub.yMm || 0)}
                   disabled={locked()}
                   onChange={(e) => updateAnnotProp('sgSparingY', e.target.value)} />
@@ -319,15 +329,22 @@ export default function SysteemrasterSection() {
           </Show>
         </Show>
 
-        <Show when={randMm()}>
+        <Show when={randstukken()}>
           <div class="property-group">
             <label>Randstukken</label>
-            <div id="prop-sg-randmaten" style={{ 'font-size': '11px', 'line-height': '1.5' }}>
-              <div>Links: {fmt(randMm().links)}</div>
-              <div>Rechts: {fmt(randMm().rechts)}</div>
-              <div>Boven: {fmt(randMm().boven)}</div>
-              <div>Onder: {fmt(randMm().onder)}</div>
-            </div>
+            <Show when={randMm()}
+              fallback={
+                <div id="prop-sg-randmaten" style={{ 'font-size': '11px', 'line-height': '1.5' }}>
+                  onbevestigd (het type mist een maat)
+                </div>
+              }>
+              <div id="prop-sg-randmaten" style={{ 'font-size': '11px', 'line-height': '1.5' }}>
+                <div>Links: {fmt(randMm().links)}</div>
+                <div>Rechts: {fmt(randMm().rechts)}</div>
+                <div>Boven: {fmt(randMm().boven)}</div>
+                <div>Onder: {fmt(randMm().onder)}</div>
+              </div>
+            </Show>
           </div>
         </Show>
       </CollapsibleSection>

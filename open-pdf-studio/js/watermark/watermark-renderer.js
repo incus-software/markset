@@ -1,9 +1,14 @@
-import { state, getActiveDocument } from '../core/state.js';
+import { tekenDocument as getActiveDocument } from '../annotations/rendering/document-context.js';
+import { state } from '../core/state.js';
 import { parsePageRange } from '../pdf/exporter.js';
+import {
+  KOPVOET_VAKKEN, vakPositie, vulKopVoetIn, kopVoetWaarden, toegepastePaginas, kopVoetInWeergave,
+} from './kopvoet-tekst.js';
+import { watermarkPosition, watermarkTextPlacement, watermarkFont } from './watermark-layout.js';
 
 const imageCache = new Map();
 
-function shouldRenderOnPage(watermark, pageNum, totalPages) {
+export function shouldRenderOnPage(watermark, pageNum, totalPages) {
   if (!watermark.enabled) return false;
   if (watermark.pageRange === 'all') return true;
   if (watermark.pageRange === 'first') return pageNum === 1;
@@ -14,58 +19,28 @@ function shouldRenderOnPage(watermark, pageNum, totalPages) {
   return true;
 }
 
-function getPosition(position, customX, customY, pageWidth, pageHeight, objWidth, objHeight) {
-  switch (position) {
-    case 'center':
-      return { x: pageWidth / 2, y: pageHeight / 2 };
-    case 'top-left':
-      return { x: objWidth / 2 + 40, y: objHeight / 2 + 40 };
-    case 'top-right':
-      return { x: pageWidth - objWidth / 2 - 40, y: objHeight / 2 + 40 };
-    case 'bottom-left':
-      return { x: objWidth / 2 + 40, y: pageHeight - objHeight / 2 - 40 };
-    case 'bottom-right':
-      return { x: pageWidth - objWidth / 2 - 40, y: pageHeight - objHeight / 2 - 40 };
-    case 'custom':
-      return { x: customX || pageWidth / 2, y: customY || pageHeight / 2 };
-    default:
-      return { x: pageWidth / 2, y: pageHeight / 2 };
-  }
-}
-
-function substituteVariables(text, pageNum, totalPages) {
-  if (!text) return '';
-  const doc = getActiveDocument();
-  const filename = doc ? doc.fileName : '';
-  const now = new Date();
-  const dateStr = now.toLocaleDateString();
-  const timeStr = now.toLocaleTimeString();
-  return text
-    .replace(/\{page\}/g, String(pageNum))
-    .replace(/\{pages\}/g, String(totalPages))
-    .replace(/\{date\}/g, dateStr)
-    .replace(/\{time\}/g, timeStr)
-    .replace(/\{filename\}/g, filename);
-}
-
-function renderTextWatermark(ctx, wm, pageWidth, pageHeight) {
-  const pos = getPosition(wm.position, wm.customX, wm.customY, pageWidth, pageHeight, 0, 0);
+// Same text, size, centre and baseline as the saved file (watermark-layout.js).
+export function renderTextWatermark(ctx, wm, pageWidth, pageHeight) {
+  const placed = watermarkTextPlacement(wm, pageWidth, pageHeight);
   ctx.save();
   ctx.globalAlpha = wm.opacity !== undefined ? wm.opacity : 0.3;
-  ctx.translate(pos.x, pos.y);
+  ctx.translate(placed.x, placed.y);
   ctx.rotate((wm.rotation || 0) * Math.PI / 180);
-  ctx.font = `${wm.fontSize || 72}px ${wm.fontFamily || 'Helvetica'}`;
+  const family = watermarkFont(wm.fontFamily);
+  ctx.font = `${placed.size}px ${family === 'Times-Roman' ? 'Times New Roman' : family}`;
+  // The PDF draws a plain Tj without kerning; so does the screen.
+  if ('fontKerning' in ctx) ctx.fontKerning = 'none';
   ctx.fillStyle = wm.color || '#ff0000';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(wm.text || '', 0, 0);
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(placed.text, 0, placed.baseline);
   ctx.restore();
 }
 
-function renderImageWatermark(ctx, wm, pageWidth, pageHeight) {
+export function renderImageWatermark(ctx, wm, pageWidth, pageHeight, decodedImage = null) {
   if (!wm.imageData) return;
 
-  let img = imageCache.get(wm.imageData);
+  let img = decodedImage || imageCache.get(wm.imageData);
   if (!img) {
     img = new Image();
     img.src = wm.imageData;
@@ -74,10 +49,10 @@ function renderImageWatermark(ctx, wm, pageWidth, pageHeight) {
 
   if (!img.complete) return;
 
-  const scale = wm.scale || 1;
-  const w = (wm.width || img.naturalWidth || 200) * scale;
-  const h = (wm.height || img.naturalHeight || 200) * scale;
-  const pos = getPosition(wm.position, wm.customX, wm.customY, pageWidth, pageHeight, w, h);
+  const scale = wm.scale ?? 1;
+  const w = (wm.width || 200) * scale;
+  const h = (wm.height || 200) * scale;
+  const pos = watermarkPosition(wm, pageWidth, pageHeight, w, h);
 
   ctx.save();
   ctx.globalAlpha = wm.opacity !== undefined ? wm.opacity : 0.2;
@@ -87,38 +62,29 @@ function renderImageWatermark(ctx, wm, pageWidth, pageHeight) {
   ctx.restore();
 }
 
-function renderHeaderFooter(ctx, wm, pageNum, totalPages, pageWidth, pageHeight) {
+// Dezelfde vakken, variabelen en basislijnen als in het bestand
+// (pdf/saver/kopvoet.js), zodat het scherm toont wat er wordt opgeslagen.
+export function renderHeaderFooter(ctx, wm, pageNum, totalPages, pageWidth, pageHeight) {
+  const doc = getActiveDocument();
+  const waarden = kopVoetWaarden(wm, {
+    pagina: pageNum,
+    paginas: totalPages,
+    toegepast: toegepastePaginas(wm, totalPages, parsePageRange),
+    bestandsnaam: doc ? doc.fileName : '',
+    titel: doc?.pdfTitel || '',
+  });
   ctx.save();
   ctx.globalAlpha = 1;
-  const fontSize = wm.fontSize || 10;
-  ctx.font = `${fontSize}px ${wm.fontFamily || 'Helvetica'}`;
+  ctx.font = `${wm.fontSize || 10}px ${wm.fontFamily || 'Helvetica'}`;
   ctx.fillStyle = wm.color || '#000000';
-
-  const mt = wm.marginTop || 30;
-  const mb = wm.marginBottom || 30;
-  const ml = wm.marginLeft || 40;
-  const mr = wm.marginRight || 40;
-
-  const headerY = mt;
-  const footerY = pageHeight - mb + fontSize;
-
-  const slots = [
-    { text: wm.headerLeft, x: ml, y: headerY, align: 'left' },
-    { text: wm.headerCenter, x: pageWidth / 2, y: headerY, align: 'center' },
-    { text: wm.headerRight, x: pageWidth - mr, y: headerY, align: 'right' },
-    { text: wm.footerLeft, x: ml, y: footerY, align: 'left' },
-    { text: wm.footerCenter, x: pageWidth / 2, y: footerY, align: 'center' },
-    { text: wm.footerRight, x: pageWidth - mr, y: footerY, align: 'right' },
-  ];
-
-  for (const slot of slots) {
-    if (!slot.text) continue;
-    const resolved = substituteVariables(slot.text, pageNum, totalPages);
-    ctx.textAlign = slot.align;
-    ctx.textBaseline = 'top';
-    ctx.fillText(resolved, slot.x, slot.y);
+  ctx.textBaseline = 'alphabetic';
+  for (const vak of KOPVOET_VAKKEN) {
+    const tekst = vulKopVoetIn(wm[vak.sleutel], waarden).replace(/[\r\n]+/g, ' ');
+    if (!tekst.trim()) continue;
+    const { x, basislijn } = vakPositie(wm, vak, pageWidth, pageHeight);
+    ctx.textAlign = vak.uitlijning;
+    ctx.fillText(tekst, x, basislijn);
   }
-
   ctx.restore();
 }
 
@@ -134,6 +100,8 @@ function renderWatermarksForLayer(ctx, layer, pageNum, pageWidth, pageHeight) {
     if ((wm.layer || 'behind') !== layer && wm.type !== 'headerFooter') continue;
     if (wm.type === 'headerFooter' && layer !== 'infront') continue;
     if (!shouldRenderOnPage(wm, pageNum, totalPages)) continue;
+    // Al als pagina-inhoud in het weergegeven bestand: niet dubbel tekenen.
+    if (kopVoetInWeergave(doc, wm)) continue;
 
     switch (wm.type) {
       case 'textWatermark':

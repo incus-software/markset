@@ -13,16 +13,34 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { getCachedPdfBytes } from '../pdf/loader.js';
 import { drawHighlights } from './overlay-renderer.js';
-import { detectChanges } from './change-detector.js';
+import { createDetectClient, WORKER_UNAVAILABLE } from './change-detect-protocol.js';
 import { setChanges, setCompareDetecting } from './compare-store.js';
 // Markset: difference-based change detection, size check and orange/blue overlay.
 import { markChangedPixels, pageSizeMismatch, tintInk, OLD_TINT_CSS, NEW_TINT_CSS } from '../../markset/compare/diff-classify.js';
 import { setCompareSizeMismatch } from '../../markset/compare/size-warning.js';
+import { pdfjsBronnen } from '../core/basis-url.js';
 
 // Cap detection resolution to keep CPU bounded on huge pages.
 const DETECTION_MAX_DIM = 1600;
 let _detectTimer = null;
 let _detectSeq = 0;
+
+// detectChanges() draait in een module-worker zodat de union-find over de hele
+// detectiepagina de interface niet bevriest (#465). Zonder Worker (of als hij
+// niet laadt) rekent de client synchroon met dezelfde functie. Het
+// aanvraag-id is _detectSeq: een ingehaald paar wordt niet meer verstuurd en
+// zijn late antwoord niet meer getoond.
+let _detectClient = null;
+
+function _createDetectWorker() {
+  if (typeof Worker === 'undefined') return null;
+  return new Worker(new URL('./change-detect.worker.js', import.meta.url), { type: 'module' });
+}
+
+function _getDetectClient() {
+  if (!_detectClient) _detectClient = createDetectClient({ createWorker: _createDetectWorker });
+  return _detectClient;
+}
 
 // Cache of pdfjs documents per filePath used by compare mode only — we don't
 // reuse the document loaded by the main viewer because pdf.js transfers the
@@ -77,10 +95,7 @@ async function _getDoc(filePath) {
   if (!bytes) throw new Error('Compare: no cached bytes for ' + filePath);
   const doc = await pdfjsLib.getDocument({
     data: bytes.slice(), // pdf.js transfers the buffer — must clone
-    cMapUrl: '/pdfjs/web/cmaps/',
-    cMapPacked: true,
-    standardFontDataUrl: '/pdfjs/web/standard_fonts/',
-    wasmUrl: '/pdfjs/web/wasm/',
+    ...pdfjsBronnen(),
     isEvalSupported: false,
     verbosity: 0,
   }).promise;
@@ -250,13 +265,24 @@ export function scheduleChangeDetection(opts) {
   _detectTimer = setTimeout(async () => {
     _detectTimer = null;
     try {
-      const result = await runChangeDetection(opts);
-      // Drop result if a newer detection has been queued.
-      if (seq !== _detectSeq) return;
+      let result;
+      try {
+        result = await runChangeDetection(opts, seq);
+      } catch (err) {
+        // De worker zelf faalde (laden, CSP, DataCloneError): de buffers van
+        // deze poging kunnen weg zijn, dus opnieuw — de client rekent nu synchroon.
+        if (!err || err.code !== WORKER_UNAVAILABLE) throw err;
+        result = await runChangeDetection(opts, seq);
+      }
+      // null = ingehaald voordat er gerekend werd.
+      if (!result) return;
+      // Een onderweg ingehaald resultaat klopt nog voor zijn eigen sleutel.
       _changesCache.set(key, result);
       while (_changesCache.size > _CHANGES_CACHE_MAX) {
         _changesCache.delete(_changesCache.keys().next().value);
       }
+      // Drop result if a newer detection has been queued.
+      if (seq !== _detectSeq) return;
       setChanges(result);
       setCompareSizeMismatch(result.sizeMismatch); // Markset
       setCompareDetecting(false);
@@ -283,7 +309,7 @@ async function _rasterizeForDetection(filePath, pageNum, detectScale) {
   return entry;
 }
 
-async function runChangeDetection(opts) {
+async function runChangeDetection(opts, seq = _detectSeq) {
   const { oldPath, newPath, oldPage, newPage, offset = { dx: 0, dy: 0, rotation: 0 } } = opts;
   if (!oldPath || !newPath) return [];
 
@@ -310,6 +336,8 @@ async function runChangeDetection(opts) {
     _rasterizeForDetection(oldPath, oldPage, detectScale),
     _rasterizeForDetection(newPath, newPage, detectScale),
   ]);
+  // Al ingehaald tijdens het rasteren: de uitlijn-blit en detectie overslaan.
+  if (seq !== _detectSeq) return null;
 
   // Apply alignment offset to OLD so detection respects the same alignment as
   // the visual overlay. NEW remains at native position. We blit the cached
@@ -348,9 +376,11 @@ async function runChangeDetection(opts) {
   const oldData = aCtx.getImageData(0, 0, cOldAligned.width, cOldAligned.height);
   const newData = newEntry.data;
 
-  // Markset: classify by darkness difference so grey linework and text count.
+  // Markset: classify by darkness difference so grey linework and text count;
+  // the marked sheets are fresh copies, so both can be handed to the worker.
   const marked = markChangedPixels(oldData, newData);
-  const changes = marked ? detectChanges(marked[0], marked[1]) : detectChanges(oldData, newData);
+  const { changes } = await _getDetectClient().run(marked ? marked[0] : oldData, marked ? marked[1] : newData, { id: seq, transferOld: true });
+  if (!changes) return null;
   // Tag the detection scale so the UI can map bbox px back to display px.
   const out = changes.map(c => ({ ...c, detectScale }));
   out.sizeMismatch = sizeMismatch; // Markset

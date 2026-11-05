@@ -1,3 +1,4 @@
+import { relinkCopiedZones } from './spatial-zones.js';
 import { state, getActiveDocument, imageCache } from '../core/state.js';
 import { cloneAnnotation } from './factory.js';
 import { cloneAnnotationsInPlace } from './paste-in-place.js';
@@ -199,7 +200,7 @@ export async function pasteImageFromBlob(blob) {
 
   const _pasteDoc1 = getActiveDocument();
   if (_pasteDoc1) _pasteDoc1.annotations.push(annotation);
-  recordAdd(annotation);
+  recordAdd(annotation, { copy: true });
   if (_pasteDoc1) { _pasteDoc1.selectedAnnotation = annotation; _pasteDoc1.selectedAnnotations = [annotation]; }
   showProperties(annotation);
 
@@ -245,6 +246,7 @@ export function pasteAnnotation() {
   // de kopie krijgt bij opslaan een eigen /NM.
   relinkPastedCorrections([state.clipboardAnnotation], [newAnnotation]);
   if (!moveToPointer([newAnnotation], getActiveDocument()?.pageDims)) shiftUnmoved([newAnnotation], [state.clipboardAnnotation], off); // Markset: paste where the mouse is
+  relinkCopiedZones([state.clipboardAnnotation], [newAnnotation]);
 
   // For images/signatures, need to copy the cached image
   if (newAnnotation.type === 'image' || newAnnotation.type === 'signature') {
@@ -258,7 +260,7 @@ export function pasteAnnotation() {
 
   const _pasteDoc2 = getActiveDocument();
   if (_pasteDoc2) _pasteDoc2.annotations.push(newAnnotation);
-  recordAdd(newAnnotation);
+  recordAdd(newAnnotation, { copy: true });
   if (_pasteDoc2) { _pasteDoc2.selectedAnnotation = newAnnotation; _pasteDoc2.selectedAnnotations = [newAnnotation]; }
   showProperties(newAnnotation);
 
@@ -339,6 +341,7 @@ export function pasteAnnotations() {
   // Vervangingen (#508) koppelen aan hun eigen kopie, niet aan het origineel.
   relinkPastedCorrections(state.clipboardAnnotations, newAnnotations);
   if (!moveToPointer(newAnnotations, getActiveDocument()?.pageDims)) shiftUnmoved(newAnnotations, state.clipboardAnnotations, off); // Markset: paste where the mouse is
+  relinkCopiedZones(state.clipboardAnnotations, newAnnotations);
   const _pasteDocAdd = getActiveDocument();
   if (_pasteDocAdd) _pasteDocAdd.annotations.push(...newAnnotations);
 
@@ -399,7 +402,7 @@ export function pasteAnnotationsInPlace() {
 
   // Ongedaan maken via het bestaande undo-command-pad.
   if (newAnnotations.length === 1) {
-    recordAdd(newAnnotations[0]);
+    recordAdd(newAnnotations[0], { copy: true });
   } else {
     recordBulkAdd(newAnnotations);
   }

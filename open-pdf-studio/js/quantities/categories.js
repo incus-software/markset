@@ -4,6 +4,7 @@
 
 import { totalBarLengthM } from '../annotations/stavenreeks.js';
 import { nettoVlakOppervlak } from '../annotations/vlak-ringen.js';
+import { veelhoekPunten } from '../annotations/veelhoek-punten.js';
 
 // --- Vertaalhaak -----------------------------------------------------------
 // Deze module blijft puur: hij kent i18next niet. De UI-laag injecteert via
@@ -31,6 +32,7 @@ const CATEGORY_KEYS = {
   'count': 'count',
   'symbol': 'symbol',
   'image': 'image',
+  'reinforcement': 'reinforcement',
   'other': 'other',
 };
 
@@ -42,6 +44,7 @@ export const CATEGORY_FALLBACKS = {
   'count': 'Count',
   'symbol': 'Symbol',
   'image': 'Image',
+  'reinforcement': 'Reinforcement',
   'other': 'Other',
 };
 
@@ -53,7 +56,7 @@ export function categoryLabel(cat) {
 }
 
 export const CATEGORY_ORDER = [
-  'area', 'line-based', 'count', 'text-annotation', 'text-built-in', 'symbol', 'image', 'other',
+  'area', 'line-based', 'count', 'reinforcement', 'text-annotation', 'text-built-in', 'symbol', 'image', 'other',
 ];
 
 const TYPE_TO_CATEGORY = {
@@ -87,6 +90,8 @@ export const TYPE_NAMES = {
   stavenreeks: 'Bar series',
   betonbalk: 'Concrete beam',
   scheduleTable: 'Quantities table', builtinText: 'Text',
+  // Wapening: één buigstaat-regel (pseudo-element uit quantities/wapening.js).
+  rebarPosition: 'Reinforcement bar',
 };
 
 /** Weergavenaam van een elementtype in de actieve taal. */
@@ -111,6 +116,15 @@ const F = (key, fallback, kind, get, unit = '', dec, unitOf) => ({
 // Wrapper voor stavenreeks-specifieke velden binnen de gedeelde 'line-based'-
 // categorie: geeft null (lege cel) voor elk ander lijnvormig element.
 const srField = (get) => (el) => (el.type === 'stavenreeks' ? get(el) : null);
+
+// Velden die per regel een eigenschap zijn (diameter, lengte per staaf,
+// kg/m): optellen in een subtotaal zou onzin opleveren.
+const geenSom = (f) => { f.sum = false; return f; };
+
+// Buigstaat-regel (pseudo-element 'rebarPosition', zie quantities/wapening.js).
+const rb = (get) => (el) => (el.rebar ? get(el.rebar) : null);
+// Een numeriek staafnummer als getal, zodat 2 vóór 10 sorteert.
+const staafnummerWaarde = (r) => (/^\d+$/.test(r.staafnummer) ? Number(r.staafnummer) : r.staafnummer);
 
 const MM2 = 'mm\u00B2';
 const M2 = 'm\u00B2';
@@ -145,7 +159,8 @@ const GEOMETRISCHE_VLAKKEN = new Set([
 // komt uit vlak-ringen.js — dezelfde regel die het scherm en het opgeslagen
 // bestand volgen (GitHub #457).
 function pixelArea(el) {
-  const pts = Array.isArray(el.points) ? el.points : null;
+  // Een veelhoek (#622): de hoekpunten zoals het scherm ze in zijn vak tekent.
+  const pts = (el.type === 'polygon' && veelhoekPunten(el)) || (Array.isArray(el.points) ? el.points : null);
   if (pts && pts.length >= 3) return nettoVlakOppervlak(pts, el.holes);
   const w = Math.abs(el.width || 0), h = Math.abs(el.height || 0);
   if (w > 0 && h > 0) {
@@ -257,10 +272,26 @@ const COMMON = [
   // meet-vlak geeft ("Woonkamer"). Die stond nergens in de staat, waardoor de
   // Label-kolom voor oppervlaktes altijd leeg bleef.
   F('label', 'Label', 'text', el => el.label || el.measureName || el.subject || ''),
+  F('location', 'Location', 'text', el => el.__location?.path || ''),
+  F('locationSource', 'Location source', 'text', el => el.__location?.source || 'none'),
   F('color', 'Color', 'text', el => el.color || el.strokeColor || el.fillColor || ''),
   F('ifcCategory', 'IFC category', 'text', el => el.ifcCategory || ''),
   F('count', 'Count', 'number', () => 1, '', 0),
 ];
+
+// Velden die per element een zone-opzoeking kosten (spatial-zones.js).
+const LOCATION_FIELDS = new Set(['location', 'locationSource']);
+
+/**
+ * Heeft de staat de locatie van de elementen nodig: als kolom, filter of
+ * sortering? Alleen dan zoekt de hoeveelhedenstaat per element de zone op.
+ * @param {{fields?: string[], filters?: {field: string}[], sort?: {field: string}[]}} cfg
+ */
+export function scheduleUsesLocation({ fields = [], filters = [], sort = [] } = {}) {
+  return (fields || []).some((key) => LOCATION_FIELDS.has(key))
+    || (filters || []).some((f) => LOCATION_FIELDS.has(f?.field))
+    || (sort || []).some((s) => LOCATION_FIELDS.has(s?.field));
+}
 
 export const FIELD_REGISTRY = {
   'area': [...COMMON,
@@ -298,6 +329,17 @@ export const FIELD_REGISTRY = {
     F('imageName', 'File name', 'text', imageName),
     F('width', 'Width', 'number', el => el.originalWidth || el.width || 0, 'px', 0),
     F('height', 'Height', 'number', el => el.originalHeight || el.height || 0, 'px', 0),
+  ],
+  'reinforcement': [...COMMON,
+    F('rebarMark', 'Bar mark', 'text', rb(staafnummerWaarde)),
+    geenSom(F('rebarDiameter', 'Ø', 'number', rb(r => r.diameter), 'mm', 0)),
+    F('rebarShape', 'Shape code', 'text', rb(r => r.vormcode)),
+    F('rebarGrade', 'Steel grade', 'text', rb(r => r.staalkwaliteit)),
+    F('rebarCount', 'Number of bars', 'number', rb(r => r.aantal), '', 0),
+    geenSom(F('rebarLength', 'Bar length', 'number', rb(r => r.lengteMm), 'mm', 0)),
+    F('rebarTotalLength', 'Total length', 'number', rb(r => r.totaleLengteM), 'm', 2),
+    geenSom(F('rebarMassPerM', 'Mass per metre', 'number', rb(r => r.massaPerMeter), 'kg/m', 3)),
+    F('rebarMass', 'Mass', 'number', rb(r => r.massaKg), 'kg', 1),
   ],
   'other': [...COMMON],
 };

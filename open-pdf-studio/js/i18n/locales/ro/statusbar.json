@@ -11,6 +11,7 @@
     "box": "Dreptunghi",
     "polygon": "Poligon",
     "cloud": "Nor",
+    "cloudPolyline": "Polilinie nor",
     "polyline": "Polilinie",
     "textbox": "Caseta de text",
     "callout": "Explicatie",
@@ -27,7 +28,9 @@
     "formTextField": "Camp text formular",
     "formCheckbox": "Caseta de bifat formular",
     "formRadio": "Buton radio formular",
-    "screenshot": "Captura de ecran"
+    "screenshot": "Captura de ecran",
+    "pageLabelPick": "Alegeți textul pentru eticheta paginii",
+    "proofread": "Corectură"
   },
   "toolLabel": "Instrument:",
   "annotationsLabel": "Adnotari:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Acest document contine campuri de formular interactive. Puteti completa formularul si salva datele.",
   "enableEditing": "Activare editare",
   "pdfAConformance": "Acest document pretinde conformitate PDF/A.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Redenumirea fișierului a eșuat: {{error}}",
+  "renameInvalidChars": "Numele fișierului nu poate conține:  / : * ? \" < > |",
+  "renameFileExists": "Există deja un fișier cu acest nume.",
+  "engineTitle": "Motorul de randare folosit pentru vizualizarea curentă",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vectorial)"
+  },
+  "viewSingle": "O singură pagină",
+  "viewContinuous": "Continuu",
+  "viewBook": "Două pagini",
+  "viewFacing": "Două pagini alăturate",
   "viewRotatedTitle": "Vizualizarea este rotită cu {{degrees}}° în sensul acelor de ceasornic; documentul nu s-a modificat. Faceți clic pentru a readuce vizualizarea.",
+  "compareTabTitle": "Comparare",
   "filledAreaSketch": {
     "undoPoint": "Anulează punctul",
     "undoPointTitle": "Elimină ultimul punct (Backspace)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "L",
   "boxHeightAbbr": "H",
+  "boxSizeHint": "Tastați o valoare + Enter — sau faceți clic în afară pentru aplicare",
   "ocr": {
     "progress": {
       "starting": "Se recunoaște textul...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Rezultate ({{count}})",
   "searchResultPage": "Pagina {{page}}",
   "searchHitsOne": "1 potrivire",
-  "searchHitsMany": "Potriviri: {{count}}"
+  "searchHitsMany": "Potriviri: {{count}}",
+  "passwordProtectedBar": "Protejat cu parolă: deschis doar în citire.",
+  "documentSearch": {
+    "title": "Căutare în documente",
+    "query": "Text de căutat",
+    "scope": "Căutare în",
+    "active": "Documentul curent",
+    "open": "Documente deschise",
+    "folder": "Folder",
+    "choose": "Alegere folder",
+    "annotations": "Includere comentarii",
+    "search": "Căutare",
+    "cancel": "Anulare",
+    "stale": "Documentul s-a modificat. Rulați din nou căutarea.",
+    "folderHint": "Caută în fișierele PDF direct din acest folder, fără a deschide file și fără a modifica fișierele.",
+    "limited": "S-a atins limita de rezultate. Restrângeți căutarea.",
+    "cancelled": "Căutare anulată; rezultatele sunt incomplete.",
+    "ocrHint": "Nu există text căutabil pe paginile {{pages}}. Deschideți documentul și rulați explicit OCR, dacă este necesar.",
+    "status": {
+      "searching": "Se caută",
+      "complete": "Finalizat",
+      "needs_ocr": "Conține pagini fără text căutabil",
+      "encrypted": "Necesită parolă",
+      "unreadable": "Nu s-a putut căuta",
+      "changed": "Documentul s-a modificat; căutați din nou",
+      "cancelled": "Anulat",
+      "limited": "Limita de rezultate atinsă"
+    },
+    "failed": "Căutarea a eșuat. Verificați interogarea și folderul, apoi încercați din nou.",
+    "prepareOcr": "Deschidere pentru OCR…"
+  },
+  "symbolSearch": "Găsire simboluri",
+  "findMoreOptions": "Mai multe opțiuni de căutare",
+  "watchActive": "Monitorizare: {{folder}}",
+  "watchFailed": "Eroare de monitorizare: {{folder}}",
+  "watchTitle": "Fluxul de lucru pentru documente monitorizează {{input}} și scrie în {{output}}. Faceți clic pentru a opri monitorizarea.",
+  "renderDiagnostics": {
+    "title": "Mergi la următoarea constatare de randare. Lipsa constatărilor nu garantează o randare completă.",
+    "count": "Constatări de randare: {{count}}",
+    "detail": "Pagina {{page}}: {{code}}. Încercați un zoom mai mic sau redeschideți documentul; completitudinea nu este garantată."
+  },
+  "mcpSignal": {
+    "label": "Conexiune AI (MCP)",
+    "connected": "Asistent AI conectat",
+    "idle": "Server MCP pornit, inactiv",
+    "off": "Server MCP oprit",
+    "port": "Port: {{port}}",
+    "lastTool": "Ultimul instrument: {{tool}} la {{time}}",
+    "noTool": "Încă nu există apeluri de instrumente"
+  }
 }

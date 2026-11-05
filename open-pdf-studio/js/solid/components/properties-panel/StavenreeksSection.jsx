@@ -9,6 +9,7 @@ import { annotProps, updateAnnotProp } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { STAVENREEKS_DIAMETERS, labelText } from '../../../annotations/stavenreeks.js';
+import { STAALKWALITEITEN, STANDAARD_STAALKWALITEIT } from '../../../quantities/wapening.js';
 
 // Pootrichting: {boven|onder} × {links|rechts hellend}. De pijltjes tonen de
 // stand van de poot t.o.v. de reekslijn.
@@ -35,7 +36,7 @@ export default function StavenreeksSection() {
 
         <div class="property-group">
           <label>{t('stavenreeks.count')}</label>
-          <input type="number" id="prop-sr-count" step="1" min="1" max="999"
+          <input type="text" inputmode="decimal" data-getal id="prop-sr-count" step="1" min="1" max="999"
             value={annotProps.srCount}
             disabled={locked()}
             onChange={(e) => updateAnnotProp('srCount', e.target.value)}
@@ -57,11 +58,35 @@ export default function StavenreeksSection() {
 
         <div class="property-group">
           <label>{t('stavenreeks.barLength')}</label>
-          <input type="number" id="prop-sr-barlength" step="10" min="0"
+          <input type="text" inputmode="decimal" data-getal id="prop-sr-barlength" step="10" min="0"
             value={annotProps.srBarLengthMm}
             disabled={locked()}
             onChange={(e) => updateAnnotProp('srBarLengthMm', e.target.value)}
           />
+        </div>
+
+        {/* Staafnummer en staalkwaliteit voor de buigstaat. Leeg nummer =
+            automatisch volgnummer; zonder staaflengte telt de reeks niet mee. */}
+        <div class="property-group">
+          <label>{t('quantities.field.rebarMark')}</label>
+          <input type="text" id="prop-sr-barmark"
+            value={annotProps.srBarMark}
+            disabled={locked()}
+            onChange={(e) => updateAnnotProp('srBarMark', e.target.value)}
+          />
+        </div>
+
+        <div class="property-group">
+          <label>{t('quantities.field.rebarGrade')}</label>
+          <select id="prop-sr-steelgrade"
+            value={annotProps.srSteelGrade || STANDAARD_STAALKWALITEIT}
+            disabled={locked()}
+            onChange={(e) => updateAnnotProp('srSteelGrade', e.target.value)}
+          >
+            <For each={STAALKWALITEITEN}>{(kw) => (
+              <option value={kw}>{kw}</option>
+            )}</For>
+          </select>
         </div>
 
         <div class="property-group">
@@ -81,7 +106,7 @@ export default function StavenreeksSection() {
 
         <div class="property-group">
           <label>{t('stavenreeks.legLength')}</label>
-          <input type="number" id="prop-sr-leglength" step="1" min="1" max="200"
+          <input type="text" inputmode="decimal" data-getal id="prop-sr-leglength" step="1" min="1" max="200"
             value={annotProps.srLegLength}
             disabled={locked()}
             onChange={(e) => updateAnnotProp('srLegLength', e.target.value)}
@@ -92,7 +117,7 @@ export default function StavenreeksSection() {
             poot doorloopt vóórdat het label begint. 0 = lijn stopt op de poot. */}
         <div class="property-group">
           <label>{t('stavenreeks.lineTail')}</label>
-          <input type="number" id="prop-sr-linetail" step="1" min="0" max="200"
+          <input type="text" inputmode="decimal" data-getal id="prop-sr-linetail" step="1" min="0" max="200"
             value={annotProps.srLineTail}
             disabled={locked()}
             onChange={(e) => updateAnnotProp('srLineTail', e.target.value)}
@@ -102,7 +127,7 @@ export default function StavenreeksSection() {
         {/* Tekstgrootte van het label "N ⌀ D" (papier-constant, app-px). */}
         <div class="property-group">
           <label>{t('stavenreeks.fontSize')}</label>
-          <input type="number" id="prop-sr-fontsize" step="1" min="6" max="72"
+          <input type="text" inputmode="decimal" data-getal id="prop-sr-fontsize" step="1" min="6" max="72"
             value={annotProps.srFontSize}
             disabled={locked()}
             onChange={(e) => updateAnnotProp('srFontSize', e.target.value)}

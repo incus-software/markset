@@ -1,7 +1,8 @@
 import { HANDLE_TYPES } from '../core/constants.js';
 import { state } from '../core/state.js';
 import { snapAngle } from '../utils/helpers.js';
-import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement, formatDimensionText, snapDistanceTo10 } from './measurement.js';
+import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement, formatDimensionText, snapDistanceTo10, herberekenVlakMaat, syncSpotCoord } from './measurement.js';
+import { isSpotCoord } from './spot-coord.js';
 import { handleAnchors, lineEndForDotTarget, resolveParams } from './stavenreeks.js';
 import { getTemplate } from '../symbols/registry.js';
 import { systeemrasterPxPerMm, systeemrasterBuildOpts } from './systeemraster-scale.js';
@@ -13,6 +14,7 @@ import {
   twoPointEndpoints,
 } from '../symbols/two-point.js';
 import { isPointPolygon, rotatePointPolygon } from './polygon-transform.js';
+import { isBewerkbareVeelhoek, verplaatsVeelhoekHoekpunt } from './veelhoek-punten.js';
 import {
   MIN_GEBIED_PX, schaalRechthoekMetGreep, schermPxNaarPt, veiligeVerhouding,
   tekstvakMinimum, nietNul,
@@ -41,6 +43,8 @@ function computeDimensionText(ann) {
 // (recalculateAllMeasurements trusts measurePixels when recomputing on a
 // scale change) and measureText reflects the new length × scale.
 function syncDimensionMeasurement(ann) {
+  // A Spot Coord label shows the coordinates of its start point, not a length.
+  if (isSpotCoord(ann)) { syncSpotCoord(ann); return; }
   const dx = ann.endX - ann.startX;
   const dy = ann.endY - ann.startY;
   const pixelDist = Math.sqrt(dx * dx + dy * dy);
@@ -51,6 +55,26 @@ function syncDimensionMeasurement(ann) {
     ann.measureValue = calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page).value;
   }
   ann.measureText = computeDimensionText(ann);
+}
+
+/**
+ * Bring the stored measurement fields of a measuring annotation in line with
+ * its geometry after an edit tool (Stretch, Enlarge, Fillet, Chamfer) changed
+ * it, the same way a grip edit does. Other types are left alone.
+ */
+export function syncMeasurementAfterEdit(ann) {
+  if (!ann) return;
+  if (ann.type === 'measureDistance') {
+    syncDimensionMeasurement(ann);
+  } else if (ann.type === 'measureArea' && Array.isArray(ann.points) && ann.points.length >= 3) {
+    // Same routine as a grip edit, so an area with its own scale keeps it (#536).
+    herberekenVlakMaat(ann);
+  } else if (ann.type === 'measurePerimeter' && Array.isArray(ann.points) && ann.points.length >= 2) {
+    const r = calculatePerimeter(ann.points, ann.page);
+    ann.measureValue = r.value;
+    ann.measureUnit = r.unit;
+    ann.measureText = formatMeasurement(r);
+  }
 }
 
 // Recalculate callout leader line geometry from box position and arrow tip.
@@ -280,6 +304,23 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
     case 'cloud':
     case 'redaction':
     case 'textbox':
+      // Hoekpunt van een veelhoek (#622): alleen dat hoekpunt verschuift, op
+      // het scherm (ook bij een gedraaide veelhoek); het vak volgt de punten.
+      // Shift = 45°-stappen, en dicht bij de x of y van een ander hoekpunt
+      // lijnt het uit, zoals bij de polylijn.
+      if (annotation.type === 'polygon' && typeof handleType === 'string'
+          && handleType.startsWith(HANDLE_TYPES.POLYLINE_NODE + '_') && isBewerkbareVeelhoek(originalAnn)) {
+        const hoekIdx = parseInt(handleType.split('_').pop(), 10);
+        const zoom = (Number.isFinite(opties?.schaal) && opties.schaal > 0)
+          ? opties.schaal : (state.documents?.[state.activeDocumentIndex]?.scale || 1.5);
+        const nieuw = verplaatsVeelhoekHoekpunt(originalAnn, hoekIdx, deltaX, deltaY,
+          { shift: shiftKey, uitlijnTol: 3 / zoom });
+        if (nieuw) {
+          Object.assign(annotation, nieuw);
+          annotation.modifiedAt = new Date().toISOString();
+        }
+        return;
+      }
       // Textbox leader tip/knee drag: update only that point on the matching leader.
       if (annotation.type === 'textbox' && typeof handleType === 'string' &&
           (handleType.startsWith(HANDLE_TYPES.LEADER_TIP + '_') ||
@@ -747,8 +788,10 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
                 return keepArc(p, nx, ny);
               });
             });
-            // Recalculate measurement text with holes
-            annotation.measureText = formatMeasurement(calculateArea(annotation.points, annotation.holes, annotation.page));
+            // Recalculate measurement text with holes; een meetvlak met zijn
+            // eigen schaal als die er is (#536).
+            if (annotation.type === 'measureArea') herberekenVlakMaat(annotation);
+            else annotation.measureText = formatMeasurement(calculateArea(annotation.points, annotation.holes, annotation.page));
           }
         } else {
           // Regular outer node drag
@@ -801,7 +844,8 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
             annotation.height = Math.max(...ys) - annotation.y;
             // Recalculate measurement text (with holes if present)
             if (annotation.type === 'measureArea') {
-              annotation.measureText = formatMeasurement(calculateArea(annotation.points, annotation.holes, annotation.page));
+              // Tekst, waarde en eenheid, met de eigen schaal als die er is (#536).
+              herberekenVlakMaat(annotation);
             } else if (annotation.type === 'measurePerimeter') {
               annotation.measureText = formatMeasurement(calculatePerimeter(annotation.points, annotation.page));
             }
@@ -1159,6 +1203,13 @@ export function applyRotateGeneric(annotation, original, pivotX, pivotY, deg) {
     return { ...p, x: rotX(p.x, p.y), y: rotY(p.x, p.y) };
   };
 
+  // Een veelhoek met eigen hoekpunten (#622) draait zoals een rechthoek: via
+  // zijn hoek, om het midden van zijn vak. Zijn (ongedraaide) punten mogen
+  // dus niet óók nog om het draaipunt draaien; ze schuiven mee met het vak.
+  const veelhoekPuntenMee = annotation.type === 'polygon' && isBewerkbareVeelhoek(annotation)
+    && typeof annotation.width === 'number' && typeof annotation.height === 'number';
+  const oudVakX = annotation.x, oudVakY = annotation.y;
+
   // Anchor (x/y): rect-anchored types orbit by centre; bare x/y is a point.
   if (typeof annotation.x === 'number' && typeof annotation.y === 'number') {
     if (typeof annotation.width === 'number' && typeof annotation.height === 'number') {
@@ -1198,6 +1249,11 @@ export function applyRotateGeneric(annotation, original, pivotX, pivotY, deg) {
     }
   }
   for (const k of _MOVE_POINT_ARRAYS) {
+    if (veelhoekPuntenMee && k === 'points') {
+      const sx = annotation.x - oudVakX, sy = annotation.y - oudVakY;
+      annotation.points = annotation.points.map(p => ({ ...p, x: p.x + sx, y: p.y + sy }));
+      continue;
+    }
     if (Array.isArray(annotation[k])) {
       annotation[k] = annotation[k].map(rotPoint);
     }

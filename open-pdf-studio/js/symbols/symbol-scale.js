@@ -9,6 +9,7 @@
 // onder je handen van maat veranderen.
 
 import { rondMaatAf } from '../annotations/minimummaat.js';
+import { leesGetal, leesFactor } from '../core/getal-invoer.js';
 
 /** Geen schaal gekozen = ware grootte. */
 export const STANDAARD_SCHAAL = 1;
@@ -28,7 +29,7 @@ export const SCHAAL_STAPPEN = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5];
  * @returns {number}
  */
 export function normaliseerSchaal(waarde) {
-  const n = typeof waarde === 'string' ? parseFloat(waarde.replace(',', '.')) : Number(waarde);
+  const n = typeof waarde === 'string' ? leesGetal(waarde) : Number(waarde);
   if (!Number.isFinite(n) || n <= 0) return STANDAARD_SCHAAL;
   return Math.min(MAX_SCHAAL, Math.max(MIN_SCHAAL, n));
 }
@@ -73,4 +74,38 @@ export function schaalLabel(factor) {
   const f = normaliseerSchaal(factor);
   const s = Number.isInteger(f) ? String(f) : String(f).replace('.', ',');
   return `${s}x`;
+}
+
+/**
+ * Leest wat de gebruiker in het schaalveld van het palet typte (issue #357).
+ * Begrijpt "2", "1,5", "0.5x" en "50%". Geeft null bij onzin, zodat het veld
+ * dan de geldende schaal terugzet in plaats van stil naar 1x te springen.
+ * @param {unknown} tekst
+ * @returns {number|null}
+ */
+export function leesSchaalInvoer(tekst) {
+  // Komma en punt zijn allebei een decimaalteken: "0,1x" = "0.1x" (core/getal-invoer.js).
+  const n = leesFactor(String(tekst ?? ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return normaliseerSchaal(n);
+}
+
+/**
+ * Volgende of vorige vaste stap vanaf de huidige schaal, voor de pijltjes-
+ * toetsen in het schaalveld. Een eigen waarde tussen twee stappen springt
+ * naar de dichtstbijzijnde stap in die richting; voorbij de laatste stap
+ * blijft de schaal staan.
+ * @param {number} huidig
+ * @param {1|-1} richting
+ * @returns {number}
+ */
+export function volgendeSchaalStap(huidig, richting) {
+  const f = normaliseerSchaal(huidig);
+  if (richting > 0) {
+    return SCHAAL_STAPPEN.find((s) => s > f + 1e-9) ?? f;
+  }
+  for (let i = SCHAAL_STAPPEN.length - 1; i >= 0; i--) {
+    if (SCHAAL_STAPPEN[i] < f - 1e-9) return SCHAAL_STAPPEN[i];
+  }
+  return f;
 }

@@ -11,6 +11,7 @@
     "box": "Suorakulmio",
     "polygon": "Monikulmio",
     "cloud": "Pilvi",
+    "cloudPolyline": "Pilvimurtoviiva",
     "polyline": "Murtoviiva",
     "textbox": "Tekstilaatikko",
     "callout": "Kuvateksti",
@@ -27,7 +28,9 @@
     "formTextField": "Lomakkeen tekstikenttä",
     "formCheckbox": "Lomakkeen valintaruutu",
     "formRadio": "Lomakkeen valintapainike",
-    "screenshot": "Kuvakaappaus"
+    "screenshot": "Kuvakaappaus",
+    "pageLabelPick": "Valitse teksti sivun nimiöön",
+    "proofread": "Oikoluku"
   },
   "toolLabel": "Työkalu:",
   "annotationsLabel": "Merkinnät:",
@@ -52,14 +55,21 @@
   "formFieldsMessage": "Tämä asiakirja sisältää interaktiivisia lomakekentitä. Voit täyttää lomakkeen ja tallentaa tiedot.",
   "enableEditing": "Ota muokkaus käyttöön",
   "pdfAConformance": "Tämä asiakirja noudattaa PDF/A-vaatimuksia.",
-  "renameError": "Failed to rename file: {{error}}",
-  "renameInvalidChars": "File name cannot contain  / : * ? \" < > |",
-  "renameFileExists": "A file with this name already exists.",
-  "viewSingle": "Single Page",
-  "viewContinuous": "Continuous",
-  "viewBook": "Two Pages",
-  "viewFacing": "Two Pages Side by Side",
+  "renameError": "Tiedoston nimeäminen uudelleen epäonnistui: {{error}}",
+  "renameInvalidChars": "Tiedostonimi ei voi sisältää merkkejä  / : * ? \" < > |",
+  "renameFileExists": "Tämänniminen tiedosto on jo olemassa.",
+  "engineTitle": "Nykyisen näkymän hahmonnusmoottori",
+  "engine": {
+    "pdfium": "PDFium",
+    "scene": "AEC-PDF v1",
+    "vector": "AEC-PDF v1 (vektori)"
+  },
+  "viewSingle": "Yksittäinen sivu",
+  "viewContinuous": "Jatkuva",
+  "viewBook": "Kaksi sivua",
+  "viewFacing": "Kaksi sivua rinnakkain",
   "viewRotatedTitle": "Näkymää on kierretty {{degrees}}° myötäpäivään; asiakirja on ennallaan. Palauta näkymä napsauttamalla.",
+  "compareTabTitle": "Vertailu",
   "filledAreaSketch": {
     "undoPoint": "Kumoa piste",
     "undoPointTitle": "Poista viimeisin piste (Askelpalautin)",
@@ -82,6 +92,7 @@
   },
   "boxWidthAbbr": "L",
   "boxHeightAbbr": "K",
+  "boxSizeHint": "Kirjoita arvo + Enter — tai käytä napsauttamalla muualle",
   "ocr": {
     "progress": {
       "starting": "Tunnistetaan tekstiä...",
@@ -97,5 +108,54 @@
   "searchResultsTitle": "Tulokset ({{count}})",
   "searchResultPage": "Sivu {{page}}",
   "searchHitsOne": "1 osuma",
-  "searchHitsMany": "{{count}} osumaa"
+  "searchHitsMany": "{{count}} osumaa",
+  "passwordProtectedBar": "Suojattu salasanalla: avattu vain luku -tilassa.",
+  "documentSearch": {
+    "title": "Hae asiakirjoista",
+    "query": "Hakuteksti",
+    "scope": "Hae kohteesta",
+    "active": "Nykyinen asiakirja",
+    "open": "Avoimet asiakirjat",
+    "folder": "Kansio",
+    "choose": "Valitse kansio",
+    "annotations": "Sisällytä kommentit",
+    "search": "Hae",
+    "cancel": "Peruuta",
+    "stale": "Asiakirja on muuttunut. Suorita haku uudelleen.",
+    "folderHint": "Hakee tämän kansion PDF-tiedostoista suoraan avaamatta välilehtiä tai muuttamatta tiedostoja.",
+    "limited": "Tulosraja saavutettu. Tarkenna hakua.",
+    "cancelled": "Haku peruutettu; tulokset ovat puutteellisia.",
+    "ocrHint": "Ei haettavaa tekstiä sivuilla {{pages}}. Avaa asiakirja ja suorita OCR tarvittaessa erikseen.",
+    "status": {
+      "searching": "Haetaan",
+      "complete": "Valmis",
+      "needs_ocr": "Sisältää sivuja ilman haettavaa tekstiä",
+      "encrypted": "Salasana vaaditaan",
+      "unreadable": "Hakua ei voitu suorittaa",
+      "changed": "Asiakirja muuttunut; hae uudelleen",
+      "cancelled": "Peruutettu",
+      "limited": "Tulosraja saavutettu"
+    },
+    "failed": "Haku epäonnistui. Tarkista hakulauseke ja kansio ja yritä uudelleen.",
+    "prepareOcr": "Avaa OCR:ää varten…"
+  },
+  "symbolSearch": "Etsi symboleja",
+  "findMoreOptions": "Lisää hakuasetuksia",
+  "watchActive": "Valvotaan: {{folder}}",
+  "watchFailed": "Valvontavirhe: {{folder}}",
+  "watchTitle": "Asiakirjatyönkulku valvoo kohdetta {{input}} ja kirjoittaa kohteeseen {{output}}. Lopeta valvonta napsauttamalla.",
+  "renderDiagnostics": {
+    "title": "Siirry seuraavaan piirtohavaintoon. Havaintojen puuttuminen ei takaa täydellistä piirtoa.",
+    "count": "Piirtohavainnot: {{count}}",
+    "detail": "Sivu {{page}}: {{code}}. Kokeile pienempää zoomausta tai avaa asiakirja uudelleen; täydellisyyttä ei taata."
+  },
+  "mcpSignal": {
+    "label": "Tekoälyyhteys (MCP)",
+    "connected": "Tekoälyavustaja yhdistetty",
+    "idle": "MCP-palvelin päällä, joutilaana",
+    "off": "MCP-palvelin pois päältä",
+    "port": "Portti: {{port}}",
+    "lastTool": "Viimeisin työkalu: {{tool}} klo {{time}}",
+    "noTool": "Ei vielä työkalukutsuja"
+  }
 }

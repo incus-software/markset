@@ -17,8 +17,8 @@ test('a text box\'s text style becomes the default; other types are left alone',
 test('the hooks are in place: save, apply, new text box and callout, button', () => {
   const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
   const prefs = read('../js/core/preferences.js');
-  assert.match(prefs, /saveTextStyleDefault\(prefs, annotation\);/);
-  assert.match(prefs, /Object\.assign\(annotation, textStyleDefault\(prefs, annotation\.type\)\);/);
+  assert.match(prefs, /saveTextStyleDefault\(state\.preferences, annotation\);/);
+  assert.match(prefs, /Object\.assign\(annotation, textStyleDefault\(prefs, styleTypeOf\(annotation\)\)\);/);
   const ac = read('../js/tools/annotation-creators.js');
   assert.match(ac, /\.\.\.textStyleDefault\(prefs, 'textbox'\)/);
   assert.match(ac, /\.\.\.textStyleDefault\(prefs, 'callout'\)/);

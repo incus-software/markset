@@ -1,5 +1,8 @@
 // Pure rekenregels achter het importvenster voor DWG en DXF (#400). Geen
-// imports uit de app, zodat de unit-tests ze onder node kunnen draaien.
+// imports uit de app (alleen de pure getalparser), zodat de unit-tests ze
+// onder node kunnen draaien.
+
+import { leesGetal } from '../core/getal-invoer.js';
 
 // Markset: us-units.js is dependency-free too.
 import { US_CAD_FORMATS } from '../../markset/us-units.js';
@@ -551,7 +554,7 @@ export function kleurTekst(waarde) {
 export function pendikte(waarde) {
   if (typeof waarde !== 'number' && typeof waarde !== 'string') return null;
   if (typeof waarde === 'string' && !waarde.trim()) return null;
-  const mm = Number(typeof waarde === 'string' ? waarde.trim().replace(',', '.') : waarde);
+  const mm = typeof waarde === 'string' ? leesGetal(waarde) : waarde;
   return Number.isFinite(mm) && mm >= 0 && mm <= MAX_PENDIKTE_MM ? mm : null;
 }
 
