@@ -7,6 +7,9 @@ import { useTranslation, localizeNumber, language } from '../../i18n/useTranslat
 import { isTauri } from '../../core/platform.js';
 import { mcpIndicator, mcpSignaalInfo, startMcpSignaal } from '../stores/mcpSignaalStore.js';
 import { mcpTooltip } from '../../core/mcp-signaal.js';
+// Markset
+import { titleWithShortcut } from '../../core/keybindings/labels.js';
+import { sneltoetsVoor } from '../stores/keybindingStore.js';
 
 // All page navigation goes through goToPage() so the side effects
 // (active thumbnail update, hide properties, fire events) happen in one
@@ -95,6 +98,18 @@ async function handleZoomIn() {
 async function handleZoomOut() {
   const { zoomOut } = await import('../../pdf/renderer.js');
   zoomOut();
+}
+
+// Markset
+async function handleFitPage() {
+  const { fitPage } = await import('../../pdf/renderer.js');
+  fitPage();
+}
+
+// Markset
+async function handleFitWidth() {
+  const { fitWidth } = await import('../../pdf/renderer.js');
+  fitWidth();
 }
 
 async function handleZoomInput(e) {
@@ -332,6 +347,21 @@ export default function StatusBar() {
             <button class="status-nav-btn" tabIndex={-1} title={t('zoomIn')} onClick={handleZoomIn}>
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+            </button>
+
+            {/* Markset: Fit Page and Fit Width beside the zoom, one click away. */}
+            <button class="status-nav-btn" id="status-fit-page" tabIndex={-1}
+              title={titleWithShortcut(t('ribbon:home.fitPage'), sneltoetsVoor('view.fitPage'))} onClick={handleFitPage}>
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="7" y="5" width="10" height="14" rx="1"/>
+                <path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/>
+              </svg>
+            </button>
+            <button class="status-nav-btn" id="status-fit-width" tabIndex={-1}
+              title={titleWithShortcut(t('ribbon:home.fitWidth'), sneltoetsVoor('view.fitWidth'))} onClick={handleFitWidth}>
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 4v16M21 4v16M7 12h10M9 9l-3 3 3 3M15 9l3 3-3 3"/>
               </svg>
             </button>
           </div>
