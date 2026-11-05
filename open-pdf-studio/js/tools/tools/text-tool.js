@@ -4,7 +4,9 @@ import { huidigeSymboolSchaal } from '../../symbols/symbol-scale-store.js';
 import { symbolInsertPreviewStyle } from '../../symbols/symbol-insert-format-store.js';
 import { stampPxPerMm } from '../../annotations/stamp-scale.js';
 import { getActiveDocument } from '../../core/state.js';
-import { zetRechtopRond } from '../../pdf/weergave-ruimte.js';
+import { zetRechtopRond, paginaMaat } from '../../pdf/weergave-ruimte.js';
+// Markset
+import { withSheetHeight } from '../../../markset/library/sizing.js';
 import { blendCanvasWaarde } from '../../annotations/blend-modes.js';
 
 /**
@@ -77,7 +79,8 @@ export const stampTool = {
     // de gekozen symboolschaal uit het palet (issue #357).
     const ov = state.toolOverrides;
     const page = getActiveDocument()?.currentPage || 1;
-    const { width: w, height: h } = overrideStampMaat(ov, {
+    // Markset: sized to the sheet, as placeOverrideStamp does.
+    const { width: w, height: h } = overrideStampMaat(withSheetHeight(ov, paginaMaat(page, getActiveDocument())), {
       pxPerMm: stampPxPerMm(page, ctx.x, ctx.y),
       aspect: previewImg.naturalWidth / previewImg.naturalHeight,
       schaal: huidigeSymboolSchaal(),
