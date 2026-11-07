@@ -115,7 +115,7 @@
       "endpoints": [
         "https://usemarkset.com/updates/latest.json"
       ],
-      "pubkey": "MARKSET_UPDATER_PUBKEY_NOT_SET"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNGNDJDNjA1RDc5NENDREMKUldUY3pKVFhCY1pDUDA1b29obzJqOUFCMitBS2xNOVByZ2tlSXBVVldVWjlZRlU5K1p1SHFmcmQK"
     },
     "deep-link": {
       "mobile": [
