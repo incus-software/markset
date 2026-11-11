@@ -9,9 +9,9 @@ register('../js/core/app-test-hooks.mjs', import.meta.url);
 const { installeerBrowserStubs } = await import('../js/core/app-test-hooks.mjs');
 installeerBrowserStubs();
 
-const { buildTextModel } = await import('../js/annotations/corrections/text-model.js');
+const { buildTextModel, hitTest } = await import('../js/annotations/corrections/text-model.js');
 const {
-  highlightProps, highlightStyle, wordAt, cleanText, noteText, hasText,
+  highlightProps, highlightStyle, wordAt, cleanText, noteText, hasText, ocrTextItems,
   TEXT_HIGHLIGHTER_TOOL, DEFAULT_HIGHLIGHT_COLOR, registerTextHighlighter,
 } = await import('./text-highlighter.js');
 const { getTool } = await import('../js/tools/tool-registry.js');
@@ -63,6 +63,31 @@ test('with snapWords a drag that starts or ends inside a word takes the whole wo
   // ends on spaces are dropped, edges already on a word boundary stay
   assert.equal(highlightProps(model, 3, 15, { page: 1, snapWords: true }).markedText, 'contractor');
   assert.equal(highlightProps(model, 3, 4, { page: 1, snapWords: true }), null, 'only a space');
+});
+
+test('OCR words from a scan make a text model: lines, spaces and boxes', () => {
+  // Tesseract boxes in points, top-left origin; "shop" is taller (descender).
+  const words = [
+    { text: 'submit', left: 72, top: 100, width: 40, height: 10 },
+    { text: 'all', left: 115, top: 100, width: 15, height: 10 },
+    { text: 'shop', left: 133, top: 100, width: 28, height: 12.5 },
+    { text: 'drawings', left: 72, top: 116, width: 50, height: 12.5 },
+    { text: ' ', left: 130, top: 116, width: 3, height: 10 },
+    { text: 'late', left: 0, top: 0, width: 0, height: 10 },
+  ];
+  const items = ocrTextItems(words);
+  assert.equal(items.length, 4, 'blank and zero-width words are dropped');
+  const ocr = buildTextModel(items);
+  assert.equal(ocr.lines.length, 2);
+  const all = highlightProps(ocr, 0, 10_000, { page: 1 });
+  assert.equal(all.markedText, 'submit all shop drawings');
+  assert.equal(all.rects.length, 2);
+  const [r1] = all.rects;
+  assert.ok(Math.abs(r1.x - 72) < 0.01 && Math.abs(r1.y - 100) < 0.01, 'rect starts at the first word box');
+  assert.ok(Math.abs(r1.x + r1.width - 161) < 0.01, 'and ends at the last word of the line');
+  // A click inside "all" finds it.
+  const w = wordAt(ocr, hitTest(ocr, 120, 105));
+  assert.equal(highlightProps(ocr, w.start, w.end, { page: 1 }).markedText, 'all');
 });
 
 test('color and opacity follow the Highlight preferences', () => {

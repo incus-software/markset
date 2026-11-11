@@ -99,6 +99,28 @@ export function noteText(s) {
   return typeof s === 'string' ? s.replace(/\r\n?/g, '\n').trim() : '';
 }
 
+/**
+ * OCR words ({ text, left, top, width, height } in points, top-left origin,
+ * y down: the app's page space) as text items for buildTextModel with no
+ * transform: each word a run on its own baseline, the box from ascent to
+ * descent. Lines and the spaces between words come from their positions.
+ */
+export function ocrTextItems(words) {
+  return (words || [])
+    .filter((w) => w && typeof w.text === 'string' && w.text.trim() && w.width > 0 && w.height > 0)
+    .map((w) => {
+      const h = Number(w.height);
+      return {
+        str: w.text.trim(),
+        width: Number(w.width),
+        height: h,
+        // Font size h, text up = -y; baseline at the bottom of the ascent.
+        transform: [h, 0, 0, -h, Number(w.left), Number(w.top) + 0.8 * h],
+        hasEOL: false,
+      };
+    });
+}
+
 // ── The tool (browser only) ────────────────────────────────────────────────
 
 const S = { page: null, model: null, anchor: null, focus: null, dragging: false, note: null };
@@ -106,7 +128,29 @@ const models = new Map(); // key -> promise of the page's text model
 const ready = new Map();  // key -> the model, once loaded
 let A = null;             // the app modules, once loaded
 
-function modelKey(doc, page, rotation) { return `${doc.id}|${page}|${rotation}`; }
+// The PDF a model was read from: saving after OCR reloads the document with
+// new bytes (a new pdfDoc), and its text must be read again.
+const pdfIds = new WeakMap();
+let nextPdfId = 1;
+function pdfId(pdf) {
+  if (!pdf || typeof pdf !== 'object') return 0;
+  if (!pdfIds.has(pdf)) pdfIds.set(pdf, nextPdfId++);
+  return pdfIds.get(pdf);
+}
+
+function modelKey(doc, page, rotation) { return `${doc.id}|${pdfId(doc.pdfDoc)}|${page}|${rotation}`; }
+
+// Text models built from unsaved OCR words, per words array.
+const ocrModels = new WeakMap();
+/** The text model of a page from its OCR words (doc.ocrResults), or null. */
+function ocrModel(a, doc, page) {
+  const words = doc?.ocrResults?.[page];
+  // OCR words are in the page's own orientation; with an extra view
+  // rotation they would not line up, so they wait for a save then.
+  if (!Array.isArray(words) || !words.length || (a.getPageRotation?.(page) || 0) !== 0) return null;
+  if (!ocrModels.has(words)) ocrModels.set(words, buildTextModel(ocrTextItems(words)));
+  return ocrModels.get(words);
+}
 
 let measureCtx = null;
 function measurer(styles) {
@@ -268,9 +312,12 @@ function makeTool() {
     onPointerDown(ctx, e) {
       if (e.button !== 0) return;
       if (S.note) closeNote(true);
-      const start = (a, doc, model) => {
+      const start = (a, doc, pdfModel) => {
+        // A scan has no text in the file; words from Recognize Text (OCR)
+        // that are not saved yet stand in for it.
+        const model = hasText(pdfModel) ? pdfModel : ocrModel(a, doc, ctx.pageNum);
         if (!hasText(model)) {
-          a.updateStatusMessage('No text on this page to highlight. For a scan, run Recognize Text (OCR) first.', 7000);
+          a.updateStatusMessage('No text on this page to highlight. For a scan, run Recognize Text (OCR) on the Edit & Combine tab first.', 7000);
           return;
         }
         const g = hitTest(model, ctx.x, ctx.y);
