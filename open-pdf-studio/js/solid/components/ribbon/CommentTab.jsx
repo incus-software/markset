@@ -31,7 +31,12 @@ import { isDynamicScalingEnabled, setDynamicScalingEnabled } from '../../../anno
 import PrefSelect from '../preferences/PrefSelect.jsx';
 import { registerMarksetScaleTools, openSetScale, startCalibrate, CALIBRATE_TOOL } from '../../../../markset/scale-tools.js'; // Markset
 
+import { registerTextHighlighter, TEXT_HIGHLIGHTER_TOOL } from '../../../../markset/text-highlighter.js'; // Markset
+
 registerMarksetScaleTools(); // Markset: the Calibrate tool
+registerTextHighlighter(); // Markset: the Text Highlighter
+// Markset: a highlighter pen over a line of text.
+const highlightTextIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="15.5" width="20" height="6" fill="#FFE600" stroke="none" opacity=".75"/><path stroke-width="1.5" stroke-linejoin="round" d="M14.5 3.5l4 4-7 7H7.5v-4z"/><path stroke-width="1.5" d="M7.5 14.5L5 17h4"/><line x1="3" y1="19.5" x2="21" y2="19.5" stroke-width="1.2"/></svg>`;
 const setScaleIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="8" rx="1" stroke-width="1.5"/><path stroke-width="1.2" d="M6 8v3m3-3v4.5M12 8v3m3-3v4.5M18 8v3"/></svg>`; // Markset
 import { toggleProofreading, PROOFREAD_TOOL } from '../../../tools/proofreading-mode.js';
 
@@ -59,6 +64,10 @@ export function CommentGroups() {
         <RibbonGroup label={t('comment.drawing')}>
           <RibbonButton id="tool-highlight" title={t('comment.highlight')} icon={highlightIcon} label={t('comment.highlight')}
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'highlight'} onClick={() => setTool('highlight')} />
+          {/* Markset: highlight text and add a note to it (markset/text-highlighter.js) */}
+          <RibbonButton id="tool-highlight-text" title="Highlight Text: drag across text or double-click a word, then type a note and press Enter, or press Esc to skip it."
+            icon={highlightTextIcon} label="Highlight Text"
+            disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === TEXT_HIGHLIGHTER_TOOL} onClick={() => setTool(TEXT_HIGHLIGHTER_TOOL)} />
         </RibbonGroup>
 
         <RibbonGroup label={t('comment.text')}>
