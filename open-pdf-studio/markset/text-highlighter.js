@@ -290,6 +290,23 @@ export function closeNote(keep) {
   import('../js/ui/panels/properties-panel.js').then((m) => m.showProperties?.(ann)).catch(() => {});
 }
 
+// A page without text is almost always a scan. The first time per document
+// the Recognize Text (OCR) dialog opens right away, since a status bar note
+// is easy to miss; after a Cancel only the note shows.
+const ocrOffered = new Set();
+function noTextOnPage(a, doc) {
+  const desktop = typeof window !== 'undefined' && !!window.__TAURI__;
+  if (desktop && doc?.id != null && !ocrOffered.has(doc.id)) {
+    ocrOffered.add(doc.id);
+    a.updateStatusMessage('This page is a scan with no text yet. Recognize its text, then highlight.', 7000);
+    import('../js/solid/stores/dialogStore.js')
+      .then((m) => m.openDialog('ocr-language', { totalPages: doc.pdfDoc?.numPages }))
+      .catch(() => {});
+    return;
+  }
+  a.updateStatusMessage('No text on this page to highlight. For a scan, run Recognize Text (OCR) on the Edit & Combine tab first.', 7000);
+}
+
 function makeTool() {
   return {
     name: TEXT_HIGHLIGHTER_TOOL,
@@ -317,7 +334,7 @@ function makeTool() {
         // that are not saved yet stand in for it.
         const model = hasText(pdfModel) ? pdfModel : ocrModel(a, doc, ctx.pageNum);
         if (!hasText(model)) {
-          a.updateStatusMessage('No text on this page to highlight. For a scan, run Recognize Text (OCR) on the Edit & Combine tab first.', 7000);
+          noTextOnPage(a, doc);
           return;
         }
         const g = hitTest(model, ctx.x, ctx.y);
