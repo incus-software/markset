@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundledGroups, symbolForShortcut } from './bundle.js';
-import { sheetSymbolHeight, MIN_HEIGHT_IN } from './sizing.js';
+import { sheetSymbolHeight, MIN_HEIGHT_IN, withSheetHeight } from './sizing.js';
 import { isSafeSymbolSvg } from '../../js/solid/data/symbolLibraryOnline.js';
 import { svgToPdfAppearance, helveticaWidth } from '../svg-to-pdf.js';
 
@@ -129,6 +129,24 @@ test('sheet-relative height: 3/8" on 24x36, scaled down on smaller sheets', () =
   assert.equal(sheetSymbolHeight(0.375, pt(8.5), pt(11)), MIN_HEIGHT_IN * 72);
   assert.equal(sheetSymbolHeight(0, 612, 792), null);
   assert.equal(sheetSymbolHeight(0.375, 0, 792), null);
+});
+
+test('the ghost under the cursor and the placed stamp take the same sheet height', () => {
+  const ov = { stampSvg: '<svg/>', stampHeight: 400, stampPaperHeightIn: 0.375 };
+  assert.equal(withSheetHeight(ov, { breedte: 2592, hoogte: 1728 }).stampHeight, 27);
+  assert.equal(withSheetHeight(ov, null), ov, 'page size unknown: unchanged');
+  assert.equal(withSheetHeight({ stampHeight: 400 }, { breedte: 2592, hoogte: 1728 }).stampHeight, 400);
+  for (const file of ['../../js/tools/tools/text-tool.js', '../../js/annotations/stamps.js']) {
+    assert.match(readFileSync(join(here, file), 'utf8'), /overrideStampMaat\(withSheetHeight\(/, file);
+  }
+});
+
+test('smart symbols show a ghost while hovering, built like the click placement', () => {
+  const shape = readFileSync(join(here, '../../js/tools/tools/shape-tool.js'), 'utf8');
+  assert.match(shape, /!state\.isDrawing && state\.currentTool === 'parametricSymbol'[\s\S]{0,80}drawSmartSymbolGhost\(/);
+  const ghost = readFileSync(join(here, '../smart/hover-ghost.js'), 'utf8');
+  assert.match(ghost, /build\(tool, x, y, x, y, e\)/, 'a zero-size drag = the click size');
+  assert.match(ghost, /snap\.snapped \? snap\.x : ctx\.snapToGrid\(x\)/, 'snaps like the click');
 });
 
 test('US Electrical: its own group after the Starter Library, 22 black symbols', () => {
