@@ -110,6 +110,7 @@ export const RIBBON_COMMANDS = Object.freeze([
   {"id":"dr-coll-create","tab":"drawing","labelKey":"ribbon:drawing.collectionCreate"},
   {"id":"dr-coll-explode","tab":"drawing","labelKey":"ribbon:drawing.collectionExplode"},
   {"id":"tool-highlight","tab":"comment","labelKey":"ribbon:comment.highlight"},
+  {"id":"tool-highlight-text","tab":"comment","label":"Highlight Text"},
   {"id":"tool-text","tab":"comment","label":"Text"},
   {"id":"tool-textbox","tab":"comment","labelKey":"ribbon:comment.textBox"},
   {"id":"tool-callout","tab":"comment","labelKey":"ribbon:comment.callout"},

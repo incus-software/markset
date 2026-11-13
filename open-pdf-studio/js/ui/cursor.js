@@ -50,6 +50,7 @@ function _toolCursor(tool) {
     case 'selectComments': return 'text';
     case 'hand':           return 'grab';
     case 'text':
+    case 'marksetTextHighlighter': // Markset: Text Highlighter
     case 'editText':       return 'text';
     default: {
       const t = getAnnotationType(tool);

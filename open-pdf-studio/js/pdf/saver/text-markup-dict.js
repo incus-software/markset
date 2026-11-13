@@ -119,6 +119,11 @@ export function buildTextMarkupDict(context, ann, map, { opacity, pageRot = 0, r
   if (markupSubtype !== 'Highlight' && ann.lineWidth > 0) {
     dict.set(PDFName.of('OPS_LineWidth'), PDFNumber.of(ann.lineWidth));
   }
+  // Markset: the highlighted words (Text Highlighter), read back by the loader
+  // like a correction's /OPS_MarkedText.
+  if (typeof ann.markedText === 'string' && ann.markedText) {
+    dict.set(PDFName.of('OPS_MarkedText'), pdfTextString(ann.markedText));
+  }
   dict.set(PDFName.of('AP'), context.obj({ N: apRef }));
   return dict;
 }
