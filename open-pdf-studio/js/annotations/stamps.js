@@ -13,7 +13,7 @@ import { stampPxPerMm } from './stamp-scale.js';
 import { rasterizeSvg } from './svg-raster.js';
 import { AFBEELDING_EXTENSIES } from './afbeelding-bron.js';
 import { paginaMaat, rechtopRotatie } from '../pdf/weergave-ruimte.js';
-import { sheetSymbolHeight } from '../../markset/library/sizing.js'; // Markset
+import { withSheetHeight } from '../../markset/library/sizing.js'; // Markset
 
 // Built-in stamp definitions
 // (in stamp-defaults.js, zodat ook de loader ze kan lezen)
@@ -128,9 +128,7 @@ export async function placeOverrideStamp(x, y) {
     // Zelfde berekening als de spookafbeelding van het stempelgereedschap
     // (tools/text-tool.js), inclusief de gekozen symboolschaal (#357).
     // Markset: Starter Library symbols are sized to the sheet (3/8" on 24x36).
-    const sheetH = sheetSymbolHeight(overrides.stampPaperHeightIn,
-      paginaMaat(page, getActiveDocument())?.breedte, paginaMaat(page, getActiveDocument())?.hoogte);
-    const size = overrideStampMaat(sheetH ? { ...overrides, stampHeight: sheetH } : overrides, {
+    const size = overrideStampMaat(withSheetHeight(overrides, paginaMaat(page, getActiveDocument())), {
       pxPerMm: stampPxPerMm(page, x, y),
       aspect,
       schaal: huidigeSymboolSchaal(),

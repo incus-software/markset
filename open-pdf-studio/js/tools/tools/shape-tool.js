@@ -6,6 +6,8 @@
 import { isKlikSleep } from '../../annotations/minimummaat.js';
 import { weergaveVectorNaarPagina } from '../../pdf/weergave-ruimte.js';
 import { PLAIN_TEXT_TOOL, PLAIN_TEXT_CLICK_WIDTH, PLAIN_TEXT_FONT_SIZE, plainTextLineHeight } from '../../../markset/plain-text.js'; // Markset
+// Markset
+import { drawSmartSymbolGhost } from '../../../markset/smart/hover-ghost.js';
 import { state as appState, getActiveDocument } from '../../core/state.js';
 import { updateStatusMessage } from '../../ui/chrome/status-bar.js';
 import i18next from '../../i18n/config.js';
@@ -152,6 +154,12 @@ export const shapeTool = {
       state.startX = _callout.punt.x;
       state.startY = _callout.punt.y;
       ctx.drawShapePreview(snap.snapped ? snap.x : x, snap.snapped ? snap.y : y, e);
+      return;
+    }
+
+    // Markset: a smart symbol shows where and how big a click places it.
+    if (!state.isDrawing && state.currentTool === 'parametricSymbol') {
+      drawSmartSymbolGhost(ctx, x, y, e);
       return;
     }
 
