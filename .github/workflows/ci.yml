@@ -40,8 +40,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust 1.99.1
+        # Markset: pinned until the build script and test step follow Rust 1.100's new Cargo build layout
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
 
       - name: Install Rust targets (macOS universal)
         if: matrix.platform == 'macos-26'
