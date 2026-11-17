@@ -11,6 +11,7 @@ import { registerToolPalette, unregisterToolPalette, getPalette } from './palett
 import { registerPropertyPanel as _registerPropertyPanel, unregisterPropertyPanel as _unregisterPropertyPanel, hasPropertyPanel } from './property-panel-registry.js';
 import { createSmartSymbolApi } from '../../markset/plugin-smart-api.js'; // Markset
 import { createReviewApi } from '../../markset/plugin-review-api.js'; // Markset
+import { createFilePickApi } from '../../markset/plugin-file-pick.js'; // Markset
 import {
   registerSelectionListener as _registerSelectionListener,
   unregisterSelectionListener as _unregisterSelectionListener,
@@ -250,6 +251,11 @@ export function createPluginApi(pluginId) {
   const registeredSelectionListeners = []; // [{typeName, fn}]
   const smartSymbolApi = createSmartSymbolApi(); // Markset: templates and Toolpalette groups
   const reviewApi = createReviewApi({ getActiveDocument }); // Markset: review tools
+  // Markset: many files at once and a folder (the app's own dialogs, loaded when used)
+  const filePickApi = createFilePickApi({
+    openFileDialog: async (exts, opts) => (await import('../core/platform.js')).openFileDialog(exts, opts),
+    openFolderDialog: async (title) => (await import('../core/platform.js')).openFolderDialog(title),
+  });
   const registeredProTools = []; // Markset
   const documentListeners = new Map();
   let viewNavigation = null;
@@ -323,6 +329,7 @@ export function createPluginApi(pluginId) {
       pluginDocumentEvents: true,
       smartSymbols: true, // Markset: registerParametricTemplate, registerSymbolCategory
       filePaths: true, // Markset: pickFilePath, readFileAt, writeFileAt
+      multiFilePick: true, // Markset: pickFilePaths, pickFolderPath
       reviewTools: true, // Markset: showAnnotation, getSelectedAnnotations, setToolStyle, openDocument
       proTools: true, // Markset: api.registerProTool(...)
       renderPdf: true, // Markset: api.renderPdf(bytes, { page, scale })
@@ -353,6 +360,9 @@ export function createPluginApi(pluginId) {
 
     // --- Markset: review tools (markset/plugin-review-api.js) ---
     ...reviewApi,
+
+    // --- Markset: file and folder pickers (markset/plugin-file-pick.js) ---
+    ...filePickApi,
 
     // --- Annotation type registration ---
     registerAnnotationType(typeName, handler) {
