@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proTools, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS } from './pro-tools.js';
+import { proTools, proSections, PRO_SECTIONS, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS } from './pro-tools.js';
 
 test('Pro tools are listed greyed out until the plugin turns them on', () => {
   const before = proTools();
@@ -33,4 +33,29 @@ test('plugins can add tools beyond the placeholders, and must give an action', (
 
 test('upsell message names the tool', () => {
   assert.match(proUpsellMessage({ label: 'Seal', description: 'Place it.' }), /Seal is part of Markset Pro/);
+});
+
+test('tools are listed under their sections, in a fixed order, with unnamed ones under More', () => {
+  const offs = [
+    registerProTool({ id: 'case-file', section: 'Expert Witness', label: 'Case file', onClick() {} }),
+    registerProTool({ id: 'revisions', section: 'Construction Admin', label: 'Revisions', onClick() {} }),
+    registerProTool({ id: 'old-plugin-tool', label: 'Old tool', onClick() {} }),
+    registerProTool({ id: 'mine', section: 'My Section', label: 'Mine', onClick() {} }),
+  ];
+  const sections = proSections();
+  assert.deepEqual(sections.map((s) => s.name),
+    ['Review & Seal', 'Construction Admin', 'Expert Witness', 'General', 'My Section', 'More']);
+  assert.deepEqual(sections[0].tools.map((t) => t.id).slice(0, 2), ['review-stamp', 'seal']);
+  assert.deepEqual(sections.find((s) => s.name === 'Expert Witness').tools.map((t) => t.id), ['case-file']);
+  assert.deepEqual(sections.at(-1).tools.map((t) => t.id), ['old-plugin-tool']);
+  offs.forEach((off) => off());
+  // Without the plugin, only the placeholders' sections.
+  assert.deepEqual(proSections().map((s) => s.name), ['Review & Seal', 'General']);
+  assert.deepEqual(PRO_SECTIONS.slice(0, 3), ['Review & Seal', 'Construction Admin', 'Expert Witness']);
+});
+
+test('a plugin can move a placeholder tool to another section', () => {
+  const off = registerProTool({ id: 'firm-kit', section: 'Review & Seal', onClick() {} });
+  assert.ok(proSections()[0].tools.some((t) => t.id === 'firm-kit'));
+  off();
 });
