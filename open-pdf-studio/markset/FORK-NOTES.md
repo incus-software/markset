@@ -93,3 +93,4 @@ working notes for keeping the fork mergeable.
 - [ ] Place on Pages: check that rotated pages (/Rotate 90) place in the right corner.
 - [ ] Compare: one change list for drawing and text changes; translate the new compare strings (other locales still describe red/green); compare whole sets page by page.
 - [ ] Symbol palette: upstream groups without a country tag (e.g. "NL Elektra") still show when the country is US; the IFC category field shows Dutch descriptions.
+- [ ] CI is pinned to Rust 1.99.1 (ci.yml, markset-windows.yml, render-regression.yml). Rust 1.100 moved Cargo's build output: src-tauri's build script copies pdfium-worker from a path that is now a folder (macOS fails), and markset-windows.yml looks for test executables in target/rust-tests/debug/deps. Update both, then go back to stable.
