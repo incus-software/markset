@@ -15,14 +15,11 @@ fn main() {
 
     // De worker staat in DEZELFDE target-directory als deze app-build. Bij een
     // gezette CARGO_TARGET_DIR (test-rig) is dat NIET `../../target`, dus leiden
-    // we het pad af van OUT_DIR: `<target>/<profiel>/build/<crate>-<hash>/out`.
-    // Drie niveaus omhoog vanaf OUT_DIR geeft de `<profiel>`-map waar de worker
-    // ligt — ongeacht CARGO_TARGET_DIR of een cross-target-subpad.
+    // we het pad af van OUT_DIR (zie profile_dir_from_out_dir): de `<profiel>`-map
+    // waar de worker ligt — ongeacht CARGO_TARGET_DIR of een cross-target-subpad.
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Ok(out_dir) = std::env::var("OUT_DIR") {
-        if let Some(profile_dir) = std::path::Path::new(&out_dir).ancestors().nth(3) {
-            candidates.push(profile_dir.join(&worker_name));
-        }
+    if let Some(profile_dir) = profile_dir_from_out_dir() {
+        candidates.push(profile_dir.join(&worker_name));
     }
     // Terugval: de klassieke workspace-target-map (geen CARGO_TARGET_DIR).
     candidates.push(
@@ -31,7 +28,7 @@ fn main() {
 
     let dst = std::path::PathBuf::from("binaries")
         .join(format!("pdfium-worker-{}{}", target, exe_suffix));
-    if let Some(src) = candidates.iter().find(|p| p.exists()) {
+    if let Some(src) = candidates.iter().find(|p| p.is_file()) {
         println!("cargo:rerun-if-changed={}", src.display());
         let _ = std::fs::create_dir_all("binaries");
         if let Err(e) = std::fs::copy(src, &dst) {
@@ -55,16 +52,14 @@ fn main() {
     if target.contains("windows") {
         let naam = "open_pdf_thumbnails.dll";
         let mut bronnen: Vec<std::path::PathBuf> = Vec::new();
-        if let Ok(out_dir) = std::env::var("OUT_DIR") {
-            if let Some(profile_dir) = std::path::Path::new(&out_dir).ancestors().nth(3) {
-                bronnen.push(profile_dir.join(naam));
-            }
+        if let Some(profile_dir) = profile_dir_from_out_dir() {
+            bronnen.push(profile_dir.join(naam));
         }
         bronnen.push(std::path::PathBuf::from("../../target").join(&profile).join(naam));
         let doel = std::path::PathBuf::from("binaries").join("open-pdf-thumbnails.dll");
         let gewijzigd = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
         let _ = std::fs::create_dir_all("binaries");
-        if let Some(bron) = bronnen.iter().find(|p| p.exists()) {
+        if let Some(bron) = bronnen.iter().find(|p| p.is_file()) {
             println!("cargo:rerun-if-changed={}", bron.display());
             let verouderd = match (gewijzigd(bron), gewijzigd(&doel)) {
                 (Some(b), Some(d)) => b > d,
@@ -129,4 +124,18 @@ fn main() {
     }
 
     tauri_build::build();
+}
+
+/// De `<profiel>`-map van deze build (waar het npm-voorscript de worker en de
+/// miniatuur-DLL neerzet), afgeleid van OUT_DIR. Cargo vóór 1.100:
+/// `<profiel>/build/<crate>-<hash>/out`; vanaf 1.100:
+/// `<profiel>/build/<crate>/<hash>/out`. Dus niet een vast aantal niveaus
+/// omhoog, maar de ouder van de dichtstbijzijnde map `build`.
+fn profile_dir_from_out_dir() -> Option<std::path::PathBuf> {
+    let out_dir = std::env::var("OUT_DIR").ok()?;
+    let out = std::path::Path::new(&out_dir);
+    out.ancestors()
+        .find(|p| p.file_name().map_or(false, |n| n == "build"))
+        .and_then(|b| b.parent())
+        .map(|p| p.to_path_buf())
 }

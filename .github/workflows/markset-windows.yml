@@ -28,10 +28,7 @@ jobs:
           cache: npm
           cache-dependency-path: open-pdf-studio/package-lock.json
 
-      # Markset: pinned until the build script and test step follow Rust 1.100's new Cargo build layout
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.99.1
+      - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
@@ -70,7 +67,10 @@ jobs:
       # Test binaries have no embedded manifest, so Windows would not give them
       # Common Controls v6, which Tauri's dialogs import; they would stop at
       # start-up with 0xc0000139. Build them first, put
-      # .github/test-binary.manifest next to each one, then run them.
+      # .github/test-binary.manifest next to each one, then run them. Cargo
+      # reports where each test binary is (--message-format=json), so this
+      # does not depend on its folder layout (Rust 1.100 moved them out of
+      # debug/deps).
       # The two screenshot tests need a PDFium library the test binary cannot
       # find; they are skipped.
       - name: Rust tests
@@ -80,9 +80,14 @@ jobs:
           RUSTFLAGS: -C target-feature=-crt-static
           CARGO_TARGET_DIR: target/rust-tests
         run: |
-          cargo test --no-run -p open-pdf-studio -p open-pdf-cad
+          $messages = cargo test --no-run --message-format=json -p open-pdf-studio -p open-pdf-cad
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          Get-ChildItem target/rust-tests/debug/deps/*.exe | ForEach-Object {
-            Copy-Item .github/test-binary.manifest "$($_.FullName).manifest" -Force
+          $tests = $messages | ForEach-Object { $_ | ConvertFrom-Json } |
+            Where-Object { $_.reason -eq 'compiler-artifact' -and $_.executable } |
+            ForEach-Object { $_.executable }
+          if (-not $tests) { Write-Error 'cargo reported no test binaries'; exit 1 }
+          foreach ($exe in $tests) {
+            Copy-Item .github/test-binary.manifest "$exe.manifest" -Force
           }
+          Write-Host "Manifest added to $(@($tests).Count) test binaries"
           cargo test -p open-pdf-studio -p open-pdf-cad -- --skip mcp_server::tests::tool_screenshot

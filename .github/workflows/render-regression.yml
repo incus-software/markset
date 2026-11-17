@@ -50,10 +50,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Markset: pinned until the build script and test step follow Rust 1.100's new Cargo build layout
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.99.1
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Restore cargo registry + target
         id: cargo-cache
