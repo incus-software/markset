@@ -2,7 +2,8 @@
 //
 // The group always lists the Pro tools. Without the Markset Pro plugin they
 // are shown greyed out; clicking one explains that it is part of Markset Pro.
-// The plugin turns a tool on with api.registerProTool({ id, ... }).
+// The plugin turns a tool on with api.registerProTool({ id, ... }), and can
+// give it a section ("Expert Witness") to list it under that heading.
 import { createSignal } from 'solid-js';
 
 const SEAL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="6.5"/><path d="M6.5 15c1.5-3 2.5-3 3 0s1.5 3 3 0 2-3 3 0" stroke-linecap="round"/></svg>';
@@ -15,16 +16,20 @@ const SETUP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 
 /** The Pro tools, in palette order, as shown before the plugin turns them on. */
 export const PRO_TOOL_PLACEHOLDERS = [
-  { id: 'review-stamp', label: 'Review stamp', icon: STAMP_ICON, description: 'Build your firm\'s shop drawing review stamp once, then place it with one click, filled in and added to your submittal log.' },
-  { id: 'seal', label: 'Seal', icon: SEAL_ICON, description: 'Place your seal at true size, with your signature and the date.' },
-  { id: 'seal-setup', label: 'Seal setup', icon: SETUP_ICON, description: 'Set up your seal, from your seal vendor\'s file or built to your board\'s standard, and your signature.' },
-  { id: 'seal-all', label: 'Seal every sheet', icon: SEAL_ALL_ICON, description: 'Your seal, signature and the date on every sheet of a set, at the spot you choose.' },
-  { id: 'project-details', label: 'Project details', icon: DETAILS_ICON, description: 'Your name and project numbers, filled into every review stamp.' },
-  { id: 'submittal-log', label: 'Submittal log', icon: LOG_ICON, description: 'Every submittal you stamped, with its action and date. Export to a spreadsheet.' },
-  { id: 'firm-kit', label: 'Firm kit', icon: KIT_ICON, description: 'Share your stamps and project list with the whole office.' },
+  { id: 'review-stamp', section: 'Review & Seal', label: 'Review stamp', icon: STAMP_ICON, description: 'Build your firm\'s shop drawing review stamp once, then place it with one click, filled in and added to your submittal log.' },
+  { id: 'seal', section: 'Review & Seal', label: 'Seal', icon: SEAL_ICON, description: 'Place your seal at true size, with your signature and the date.' },
+  { id: 'seal-setup', section: 'Review & Seal', label: 'Seal setup', icon: SETUP_ICON, description: 'Set up your seal, from your seal vendor\'s file or built to your board\'s standard, and your signature.' },
+  { id: 'seal-all', section: 'Review & Seal', label: 'Seal every sheet', icon: SEAL_ALL_ICON, description: 'Your seal, signature and the date on every sheet of a set, at the spot you choose.' },
+  { id: 'project-details', section: 'Review & Seal', label: 'Project details', icon: DETAILS_ICON, description: 'Your name and project numbers, filled into every review stamp.' },
+  { id: 'submittal-log', section: 'Review & Seal', label: 'Submittal log', icon: LOG_ICON, description: 'Every submittal you stamped, with its action and date. Export to a spreadsheet.' },
+  { id: 'firm-kit', section: 'General', label: 'Firm kit', icon: KIT_ICON, description: 'Share your stamps and project list with the whole office.' },
 ];
 
-const [active, setActive] = createSignal({}); // id -> { tool?, onClick?, label?, icon?, description? }
+/** Section headings in palette order. Any other section a plugin names follows them. */
+export const PRO_SECTIONS = ['Review & Seal', 'Construction Admin', 'Expert Witness', 'General'];
+const NO_SECTION = 'More';
+
+const [active, setActive] = createSignal({}); // id -> { tool?, onClick?, label?, icon?, description?, section? }
 
 /** Tools for the palette: every placeholder, merged with what the plugin registered. */
 export function proTools() {
@@ -34,12 +39,35 @@ export function proTools() {
   return [...PRO_TOOL_PLACEHOLDERS, ...extra].map((t) => ({ ...t, ...(on[t.id] || {}), enabled: !!on[t.id] }));
 }
 
+/**
+ * The tools under their headings, as [{ name, tools }]: the PRO_SECTIONS in
+ * order, then any other section in the order it first appears, then tools
+ * that name no section under "More". Tools keep their order within a section.
+ */
+export function proSections(tools = proTools()) {
+  const by = new Map();
+  for (const t of tools) {
+    const name = typeof t.section === 'string' && t.section.trim() ? t.section.trim() : NO_SECTION;
+    if (!by.has(name)) by.set(name, []);
+    by.get(name).push(t);
+  }
+  const rank = (n) => {
+    if (n === NO_SECTION) return PRO_SECTIONS.length + 1;
+    const i = PRO_SECTIONS.indexOf(n);
+    return i >= 0 ? i : PRO_SECTIONS.length;
+  };
+  return [...by.keys()]
+    .map((name, i) => ({ name, i }))
+    .sort((a, b) => rank(a.name) - rank(b.name) || a.i - b.i)
+    .map(({ name }) => ({ name, tools: by.get(name) }));
+}
+
 /** Validate and turn on a Pro tool. Returns an unregister function. */
 export function registerProTool(item) {
   if (!item || typeof item.id !== 'string' || !item.id) throw new TypeError('registerProTool: id is required');
   if (typeof item.tool !== 'string' && typeof item.onClick !== 'function') throw new TypeError('registerProTool: tool or onClick is required');
   // Keep only the fields the plugin gave, so the placeholder's label and icon stay otherwise.
-  const given = Object.fromEntries(['tool', 'onClick', 'label', 'icon', 'description']
+  const given = Object.fromEntries(['tool', 'onClick', 'label', 'icon', 'description', 'section']
     .filter((k) => item[k] !== undefined).map((k) => [k, item[k]]));
   setActive((prev) => ({ ...prev, [item.id]: given }));
   return () => unregisterProTool(item.id);
