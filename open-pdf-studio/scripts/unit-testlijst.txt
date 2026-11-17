@@ -309,6 +309,7 @@ markset/library/library.test.mjs
 markset/smart/smart.test.mjs
 markset/smart/plugin-hooks.test.mjs
 markset/plugin-review-api.test.mjs
+markset/plugin-file-pick.test.mjs
 markset/color-schemes.test.mjs
 markset/recent.test.mjs
 markset/scale-tools.test.mjs
