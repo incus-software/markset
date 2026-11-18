@@ -7,7 +7,8 @@ import { For, Show, createSignal } from 'solid-js';
 import { state } from '../../js/core/state.js';
 import { setTool } from '../../js/tools/manager.js';
 import { showMessage } from '../../js/solid/stores/dialogStore.js';
-import { proSections, proUpsellMessage, defaultClosedSections } from './pro-tools.js';
+import { proSections, proUpsellMessage, defaultClosedSections, PRO_URL } from './pro-tools.js';
+import { openExtern } from '../../js/core/extern-openen.js';
 import './pro-group.css';
 
 const ARROW = '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
@@ -49,7 +50,10 @@ export default function ProToolGroup() {
     saveClosed(next);
   };
   const click = (t, section) => {
-    if (!t.enabled) { showMessage(proUpsellMessage(t), 'Markset Pro'); return; }
+    if (!t.enabled) {
+      showMessage(proUpsellMessage(t), 'Markset Pro', { action: { label: 'Visit usemarkset.com', onClick: () => openExtern(PRO_URL) } });
+      return;
+    }
     setLast(section);
     saveLast(section);
     if (t.tool) setTool(t.tool);
