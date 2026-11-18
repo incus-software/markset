@@ -1,0 +1,29 @@
+/* Markset: readable interface text. The labels people scan all day (ribbon
+   buttons and groups, the Toolpalette) were 9-10px,
+   and in the Light theme (Markset's default) several sat well under 4.5:1
+   contrast. Floors here: 11px for labels, 4.5:1 for text in Light.
+   Kept in one file so upstream style changes merge cleanly; `html` raises
+   specificity so this wins over styles/*.css whatever the load order.
+   Sizes are written with var(--ui-scale) by hand: the interface-size build
+   step (scripts/ui-scale-css.mjs) only scales the upstream stylesheets. */
+
+/* --- Sizes (every theme) --------------------------------------------- */
+html .ribbon-btn-label { font-size: calc(11px * var(--ui-scale, 1)); }
+html .ribbon-group-label { font-size: calc(11px * var(--ui-scale, 1)); letter-spacing: 0.02em; }
+html .sp-symbol-name { font-size: calc(11px * var(--ui-scale, 1)); }
+html .sp-cat-count { font-size: calc(11px * var(--ui-scale, 1)); }
+html .prop-hint-text { font-size: calc(12px * var(--ui-scale, 1)); }
+
+/* The empty start page: its hints were faded with opacity on grey. */
+html #placeholder p,
+html #placeholder p.placeholder-note { opacity: 1; }
+
+/* --- Contrast (Light theme) ------------------------------------------- */
+html[data-theme="light"] {
+  --theme-ribbon-text: #4b5563;          /* ribbon tabs and button labels: 6.6:1 on the tab strip */
+  --theme-ribbon-group-label: #6b7280;   /* group names: 4.8:1 on white (was 2.5:1) */
+  --theme-tab-empty-text: #5f6672;       /* "No documents open": 5.5:1 (was 2.3:1) */
+  --theme-status-text: #4b5563;          /* status bar: 7:1 (was 4.4:1) */
+  --theme-text-secondary: #5f6672;       /* secondary text and counts: 5.4:1 on #f5f5f5 */
+  --theme-placeholder-text: #4b5563;     /* start page hints: 5.8:1 on #e0e0e0 (was 1.5-1.7:1) */
+}
