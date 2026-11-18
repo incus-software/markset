@@ -2,14 +2,16 @@
 .mpg-header { gap: 6px; }
 .mpg-badge {
   margin-left: auto;
-  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
-  padding: 1px 5px; border-radius: 2px;
+  font-size: calc(11px * var(--ui-scale, 1)); font-weight: 700; letter-spacing: 0.05em;
+  padding: 1px 6px; border-radius: 2px;
   color: #ffffff; background: #0000ff;
 }
 .mpg-tool { position: relative; }
 .mpg-tool .sp-symbol-icon svg { width: 26px; height: 26px; }
 .mpg-locked { cursor: pointer; }
-.mpg-locked .sp-symbol-icon, .mpg-locked .sp-symbol-name { opacity: 0.4; }
+/* Locked tiles stay readable: the PRO chip and click-to-unlock mark them. */
+.mpg-locked .sp-symbol-icon { opacity: 0.6; }
+.mpg-locked .sp-symbol-name { color: var(--theme-text-secondary, #5f6672); }
 .mpg-lock {
   position: absolute; top: 2px; right: 2px;
   font-size: 8px; font-weight: 700; line-height: 1;
@@ -30,10 +32,10 @@
 /* Section headings inside the group (Review & Seal, Expert Witness...). */
 .mpg-section-header {
   display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 5px 8px 3px 14px; border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--theme-text-secondary, #666); text-align: left;
+  padding: 7px 8px 3px 14px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: calc(11px * var(--ui-scale, 1)); font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--theme-text, #1f2937); text-align: left;
 }
 .mpg-section-header:hover { color: var(--theme-text, #000); }
 .mpg-section-header .sp-cat-arrow { transform-origin: center; }
-.mpg-section-count { margin-left: auto; font-weight: 400; opacity: 0.7; }
+.mpg-section-count { margin-left: auto; font-weight: 400; color: var(--theme-text-secondary, #5f6672); }
