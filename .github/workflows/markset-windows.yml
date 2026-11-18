@@ -80,9 +80,14 @@ jobs:
           RUSTFLAGS: -C target-feature=-crt-static
           CARGO_TARGET_DIR: target/rust-tests
         run: |
-          $messages = cargo test --no-run --message-format=json -p open-pdf-studio -p open-pdf-cad
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $tests = $messages | ForEach-Object { $_ | ConvertFrom-Json } |
+          $messages = cargo test --no-run --message-format=json-diagnostic-rendered-ansi -p open-pdf-studio -p open-pdf-cad
+          $code = $LASTEXITCODE
+          $parsed = $messages | ForEach-Object { $_ | ConvertFrom-Json }
+          # With JSON output the compiler's errors are in $messages, not the log.
+          $parsed | Where-Object { $_.reason -eq 'compiler-message' -and $_.message.level -eq 'error' } |
+            ForEach-Object { Write-Host $_.message.rendered }
+          if ($code) { exit $code }
+          $tests = $parsed |
             Where-Object { $_.reason -eq 'compiler-artifact' -and $_.executable } |
             ForEach-Object { $_.executable }
           if (-not $tests) { Write-Error 'cargo reported no test binaries'; exit 1 }
