@@ -167,9 +167,9 @@ test('het native commando staat in de invoke_handler; Windows-afhankelijkheden o
   assert.match(opname, /CapturePreview\(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG/);
   const cargo = lees('../../src-tauri/Cargo.toml');
   const windowsBlok = cargo.slice(cargo.indexOf(`[target.'cfg(target_os = "windows")'.dependencies]`));
-  assert.match(windowsBlok, /^webview2-com = "0\.38\.2"$/m);
-  assert.match(windowsBlok, /^windows = \{ version = "0\.61\.3"/m);
+  assert.match(windowsBlok, /^webview2-com = "0\.39\.1"$/m);
+  assert.match(windowsBlok, /^windows = \{ version = "0\.62\.2"/m);
   const lock = lees('../../../Cargo.lock');
-  assert.match(lock, /name = "webview2-com"\nversion = "0\.38\.2"/);
-  assert.match(lock, /name = "windows"\nversion = "0\.61\.3"/);
+  assert.match(lock, /name = "webview2-com"\nversion = "0\.39\.1"/);
+  assert.match(lock, /name = "windows"\nversion = "0\.62\.2"/);
 });
