@@ -17,6 +17,7 @@ import HandtekeningBar from './components/HandtekeningBar.jsx';
 import NotificationBar from './components/NotificationBar.jsx';
 import PropertiesPanel from './components/properties-panel/PropertiesPanel.jsx';
 import StatusBar from './components/StatusBar.jsx';
+import '../../markset/readability.css'; // Markset: readable label sizes and Light-theme contrast
 import AppMenu from './components/app-menu/AppMenu.jsx';
 import DialogHost from './components/DialogHost.jsx';
 import ContextMenu from './components/ContextMenu.jsx';
