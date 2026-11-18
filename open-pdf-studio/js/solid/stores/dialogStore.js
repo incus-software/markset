@@ -17,6 +17,10 @@ export function getDialogs() {
   return dialogs();
 }
 
-export function showMessage(message, title) {
-  openDialog('message', { message, title });
+/**
+ * A message with OK. `action` (Markset) adds one button before OK, e.g.
+ * { label: 'Visit usemarkset.com', onClick }: the dialog closes, then onClick runs.
+ */
+export function showMessage(message, title, { action } = {}) {
+  openDialog('message', { message, title, action });
 }

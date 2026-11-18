@@ -9,6 +9,12 @@ export default function MessageDialog(props) {
 
   const footer = (
     <div class="message-dialog-footer">
+      {/* Markset: an optional action before OK (see showMessage). */}
+      <Show when={props.data?.action?.label}>
+        <button class="pref-btn pref-btn-secondary" onClick={() => { const run = props.data.action.onClick; close(); run?.(); }}>
+          {props.data.action.label}
+        </button>
+      </Show>
       <button class="pref-btn pref-btn-primary" onClick={close}>{t('ok')}</button>
     </div>
   );

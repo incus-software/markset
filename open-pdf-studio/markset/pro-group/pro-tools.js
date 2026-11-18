@@ -82,7 +82,10 @@ export function unregisterProTool(id) {
   });
 }
 
-/** Message shown when a greyed-out Pro tool is clicked. */
+/** Where the greyed-out tools' message sends people. */
+export const PRO_URL = 'https://usemarkset.com';
+
+/** Message shown when a greyed-out Pro tool is clicked (with a "Visit usemarkset.com" button). */
 export function proUpsellMessage(tool) {
-  return `${tool.label} is part of Markset Pro. ${tool.description || ''}\n\nLearn more at usemarkset.com.`;
+  return `${tool.label} is part of Markset Pro. ${tool.description || ''}\n\nMarkset Pro is an add-on: get it at usemarkset.com, install it, and enter your license key in its License tool.`;
 }
