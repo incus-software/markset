@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proTools, proSections, PRO_SECTIONS, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS } from './pro-tools.js';
+import { proTools, proSections, PRO_SECTIONS, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS, defaultClosedSections } from './pro-tools.js';
 
 test('Pro tools are listed greyed out until the plugin turns them on', () => {
   const before = proTools();
@@ -58,4 +58,22 @@ test('a plugin can move a placeholder tool to another section', () => {
   const off = registerProTool({ id: 'firm-kit', section: 'Review & Seal', onClick() {} });
   assert.ok(proSections()[0].tools.some((t) => t.id === 'firm-kit'));
   off();
+});
+
+test('until the user opens or closes a section, only one section is open', () => {
+  const sections = [
+    { name: 'Review & Seal', tools: [{ enabled: false }] },
+    { name: 'Construction Admin', tools: [{ enabled: true }] },
+    { name: 'Expert Witness', tools: [{ enabled: true }] },
+    { name: 'General', tools: [{ enabled: true }] },
+  ];
+  // The last used Pro tool's section stays open.
+  assert.deepEqual(defaultClosedSections(sections, 'Expert Witness'), ['Review & Seal', 'Construction Admin', 'General']);
+  // Nothing used yet (or a section that is gone): the first one with a tool you can use.
+  assert.deepEqual(defaultClosedSections(sections), ['Review & Seal', 'Expert Witness', 'General']);
+  assert.deepEqual(defaultClosedSections(sections, 'Gone'), ['Review & Seal', 'Expert Witness', 'General']);
+  // Without Markset Pro nothing can be used: the first section.
+  const free = sections.map((x) => ({ ...x, tools: [{ enabled: false }] }));
+  assert.deepEqual(defaultClosedSections(free), ['Construction Admin', 'Expert Witness', 'General']);
+  assert.deepEqual(defaultClosedSections([]), []);
 });

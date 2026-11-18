@@ -62,6 +62,23 @@ export function proSections(tools = proTools()) {
     .map(({ name }) => ({ name, tools: by.get(name) }));
 }
 
+/**
+ * Which sections start closed when the user has not opened or closed any
+ * themselves: all but one, so the group shows the tools you use instead of
+ * every Pro tool at once. The open one is the section of the Pro tool you
+ * used last, or else the first section with a tool you can use, or else the
+ * first section.
+ * @param {{ name: string, tools: { enabled?: boolean }[] }[]} sections  from proSections()
+ * @param {string} [lastUsed]  the section of the last Pro tool used
+ * @returns {string[]} the closed section names
+ */
+export function defaultClosedSections(sections, lastUsed) {
+  const names = sections.map((s) => s.name);
+  const keep = names.includes(lastUsed) ? lastUsed
+    : (sections.find((s) => s.tools.some((x) => x.enabled))?.name ?? names[0]);
+  return names.filter((n) => n !== keep);
+}
+
 /** Validate and turn on a Pro tool. Returns an unregister function. */
 export function registerProTool(item) {
   if (!item || typeof item.id !== 'string' || !item.id) throw new TypeError('registerProTool: id is required');
