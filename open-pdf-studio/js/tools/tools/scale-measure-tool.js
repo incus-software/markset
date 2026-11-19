@@ -75,7 +75,7 @@ export const scaleMeasureTool = {
     }
     if (e.button !== 0) return;
 
-    const snap = ctx.snap(x, y);
+    const snap = ctx.snap(x, y, null, _pick.point && _pick.pageNum === ctx.pageNum ? [_pick.point] : null, { measure: true }); // Markset
     let ptX = snap.snapped ? snap.x : x;
     let ptY = snap.snapped ? snap.y : y;
     // Shift: het tweede punt recht horizontaal of verticaal (#1090).
@@ -110,7 +110,7 @@ export const scaleMeasureTool = {
 
     if (_pick.point === null || _pick.pageNum !== ctx.pageNum) {
       // Show hover snap indicator only.
-      const snap = ctx.snap(x, y);
+      const snap = ctx.snap(x, y, null, _pick.point && _pick.pageNum === ctx.pageNum ? [_pick.point] : null, { measure: true }); // Markset
       if (snap.snapped) {
         state.lastSnapResult = snap;
         ctx.redraw();
@@ -122,7 +122,7 @@ export const scaleMeasureTool = {
       return;
     }
 
-    const snap = ctx.snap(x, y);
+    const snap = ctx.snap(x, y, null, _pick.point && _pick.pageNum === ctx.pageNum ? [_pick.point] : null, { measure: true }); // Markset
     // Shift: de voorbeeldlijn recht horizontaal of verticaal (#1090).
     const { x: curX, y: curY } = orthoPunt(_pick.point, { x: snap.snapped ? snap.x : x, y: snap.snapped ? snap.y : y }, !!e?.shiftKey);
     state.lastSnapResult = snap.snapped ? snap : null;
