@@ -296,7 +296,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   // Measure Distance defaults
   measureDistStrokeColor: '#FF0000',
-  measureDistLineWidth: 2,
+  measureDistLineWidth: 1, // Markset: was 2, twice as heavy as a drawing's own dimension lines
   measureDistBorderStyle: 'solid',
   measureDistOpacity: 100,
   measureDistStartHead: 'openCircle',

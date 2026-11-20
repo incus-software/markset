@@ -911,8 +911,14 @@ function nearestPointOnPdfEdge(cursorX, cursorY, currentPage, snapRadius, soort 
 // opties.loodlijnVanaf: optional {x,y} reference point for perpendicular and
 // tangent snaps when the tool's first point is not in inProgressPoints (e.g.
 // the line tool) or is not its last element (a hole ring of an area).
+// opties.measure (Markset): measuring and calibrating. Perpendicular and
+// nearest snaps onto lines (the PDF's own line work included) are then on
+// even with those options off, so a dimension can start mid-wall and end
+// square on the opposite wall. Object snap, PDF-content snap and the snap
+// tolerance still apply.
 export function performSnap(cursorX, cursorY, annotations, currentPage, scale, excludeId, inProgressPoints, opties) {
   const prefs = state.preferences;
+  const meten = !!opties?.measure; // Markset
 
   // Pre-compute grid + polar candidates (used as fallback when object snap
   // doesn't engage). Object snap, when within radius, always wins.
@@ -1008,7 +1014,7 @@ export function performSnap(cursorX, cursorY, annotations, currentPage, scale, e
   // een annotatie of een lijnstuk van de PDF-tekening.
   const refPt = opties?.loodlijnVanaf
     || (inProgressPoints && inProgressPoints.length > 0 ? inProgressPoints[inProgressPoints.length - 1] : null);
-  if (prefs.snapToPerpendicular && refPt) {
+  if ((prefs.snapToPerpendicular || meten) && refPt) {
     const perpResult = findPerpendicularSnap(cursorX, cursorY, refPt, annotations, currentPage, snapRadius, excludeId);
     if (perpResult) exact.push(perpResult);
   }
@@ -1035,7 +1041,7 @@ export function performSnap(cursorX, cursorY, annotations, currentPage, scale, e
 
   // 10. Nearest snap — generic closest point on any segment, annotations and
   // (with "snap to PDF drawing content") the vector segments of the page.
-  if (prefs.snapToNearest) {
+  if (prefs.snapToNearest || meten) {
     const nearestResult = findNearestSnap2(cursorX, cursorY, annotations, currentPage, snapRadius, excludeId);
     if (nearestResult) return nearestResult;
     if (prefs.snapToPdfContent) {

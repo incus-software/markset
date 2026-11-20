@@ -55,7 +55,7 @@ export const measureDistanceTool = {
       return;
     }
 
-    const snap = ctx.snap(x, y, null, state.dimPoints);
+    const snap = ctx.snap(x, y, null, state.dimPoints, { measure: true }); // Markset: onto the drawing's lines
     const dimX = snap.snapped ? snap.x : x;
     const dimY = snap.snapped ? snap.y : y;
 
@@ -197,7 +197,7 @@ export const measureDistanceTool = {
 
     const prefs = state.preferences;
     const dimColor = prefs.measureDistStrokeColor || '#FF0000';
-    const snap = ctx.snap(x, y, null, state.dimPoints);
+    const snap = ctx.snap(x, y, null, state.dimPoints, { measure: true }); // Markset: onto the drawing's lines
     let dimSnapX = snap.snapped ? snap.x : x;
     let dimSnapY = snap.snapped ? snap.y : y;
     state.lastSnapResult = snap.snapped ? snap : null;

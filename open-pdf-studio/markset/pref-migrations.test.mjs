@@ -5,15 +5,15 @@ import { marksetPrefMigrations } from './pref-migrations.js';
 test('a saved dark default theme moves to Light once', () => {
   const out = marksetPrefMigrations({ theme: 'default' });
   assert.equal(out.theme, 'light');
-  assert.deepEqual(out.marksetMigrations, ['theme-light-2026-10', 'units-upstream-2026-11']);
+  assert.deepEqual(out.marksetMigrations, ['theme-light-2026-10', 'units-upstream-2026-11', 'dim-line-weight-2026-11']);
   // Picked dark again later: kept.
-  assert.deepEqual(marksetPrefMigrations({ theme: 'default', marksetMigrations: ['theme-light-2026-10', 'units-upstream-2026-11'] }), {});
+  assert.deepEqual(marksetPrefMigrations({ theme: 'default', marksetMigrations: ['theme-light-2026-10', 'units-upstream-2026-11', 'dim-line-weight-2026-11'] }), {});
 });
 
 test('other themes are kept; the migration is still recorded', () => {
   const out = marksetPrefMigrations({ theme: 'warm-ember' });
   assert.equal(out.theme, undefined);
-  assert.deepEqual(out.marksetMigrations, ['theme-light-2026-10', 'units-upstream-2026-11']);
+  assert.deepEqual(out.marksetMigrations, ['theme-light-2026-10', 'units-upstream-2026-11', 'dim-line-weight-2026-11']);
   assert.equal(marksetPrefMigrations({}).theme, undefined);
 });
 
@@ -29,4 +29,18 @@ test('Markset unit preferences move to the upstream ones once, US by default', (
   assert.equal(metric.imperialLengthFormat, 'decimal');
   assert.equal(metric.imperialFractionPrecision, 8);
   assert.equal(metric.paperSizeUnit, undefined);
+});
+
+test('a saved 2 pt dimension line (the old default) becomes 1 pt once', () => {
+  const out = marksetPrefMigrations({ measureDistLineWidth: 2, marksetMigrations: ['theme-light-2026-10', 'units-upstream-2026-11'] });
+  assert.equal(out.measureDistLineWidth, 1);
+  assert.deepEqual(out.marksetMigrations, ['theme-light-2026-10', 'units-upstream-2026-11', 'dim-line-weight-2026-11']);
+  // Set back to 2 afterwards: kept.
+  assert.deepEqual(marksetPrefMigrations({ measureDistLineWidth: 2, marksetMigrations: ['theme-light-2026-10', 'units-upstream-2026-11', 'dim-line-weight-2026-11'] }), {});
+});
+
+test('a dimension line weight the user picked is kept', () => {
+  for (const w of [0.5, 1, 3, 6]) {
+    assert.equal(marksetPrefMigrations({ measureDistLineWidth: w }).measureDistLineWidth, undefined, String(w));
+  }
 });
