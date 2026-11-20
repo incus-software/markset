@@ -7,7 +7,8 @@ import { generateThumbnails, refreshActiveTab } from '../ui/panels/left-panel.js
 import { createTab, closeTab, updateWindowTitle, markDocumentModified } from '../ui/chrome/tabs.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'virtual:opds-pdfjs-worker-url';
-import { isTauri, isMobile, heeftRustRenderer, readBinaryFile, openFileDialog, lockFile, invoke } from '../core/platform.js';
+import { isTauri, isMobile, heeftRustRenderer, readBinaryFile, openFileDialog, lockFile, unlockFile, leesHostPad, invoke } from '../core/platform.js';
+import { leesDocument, vergrendelDocument, OpenBestandFout, alleenLezenMelding } from './bestand-openen.js';
 import { PDFDocument } from 'pdf-lib';
 import { resetAnnotationStorage } from './form-layer.js';
 import { addRecentFile, getRecentFiles } from '../mobile/recent-files.js';
@@ -22,6 +23,7 @@ import { verifieerHandtekeningen } from './handtekeningen/verificatie.js';
 // Sub-module imports
 import { extractAnnotationColors } from './loader/color-extraction.js';
 import { extractStampImagesHybrid } from './loader/image-extraction.js';
+import { createStempelRender } from './loader/stempel-beeld-rust.js';
 import { paginaViewport } from './pagina-viewport.js';
 import { zetPaginaAnnotatiesOm } from './loader/annotaties-omzetten.js';
 import { loadIfNeeded } from './queued-load.js';
@@ -31,6 +33,8 @@ import { pdfjsBronnen } from '../core/basis-url.js';
 import { GAST_MODUS } from '../core/gehost.js';
 import { maakBlobWorker } from '../core/blob-worker.js';
 import { isWachtwoordFout, vraagEnOntsleutel, markeerBeveiligd, isAlleenLezen, isBeveiligdDocument, bronPad } from './wachtwoord-pdf.js';
+import { beveiligingUitSessie, onbekendeBeveiliging } from './document-beveiliging.js';
+import { onthoudSessie } from './beveiliging-toepassen.js';
 
 
 // Convert one batch of pdf.js annotations and push them to doc.annotations.
@@ -41,6 +45,11 @@ import { isWachtwoordFout, vraagEnOntsleutel, markeerBeveiligd, isAlleenLezen, i
 // rekenen wat de lijst leest.
 async function _convertAndPushAnnotations(annots, pageNum, viewport, stampImageMap, annotColorMap, doc) {
   voegAnnotatiesToe(doc, await zetPaginaAnnotatiesOm(annots, pageNum, viewport, stampImageMap, annotColorMap));
+  // Links van de app (#953): de linklaag van deze pagina kan al staan; haal
+  // hun klikvlak uit het bestand eruit, de app volgt ze zelf.
+  if (annots.some((a) => a?.subtype === 'Link') && typeof document !== 'undefined') {
+    import('./link-layer.js').then((m) => m.verbergAppLinks(doc)).catch(() => {});
+  }
 }
 
 // Cache for original PDF bytes (used by saver to avoid re-reading)
@@ -52,6 +61,20 @@ export function getCachedPdfBytes(filePath) {
 
 export function setCachedPdfBytes(filePath, bytes) {
   originalBytesCache.set(filePath, bytes);
+}
+
+// The bytes of a document as they were before its last save, so Compare can
+// set the saved version against the one before it (#465). Only the last one
+// per path is kept.
+const previousSavedBytes = new Map(); // filePath -> Uint8Array
+
+export function rememberPreviousPdfBytes(filePath) {
+  const bytes = originalBytesCache.get(filePath);
+  if (bytes && bytes.length) previousSavedBytes.set(filePath, bytes);
+}
+
+export function getPreviousPdfBytes(filePath) {
+  return previousSavedBytes.get(filePath) || null;
 }
 
 /**
@@ -84,7 +107,8 @@ export function clearCachedPdfBytes(filePath) {
 }
 
 // Vite serves/emits the pinned worker with the PostScript progress (#839),
-// zero-size initial font (#878) and XRef stream offset (#638) backports
+// zero-size initial font (#878), XRef stream offset (#638), 32-bit sampled
+// function (#949) and bidi combining-mark (#957) backports
 // (scripts/pdfjs-postscript-progress.mjs).
 // The build hashes the patched bytes; dev retains a same-origin /node_modules/
 // URL so a fresh WebView cannot hit the historical /@fs/ access failure.
@@ -167,8 +191,7 @@ function showPdfABar(part, conformance, doc) {
   // kan daar niet.
   if (isBeveiligdDocument(doc)) return;
   const label = `PDF/A-${part}${conformance ? conformance.toLowerCase() : ''}`;
-  const text = `This document complies with the ${label} standard and has been opened read-only to prevent modification.`;
-  import('../solid/stores/pdfaBarStore.js').then(m => m.showPdfABar(text));
+  import('../solid/stores/pdfaBarStore.js').then(m => m.showPdfABar(label));
 
   // Disable annotation tool buttons
   import('../tools/manager.js').then(m => m.updatePdfAToolState());
@@ -178,9 +201,17 @@ export function hidePdfABar() {
   import('../solid/stores/pdfaBarStore.js').then(m => m.hidePdfABar());
 }
 
-export function dismissPdfAForActiveDoc() {
+/**
+ * Bewerken inschakelen in een PDF/A-document. `opslaan` is de keuze uit de
+ * waarschuwing (#379): 'herconverteer' maakt bij opslaan weer PDF/A,
+ * 'verwijder' slaat op als gewone PDF.
+ */
+export function dismissPdfAForActiveDoc(opslaan = 'herconverteer') {
   const activeDoc = state.documents[state.activeDocumentIndex];
-  if (activeDoc) activeDoc.pdfADismissed = true;
+  if (activeDoc) {
+    activeDoc.pdfADismissed = true;
+    activeDoc.pdfaOpslaan = opslaan === 'verwijder' ? 'verwijder' : 'herconverteer';
+  }
   hidePdfABar();
   import('../tools/manager.js').then(m => m.updatePdfAToolState());
 }
@@ -192,10 +223,42 @@ export function isPdfAReadOnly() {
   return isAlleenLezen(state.documents[state.activeDocumentIndex]);
 }
 
+// Desktop: Rust ontsleutelt het origineel met `wachtwoord` (leeg voor een
+// bestand dat zonder wachtwoord opent maar rechten heeft) naar een werkkopie
+// en neemt de beveiliging over (#378). Geeft { filePath, pdfDoc, bytes, security }.
+async function _openUitWerkkopie(origineelPad, wachtwoord) {
+  const { path: kopie, security } = await invoke('open_protected_pdf', { path: origineelPad, password: wachtwoord });
+  try {
+    const data = await readBinaryFile(kopie);
+    if (!data) throw new Error('File system access not available');
+    const bytes = new Uint8Array(data);
+    const pdfDoc = await pdfjsLib.getDocument({
+      data: bytes.slice(), // PDF.js neemt de buffer over
+      ...pdfjsBronnen(),
+      isEvalSupported: false,
+      verbosity: 0,
+    }).promise;
+    return { filePath: kopie, pdfDoc, bytes, security: security || null };
+  } catch (e) {
+    _laatWerkkopieLos({ filePath: kopie, security }, origineelPad);
+    throw e;
+  }
+}
+
+/** Een werkkopie (en haar beveiligingssessie) die niet gebruikt wordt, loslaten. */
+function _laatWerkkopieLos(beveiligd, origineelPad) {
+  if (beveiligd?.filePath && beveiligd.filePath !== origineelPad) {
+    invoke('release_protected_pdf', { path: beveiligd.filePath }).catch(() => {});
+  }
+  if (beveiligd?.security?.handle) {
+    invoke('pdf_security_release', { handles: [beveiligd.security.handle] }).catch(() => {});
+  }
+}
+
 // Een PDF met een openingswachtwoord: het wachtwoord vragen en het document
 // openen. In de desktop-app maakt Rust een ontsleutelde werkkopie (alle
 // renderpaden werken op pad); in de browser ontsleutelt PDF.js zelf.
-// Geeft { filePath, pdfDoc, bytes } of null (geannuleerd of tabblad dicht).
+// Geeft { filePath, pdfDoc, bytes, security } of null (geannuleerd of tabblad dicht).
 async function _openMetWachtwoord(origineelPad, isClosed) {
   const naam = extractFileName(origineelPad) || origineelPad || '';
   const { metWachtwoordDialoog, vraagWachtwoord } = await import('../solid/stores/wachtwoordDialoogStore.js');
@@ -203,24 +266,7 @@ async function _openMetWachtwoord(origineelPad, isClosed) {
   return metWachtwoordDialoog(() => vraagEnOntsleutel({
     vraag: ({ verkeerd }) => (isClosed() ? null : vraagWachtwoord({ fileName: naam, verkeerd })),
     ontsleutel: async (wachtwoord) => {
-      if (isTauri()) {
-        const kopie = await invoke('open_protected_pdf', { path: origineelPad, password: wachtwoord });
-        try {
-          const data = await readBinaryFile(kopie);
-          if (!data) throw new Error('File system access not available');
-          const bytes = new Uint8Array(data);
-          const pdfDoc = await pdfjsLib.getDocument({
-            data: bytes.slice(), // PDF.js neemt de buffer over
-            ...pdfjsBronnen(),
-            isEvalSupported: false,
-            verbosity: 0,
-          }).promise;
-          return { filePath: kopie, pdfDoc, bytes };
-        } catch (e) {
-          invoke('release_protected_pdf', { path: kopie }).catch(() => {});
-          throw e;
-        }
-      }
+      if (isTauri()) return _openUitWerkkopie(origineelPad, wachtwoord);
       // Browser: geen werkkopie; PDF.js opent de bytes met het wachtwoord
       // (een onjuist wachtwoord geeft weer een PasswordException).
       const bron = originalBytesCache.get(origineelPad);
@@ -315,6 +361,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
         pageIndex: 0,
         scale: 1.0,
         rotation: 0,
+        sharpen: true,
       }).then(async (rgbaData) => {
         if (!rgbaData || isClosed() || doc.pdfDoc || !isActive()) return;
         try {
@@ -349,20 +396,38 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       typedArray = preloadedData instanceof Uint8Array ? preloadedData : new Uint8Array(preloadedData);
       originalBytesCache.set(filePath, typedArray.slice());
     } else {
-      if (isTauri()) {
-        // Lock the file to prevent other apps from writing while we have it open
-        // (skip on Android — content:// URIs don't support filesystem locking)
-        if (!isMobile()) {
-          await lockFile(filePath);
-          if (isClosed()) return;
+      // Bureaublad: Rust leest het bestand zelf (delen voor lezen, schrijven
+      // en verwijderen, buiten de fs-scope om; een bestand dat alleen online
+      // staat wordt daarbij opgehaald) en vergrendelt het pas daarna, zodat de
+      // vergrendeling het ophalen door de synchronisatie-app niet blokkeert.
+      // Lukt vergrendelen niet, dan opent het alleen-lezen (#1005).
+      // Mobiel (content://-URI's) en de webversie lezen zoals altijd.
+      const bureaublad = isTauri() && !isMobile() && !leesHostPad(filePath);
+      let data;
+      if (bureaublad) {
+        data = await leesDocument(filePath, {
+          invoke,
+          leesTerugval: readBinaryFile,
+          t: (k, o) => i18next.t(k, o),
+        });
+        if (isClosed()) return;
+        const vergrendeling = await vergrendelDocument(filePath, { invoke, vergrendelTerugval: lockFile });
+        if (isClosed()) {
+          unlockFile(filePath).catch(() => {});
+          return;
         }
+        doc.bestandAlleenLezen = vergrendeling.alleenLezen ? { reden: vergrendeling.reden } : null;
+        if (vergrendeling.fout) console.warn('[open] file not locked, opened read-only:', vergrendeling.fout);
+      } else {
+        // Read file using Tauri fs plugin or web file cache
+        data = await readBinaryFile(filePath);
       }
-
-      // Read file using Tauri fs plugin or web file cache
-      const data = await readBinaryFile(filePath);
       if (isClosed()) return;
       if (!data) throw new Error('File system access not available');
-      typedArray = new Uint8Array(data);
+      // leesDocument geeft al een eigen array; de andere routes kunnen een
+      // gedeelde array geven (de bestandscache van de webversie) die pdf.js
+      // anders zou overdragen en leegmaken: die kopiëren zoals altijd.
+      typedArray = bureaublad ? data : new Uint8Array(data);
 
       // Cache a copy of original bytes for saver (pdf.js transfers the buffer
       // to a web worker, which detaches the original Uint8Array making it length 0)
@@ -372,6 +437,8 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
 
     // Load PDF using pdf.js (this transfers the buffer to a worker)
     let pdfDoc;
+    let beveiligd = null;
+    let gevraagd = false;
     try {
       pdfDoc = await pdfjsLib.getDocument({
         data: typedArray,
@@ -381,17 +448,16 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       }).promise;
     } catch (fout) {
       // Een openingswachtwoord: vragen, en dan openen uit een ontsleutelde
-      // werkkopie (alleen-lezen). Annuleren sluit het tabblad stil.
+      // werkkopie (bewerkbaar als de beveiliging terug te schrijven is, #378).
+      // Annuleren sluit het tabblad stil.
       if (!isWachtwoordFout(fout) || isClosed()) throw fout;
-      const origineelPad = filePath;
-      const beveiligd = await _openMetWachtwoord(origineelPad, isClosed);
+      beveiligd = await _openMetWachtwoord(filePath, isClosed);
+      gevraagd = true;
       if (!beveiligd || isClosed()) {
         if (beveiligd) {
           // Tabblad intussen gesloten: niets vasthouden.
           try { beveiligd.pdfDoc?.destroy?.(); } catch { /* best effort */ }
-          if (beveiligd.filePath !== origineelPad) {
-            invoke('release_protected_pdf', { path: beveiligd.filePath }).catch(() => {});
-          }
+          _laatWerkkopieLos(beveiligd, filePath);
         }
         if (!isClosed()) {
           const index = state.documents.indexOf(doc);
@@ -399,7 +465,40 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
         }
         return;
       }
-      markeerBeveiligd(doc, origineelPad);
+    }
+    // Versleuteld maar zonder openwachtwoord (alleen rechten, #378): PDF.js en
+    // PDFium openen het, maar pdf-lib kan het niet opslaan. Ook zo'n bestand
+    // opent uit een ontsleutelde werkkopie, zodat bewerken en opslaan de
+    // beveiliging behouden. Lukt dat niet, dan blijft het zoals het was.
+    if (!beveiligd && isTauri() && _rustPad && filePath && !preloadedData) {
+      let versleuteld = false;
+      try {
+        versleuteld = (await pdfDoc.getMetadata())?.info?.EncryptFilterName === 'Standard';
+      } catch { versleuteld = false; }
+      if (versleuteld && !isClosed()) {
+        try {
+          const r = await _openUitWerkkopie(filePath, '');
+          if (isClosed()) {
+            try { r.pdfDoc?.destroy?.(); } catch { /* best effort */ }
+            _laatWerkkopieLos(r, filePath);
+            return;
+          }
+          try { await (pdfDoc.loadingTask || pdfDoc).destroy(); } catch { /* best effort */ }
+          beveiligd = r;
+        } catch (e) {
+          console.warn('[beveiliging] werkkopie van een beveiligd bestand mislukt:', e?.message || e);
+        }
+      }
+    }
+    if (beveiligd) {
+      const origineelPad = filePath;
+      // Desktop: de beveiliging van het origineel (een sessie om terug te
+      // schrijven, of alleen een beschrijving). Onleesbaar: alleen-lezen.
+      const beveiliging = isTauri()
+        ? (beveiligingUitSessie(beveiligd.security) || onbekendeBeveiliging({ openWachtwoord: gevraagd }))
+        : null;
+      markeerBeveiligd(doc, origineelPad, { gevraagd, beveiliging });
+      onthoudSessie(doc, beveiligd.security?.handle);
       if (beveiligd.bytes) {
         // De versleutelde bytes van het origineel zijn niet meer nodig.
         originalBytesCache.delete(origineelPad);
@@ -471,6 +570,11 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       // Een beveiligde PDF heet naar het origineel, niet naar zijn werkkopie.
       const zichtbaarPad = bronPad(doc);
       doc.fileName = (zichtbaarPad && bestandsnaamUitPad(zichtbaarPad)) || 'Untitled';
+    }
+    // Alleen-lezen geopend (#1005): dat meteen zeggen, met de uitweg.
+    if (doc.bestandAlleenLezen && isActive()) {
+      showMessage(alleenLezenMelding(doc.bestandAlleenLezen.reden, doc.fileName, (k, o) => i18next.t(k, o)),
+        i18next.t('openFile.readOnly.title'));
     }
 
     // Reset annotation state (per-document)
@@ -608,6 +712,16 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       }).catch(() => { /* presets zijn optioneel — negeer leesfouten */ });
     }
 
+    // Goedkeuringsaanvragen (#651) uit de catalogus, op dezelfde manier.
+    {
+      getSharedPdfLibDoc(doc).then(async (pdfLibDoc) => {
+        if (isClosed() || !pdfLibDoc) return;
+        const { readApprovalRequests } = await import('../approval-routing/document-store.js');
+        if (isClosed()) return;
+        if (!Array.isArray(doc.goedkeuringen)) doc.goedkeuringen = readApprovalRequests(pdfLibDoc);
+      }).catch(() => { /* aanvragen zijn optioneel — negeer leesfouten */ });
+    }
+
     // Titel en kop-/voetteksten uit het bestand (#375): de definities komen
     // terug in de lijst, zodat een nieuwe save ze vervangt in plaats van er
     // nog een exemplaar overheen te zetten. Niet-blokkerend, zoals hierboven.
@@ -638,6 +752,15 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
         const geldig = !isClosed() && pdfLibDoc;
         // Met de /UserUnit per pagina: een schaal 1:N rekent daarmee (#884).
         rondViewportLezingAf(doc, kenmerk, geldig ? leesPdfViewports(pdfLibDoc) : null, geldig ? leesUserUnits(pdfLibDoc) : null);
+        // De eigen schalen van de app: de documentschaal en de schaal-
+        // controles per blad reizen mee in het bestand (#629).
+        if (geldig) {
+          const { pasSchalenUitBestandToe } = await import('./schaal-in-pdf.js');
+          if (!isClosed() && pasSchalenUitBestandToe(doc, pdfLibDoc).schaal) {
+            const { saveDocumentScale } = await import('../annotations/measurement.js');
+            saveDocumentScale(doc);
+          }
+        }
       } catch {
         rondViewportLezingAf(doc, kenmerk, null); // viewports zijn optioneel
       }
@@ -663,7 +786,9 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
             // In page units of page 1, /UserUnit included (#884).
             const { measureScaleFromTitleBlock } = await import('../annotations/document-scale.js');
             if (isClosed() || doc.measureScale) return;
-            doc.measureScale = measureScaleFromTitleBlock(result);
+            // Een kale 1:N in de eenheid van de voorkeur Eenheden (#1158).
+            const { standaardLengteEenheid } = await import('../annotations/eenhedenstelsel.js');
+            doc.measureScale = measureScaleFromTitleBlock(result, standaardLengteEenheid());
             const { saveDocumentScale } = await import('../annotations/measurement.js');
             saveDocumentScale(doc);
             console.log(`Auto-detected scale: 1:${result.ratio} from "${result.scaleText}"`);
@@ -708,7 +833,9 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
     // Page 1 annotations are already loaded by ensureAnnotationsForPage() during
     // the first render. The rest load lazily page-by-page as the user navigates,
     // plus this background task pre-loads remaining pages without blocking the UI.
-    loadExistingAnnotations(doc).then(async () => {
+    const annotationCompletion = loadExistingAnnotations(doc);
+    doc._annotationCompletion = annotationCompletion;
+    annotationCompletion.then(async () => {
       console.log(`[PERF-BG] loadExistingAnnotations .then() callback START`);
       if (isClosed()) return;
       // Sync doc.measureScale from any loaded scaleBar annotations
@@ -726,108 +853,15 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       }
     }).catch((e) => { console.error('[PERF-BG] loadExistingAnnotations error:', e); });
 
-    // Background prefetch for ALL pages, dispatched by per-page classification:
-    //   - VECTOR pages → extract_draw_commands so thumbnails + main view hit
-    //     the JS-replay cache instead of falling back to the Rust thumbnail
-    //     path (which skips text operators and produces blank/colored
-    //     placeholder thumbnails on text-heavy pages).
-    //   - TILE pages → render_pdf_page at scale 1.0 so the Rust pixmap cache
-    //     is warm. Without this, the FIRST time the user navigates to a
-    //     tile-classified page (NKD1a pages 2-7, huge construction drawings)
-    //     they wait 600-2500 ms for PDFium to walk all vector commands and
-    //     produce the bitmap. With warm pixmap cache the navigation is
-    //     ~150 ms total.
-    //
-    // Both go through the analyze cache (already populated by
-    // analyze_page_type_batch earlier in loadPDF), so the per-page analyze
-    // invoke is microseconds. Concurrency=2 keeps interactive renders
-    // responsive.
-    if (filePath && _rustPad) {
-      (async () => {
-        try {
-          const vr = await import('./vector-renderer.js');
-          const pbc = await import('./page-bitmap-cache.js');
-          const numPages = doc.pdfDoc?.numPages || 0;
-          if (numPages <= 0) return;
-
-          let nextPage = 1;
-          const CONCURRENCY = 2;
-          let warmedVector = 0;
-          let warmedTile = 0;
-
-          const worker = async () => {
-            while (true) {
-              if (isClosed()) return;
-              const p = nextPage++;
-              if (p > numPages) return;
-
-              try {
-                const pageType = await invoke('analyze_page_type', {
-                  path: filePath, pageIndex: p - 1,
-                });
-                if (isClosed()) return;
-
-                if (pageType === 'vector') {
-                  if (vr.hasCachedCommands(filePath, p, 0)) continue;
-                  const cmdData = await invoke('extract_draw_commands', {
-                    path: filePath, pageIndex: p - 1, rotation: 0,
-                  });
-                  if (isClosed()) return;
-                  const cmdBytes = cmdData instanceof Uint8Array
-                    ? cmdData : new Uint8Array(cmdData);
-                  vr.cacheCommands(filePath, p, cmdBytes, 0);
-                  await vr.prepareImages(filePath, p, 0);
-                  warmedVector++;
-                } else {
-                  // TILE page — DELIBERATELY no prefetch.
-                  //
-                  // We tried prefetching tile-page bitmaps at scale=0.125 in
-                  // v1.55/v1.56 (~1.5 s per huge construction-PDF page). It
-                  // gave a blurry fallback bitmap that the orchestrator's
-                  // getBestAvailableBitmap surfaced on first navigation, but:
-                  //   - PDFium serializes via global mutex, so the prefetch
-                  //     blocked the thumbnail-processor's render_thumbnail
-                  //     calls for 6+ pages × ~1.5 s = 9-20 s. User reported
-                  //     thumbnails "weer trager".
-                  //   - The orchestrator's exact-bucket render still ran
-                  //     after the fallback paint (~2.7 s for NKD1a fit-zoom),
-                  //     so the user still waited for the crisp upgrade.
-                  //   - Net win was only the brief "blurry instead of blank"
-                  //     first paint — not worth the thumbnail regression.
-                  //
-                  // Better: let thumbnails own PDFium during cold-open. The
-                  // first nav to a tile page pays the ~2.7 s cold-render
-                  // cost ONCE; subsequent navigations hit the Rust pixmap
-                  // cache and are ~150 ms. Multi-process PDFium (v1.58+)
-                  // is the real fix for cold-render latency on huge pages.
-                  warmedTile++; // counted as "decided not to warm" for diagnostics
-                }
-              } catch (e) {
-                // One bad page shouldn't kill prefetch — just log and move on
-                console.warn(`[PERF-BG] prefetch failed page ${p}:`, e?.message ?? e);
-              }
-
-              // Yield between pages so we don't starve interactive renders
-              await new Promise(r => setTimeout(r, 0));
-            }
-          };
-
-          const workers = [];
-          for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
-          await Promise.all(workers);
-          console.log(`[PERF-BG] prefetch complete (${numPages} pages, vector=${warmedVector}, tile=${warmedTile})`);
-        } catch (e) {
-          console.warn('[PERF-BG] prefetch error:', e);
-        }
-      })();
-    }
 
   } catch (error) {
     // Suppress errors from document being closed during background loading
     if (isClosed()) return;
     console.error('Error loading PDF:', error);
     if (isActive()) {
-      showMessage(i18next.t('failedToLoadPdf', { error: foutBericht(error) }));
+      // Een openfout zegt zelf welk pad, welke stap en wat te doen (#1005).
+      if (error instanceof OpenBestandFout) showMessage(error.message, i18next.t('openFile.title'));
+      else showMessage(i18next.t('failedToLoadPdf', { error: foutBericht(error) }));
     }
   } finally {
     doc._isLoading = false;
@@ -951,17 +985,23 @@ export async function createDocFromTemplate(templatePath, titleBlockPath = null)
 //   * the tab shows an Untitled display name instead of the temp filename;
 //   * `isUntitled` routes Save → Save-As and deletes the temp file once the
 //     user picks a real location (or closes the tab).
-export async function createBlankPDF(widthPt, heightPt, numPages) {
+export async function createBlankPDF(widthPt, heightPt, numPages, bytes = null) {
   try {
     showLoading('Creating document...');
 
-    // Build the blank PDF bytes
-    const pdfDocLib = await PDFDocument.create();
-    for (let i = 0; i < numPages; i++) {
-      pdfDocLib.addPage([widthPt, heightPt]);
+    // Build the blank PDF bytes, unless the caller already made the document
+    // (a frame from the company house style, pdf/huisstijl-kaders.js): that
+    // takes the same route as a blank sheet, in the browser too.
+    let typedArray;
+    if (bytes) {
+      typedArray = new Uint8Array(bytes);
+    } else {
+      const pdfDocLib = await PDFDocument.create();
+      for (let i = 0; i < numPages; i++) {
+        pdfDocLib.addPage([widthPt, heightPt]);
+      }
+      typedArray = new Uint8Array(await pdfDocLib.save());
     }
-    const pdfBytes = await pdfDocLib.save();
-    const typedArray = new Uint8Array(pdfBytes);
 
     const displayName = getNextUntitledName();
 
@@ -1024,6 +1064,15 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
     doc.selectedAnnotations = [];
     doc.currentPage = 1;
 
+    // Een zelf gemaakt leeg document heeft geen annotaties om te laden: alle
+    // pagina's zijn meteen gereed. Zonder dit bleef de markering uit in de
+    // doorlopende weergave (alleen renderPage zette haar), en weigerde de
+    // saver het document zodra er iets op getekend was. Een meegegeven
+    // sjabloon (`bytes`) kan wel annotaties hebben: dat krijgt de markering
+    // pas als ze echt geladen zijn (hieronder), anders zou de saver ze bij
+    // het opslaan weglaten.
+    if (!bytes) markAllAnnotationPagesLoaded(numPages, doc);
+
     // Show PDF container, hide placeholder
     const placeholder = document.getElementById('placeholder');
     const pdfContainer = document.getElementById('pdf-container');
@@ -1045,6 +1094,20 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
     }
 
     await setViewMode(doc.viewMode);
+    if (bytes) {
+      // Zoals bij een geopend bestand: de annotaties van elke pagina laden;
+      // dat zet ook de markering per pagina. Mislukt het, dan blijft de
+      // markering uit en weigert de saver, in plaats van iets weg te laten.
+      try {
+        doc._annotationCompletion = loadExistingAnnotations(doc);
+        await doc._annotationCompletion;
+        const { redrawAnnotations, redrawContinuous } = await import('../annotations/rendering.js');
+        if (doc.viewMode === 'continuous') redrawContinuous();
+        else redrawAnnotations();
+      } catch (e) {
+        console.error('[createBlankPDF] annotaties van het sjabloon niet geladen:', e);
+      }
+    }
     generateThumbnails();
     refreshActiveTab();
     updateAllStatus();
@@ -1119,6 +1182,20 @@ export async function getSharedPdfLibDoc(doc) {
   return doc._sharedPdfLibDocPromise;
 }
 
+// The worker route for stamp images of this document (stempel-beeld-rust.js),
+// made once per document; null where there is no PDFium worker or no file on
+// disk, and then PDF.js renders.
+function stempelWorkerRender(doc) {
+  if (doc._stempelWorkerRender !== undefined) return doc._stempelWorkerRender;
+  let render = null;
+  try {
+    if (isTauri() && !isMobile() && heeftRustRenderer() && originalBytesCache.has(doc.filePath)) {
+      render = createStempelRender({ invoke, pad: doc.filePath });
+    }
+  } catch { render = null; }
+  return (doc._stempelWorkerRender = render);
+}
+
 // Load annotations for a single page on-demand (called when user navigates to a page)
 // If waitForColors=false, skips color extraction when pdf-lib isn't ready yet
 async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false) {
@@ -1136,7 +1213,7 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
 
   const stampAnnots = annotations.filter(a => a.subtype === 'Stamp');
   const hasSquareAnnotations = annotations.some(a => a.subtype === 'Square');
-  const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'FileAttachment'].includes(a.subtype));
+  const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'FileAttachment', 'Link'].includes(a.subtype));
 
   let stampImageMap = null;
   let annotColorMap = null;
@@ -1155,7 +1232,7 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
       const pdfPage = await doc.pdfDoc.getPage(pageNum);
       const extractViewport = paginaViewport(pdfPage);
       stampImageMap = await extractStampImagesHybrid(
-        pdfPage, extractViewport, stampAnnots, pageNum, pdfLibDoc,
+        pdfPage, extractViewport, stampAnnots, pageNum, pdfLibDoc, stempelWorkerRender(doc),
       );
     } catch (e) {
       console.warn('[loader] hybrid stamp extraction failed:', e);
@@ -1291,7 +1368,7 @@ export async function loadExistingAnnotations(doc) {
 
       const stampAnnots = annotations.filter(a => a.subtype === 'Stamp');
       const hasSquareAnnotations = annotations.some(a => a.subtype === 'Square');
-      const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'FileAttachment'].includes(a.subtype));
+      const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'FileAttachment', 'Link'].includes(a.subtype));
 
       let stampImageMap = null;
       let annotColorMap = null;
@@ -1299,7 +1376,7 @@ export async function loadExistingAnnotations(doc) {
       if (stampAnnots.length > 0 || hasSquareAnnotations) {
         try {
           stampImageMap = await extractStampImagesHybrid(
-            pages[i], viewport, stampAnnots, pageNum, pdfLibDoc,
+            pages[i], viewport, stampAnnots, pageNum, pdfLibDoc, stempelWorkerRender(doc),
           );
         } catch (e) {
           console.warn('[loader] hybrid stamp extraction failed:', e);
@@ -1342,7 +1419,7 @@ export async function loadExistingAnnotations(doc) {
 
         const stampAnnots = annotations.filter(a => a.subtype === 'Stamp');
         const hasSquareAnnotations = annotations.some(a => a.subtype === 'Square');
-        const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'FileAttachment'].includes(a.subtype));
+        const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'FileAttachment', 'Link'].includes(a.subtype));
 
         let stampImageMap = null;
         let annotColorMap = null;
@@ -1350,7 +1427,7 @@ export async function loadExistingAnnotations(doc) {
         if (stampAnnots.length > 0 || hasSquareAnnotations) {
           try {
             stampImageMap = await extractStampImagesHybrid(
-              page, viewport, stampAnnots, pageNum, pdfLibDoc,
+              page, viewport, stampAnnots, pageNum, pdfLibDoc, stempelWorkerRender(doc),
             );
           } catch (e) {
             console.warn('[loader] hybrid stamp extraction failed:', e);

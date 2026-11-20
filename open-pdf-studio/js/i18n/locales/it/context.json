@@ -3,6 +3,7 @@
     "openPopUpNote": "Apri nota a comparsa",
     "hidePopUpNote": "Nascondi nota a comparsa",
     "resetPopUpLocation": "Ripristina posizione nota a comparsa",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Modifica testo...",
     "addReply": "Aggiungi risposta",
     "locked": "Bloccato",
@@ -12,11 +13,13 @@
     "printable": "Stampabile",
     "status": "Stato",
     "showByStatus": "Mostra per stato",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Nessuno",
     "statusAccepted": "Accettato",
     "statusCancelled": "Annullato",
     "statusCompleted": "Completato",
     "statusRejected": "Rifiutato",
+    "statusReviewed": "Revisionato",
     "reviewHistory": "Cronologia revisioni...",
     "layer": "Livello:",
     "noLayersAvailable": "Nessun livello disponibile",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Aggiungi punti alla catena di quote",
     "dimChainRemove": "Rimuovi linea di estensione dalla catena",
     "selectRoom": "Seleziona locale",
+    "checkScale": "Verifica scala con questa linea...",
     "saveToToolSet": "Salva nel set di strumenti"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Centra verticalmente",
     "distributeHorizontally": "Distribuisci orizzontalmente",
     "distributeVertically": "Distribuisci verticalmente",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Taglia angoli dei muri",
     "deleteAnnotations": "Elimina {{count}} annotazioni",
     "deleteConfirm": "Eliminare {{count}} annotazioni?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Annida sotto un nuovo segnalibro...",
     "indent": "Aumenta rientro",
     "outdent": "Riduci rientro",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Elimina {{count}} segnalibri"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Inserisci da file...",
     "insertFromFileBefore": "Prima di questa pagina...",
     "insertFromFileAfter": "Dopo questa pagina...",
-    "pageLabels": "Etichette di pagina (generatore di nomi)..."
+    "pageLabels": "Etichette di pagina (generatore di nomi)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Evidenzia selezione",
     "strikethroughSelection": "Barra selezione",
     "underlineSelection": "Sottolinea selezione",
-    "curvedLeaderSelection": "Aggiungi callout curvo"
+    "curvedLeaderSelection": "Aggiungi callout curvo",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Inserisci collegamento..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Eliminare questa annotazione?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Elimina vertice",
     "insertVertex": "Inserisci vertice qui",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Converti in arco",
     "convertToLine": "Converti in linea"
   },

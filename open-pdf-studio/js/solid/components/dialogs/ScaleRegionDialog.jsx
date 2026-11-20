@@ -16,17 +16,17 @@ import { redrawAnnotations, redrawContinuous } from '../../../annotations/render
 import { recalculateAllMeasurements } from '../../../annotations/measurement.js';
 import { invalidateScaleRegionCache } from '../../../annotations/scale-region.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
-import { US_SCALES } from '../../../../markset/us-units.js'; // Markset
-import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
+import { standaardLengteEenheid, standaardenVoorStelsel } from '../../../annotations/eenhedenstelsel.js';
+import { scaleSelectOptions, isImperialScalePreset, scaleDisplayLabel } from '../../../annotations/scale-presets.js';
 
-// Standard drawing scales for the dropdown (largest → smallest denominator).
-const PRESET_SCALES = [
+// Standard drawing scales for the dropdown (largest → smallest denominator),
+// followed by the imperial architectural/engineering scales (#972).
+const METRIC_REGION_SCALES = [
   '1:200', '1:100', '1:50', '1:20', '1:10', '1:5', '1:2', '1:1',
 ];
-
-// Markset: US scales, shown by their US label and measured in feet.
-const US_PRESETS = US_SCALES.map(s => ({ value: `1:${s.ratio}`, label: s.label }));
-const isPreset = (s) => PRESET_SCALES.includes(s) || US_PRESETS.some(p => p.value === s);
+// Alle standaardschalen (ongeacht het gekozen stelsel): wat hierin staat is
+// geen eigen schaal.
+const PRESET_SCALES = scaleSelectOptions(METRIC_REGION_SCALES, { system: 'both' }).map(o => o.value);
 
 function redraw() {
   const doc = getActiveDocument();
@@ -49,13 +49,13 @@ export default function ScaleRegionDialog(props) {
   // distance and reopens it with data.initial (previous values + computed
   // scale) so nothing the user typed is lost.
   const initial = data.initial || initialSnapshot || {};
-  const initialScale = initial.scaleString || unitDefaults().scaleString; // Markset
+  const initialScale = initial.scaleString || standaardenVoorStelsel().schaal; // Markset: 1:48 with US units
   const [scaleString, setScaleString] = createSignal(initialScale);
-  const [units, setUnits] = createSignal(initial.units || unitDefaults().unit); // Markset
+  const [units, setUnits] = createSignal(initial.units || standaardLengteEenheid());
   const [label, setLabel] = createSignal(initial.label || '');
   // True when the user picked "Aangepast…" — shows the free-text scale input.
   // A computed scale like "1:53.42" is not a preset, so it starts as custom.
-  const [customScale, setCustomScale] = createSignal(!isPreset(initialScale)); // Markset: isPreset
+  const [customScale, setCustomScale] = createSignal(!PRESET_SCALES.includes(initialScale));
 
   // Scale must match "<number>:<number>" with both parts > 0 (decimals
   // allowed — a measured scale can be e.g. "1:53.42"). Anything else
@@ -166,19 +166,20 @@ export default function ScaleRegionDialog(props) {
               input for non-standard scales (e.g. 1:75). Format is
               validated/normalized in handleApply(). */}
           <PrefSelect
-            value={() => (!customScale() && isPreset(scaleString())) ? scaleString() : '__custom__'}
+            value={() => (!customScale() && PRESET_SCALES.includes(scaleString())) ? scaleString() : '__custom__'}
             setValue={(v) => {
               if (v === '__custom__') {
                 setCustomScale(true);
               } else {
                 setCustomScale(false);
                 setScaleString(v);
-                if (US_PRESETS.some(p => p.value === v)) setUnits('ft'); // Markset
+                // An imperial preset reads in feet; another unit can still be chosen.
+                if (isImperialScalePreset(v)) setUnits('ft');
               }
             }}
             options={[
-              ...PRESET_SCALES.map(s => ({ value: s, label: s })),
-              ...US_PRESETS, // Markset
+              // Metrisch, imperiaal of beide volgens de voorkeur (#996).
+              ...scaleSelectOptions(METRIC_REGION_SCALES, { current: scaleString() }),
               { value: '__custom__', label: t('scaleRegion.custom') || 'Aangepast…' },
             ]}
             style={{ width: '100%' }}
@@ -192,6 +193,10 @@ export default function ScaleRegionDialog(props) {
               placeholder="1:75"
               style="width:100%;box-sizing:border-box;margin-top:4px"
             />
+            {/* Imperiaal ook in inch-notatie (#1000). */}
+            <Show when={scaleDisplayLabel(scaleString(), units(), { withRatio: false }) !== scaleString().replace(/\s+/g, '')}>
+              <div style="font-size:11px;margin-top:2px">{scaleDisplayLabel(scaleString(), units())}</div>
+            </Show>
           </Show>
           {/* Derive the scale by measuring a known distance on the drawing:
               hides this dialog, 2-click pick, asks for the real length,

@@ -6,8 +6,10 @@ import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../../../core/sessie-herstel.
 import { knopUitInBrowser, meldingTekst } from '../../../core/webfuncties.js';
 import { LANGUAGES } from '../../../i18n/config.js';
 import PrefSelect from './PrefSelect.jsx';
+import { normalizeStartupTool } from '../../../core/startup-tool.js';
 import { UI_SCALES, normalizeUiScale } from '../../../core/ui-scale.js';
 import LanguageSelect from './LanguageSelect.jsx';
+import UnitSystemRow from './UnitSystemRow.jsx';
 
 export default function GeneralTab(props) {
   const { t } = useTranslation('preferences');
@@ -53,6 +55,11 @@ export default function GeneralTab(props) {
           <LanguageSelect value={p.language[0]} setValue={p.language[1]} options={languageOptions} style={{ width: '220px' }} />
         </div>
       </fieldset>
+      {/* Eenheden (#1158): metrisch of voet en inch, voor de hele app. */}
+      <fieldset class="pref-fieldset">
+        <legend>{t('measurement.units')}</legend>
+        <UnitSystemRow prefs={p} id="pref-units" />
+      </fieldset>
       <fieldset class="pref-fieldset">
         <legend>{t('general.theme')}</legend>
         <div class="pref-row">
@@ -68,6 +75,14 @@ export default function GeneralTab(props) {
       </fieldset>
       <fieldset class="pref-fieldset">
         <legend>{t('general.startup')}</legend>
+        <div class="pref-row">
+          <label for="pref-startup-tool">{t('general.startupTool')}</label>
+          <select id="pref-startup-tool" value={normalizeStartupTool(p.startupTool[0]())}
+            onChange={e => p.startupTool[1](normalizeStartupTool(e.target.value))}>
+            <option value="select">{tRibbon('home.select')}</option>
+            <option value="hand">{tRibbon('home.hand')}</option>
+          </select>
+        </div>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">
             {/* In de browser bewaart de app geen sessie; een aanvinkbaar vakje
@@ -89,6 +104,17 @@ export default function GeneralTab(props) {
             <span>{t('general.interceptPrintScreen')}</span>
           </label>
         </div>
+      </fieldset>
+      {/* Incrementeel opslaan (#679): experimenteel, standaard uit. */}
+      <fieldset class="pref-fieldset">
+        <legend>{t('general.saving')}</legend>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.incrementalSave[0]()} onChange={e => p.incrementalSave[1](e.target.checked)} />
+            <span>{t('general.incrementalSave')}</span>
+          </label>
+        </div>
+        <div class="pref-row" style={{ color: '#666', 'font-size': '11px' }}>{t('general.incrementalSaveHint')}</div>
       </fieldset>
       {/* De MCP-server draait op de Rust-kant; in de webversie is er niets om
           aan of uit te zetten (#456). */}

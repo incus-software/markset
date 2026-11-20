@@ -16,6 +16,7 @@
 
 import { state, getActiveDocument } from '../core/state.js';
 import { cloneAnnotation } from './factory.js';
+import { heeftKrommen, vlakPadOpScherm } from './curve-shape.js';
 import {
   recordBulkModify, recordBulkDelete, recordBulkAdd,
   beginUndoTransaction, endUndoTransaction,
@@ -57,7 +58,19 @@ function _inheritStyle(src) {
     modifiedAt: now,
     locked: false,
     printable: src.printable !== false,
+    // De laag (OCG, #377/#629): een stuk van een uiteengehaalde lijn of een
+    // samengevoegde lijn blijft op de laag van zijn bron. Zonder dit veld
+    // viel het resultaat stil terug op de standaardlaag.
+    ...(typeof src.layer === 'string' && src.layer ? { layer: src.layer } : {}),
   };
+}
+
+// De gedeelde waarde van `key` over alle bronnen, of undefined als ze
+// verschillen of ontbreken.
+function _gedeeld(bronnen, key) {
+  const eerste = bronnen[0]?.[key];
+  if (eerste == null || eerste === '') return undefined;
+  return bronnen.every(b => b?.[key] === eerste) ? eerste : undefined;
 }
 
 // Ordered vertex list for any joinable annotation, or null if not joinable.
@@ -68,9 +81,17 @@ function _pointsOf(ann) {
     return [{ x: ann.startX, y: ann.startY }, { x: ann.endX, y: ann.endY }];
   }
   if (Array.isArray(ann.points) && ann.points.length >= 2) {
-    return ann.points.map(p => ({ x: p.x, y: p.y }));
+    return _rechtePunten(ann).map(p => ({ x: p.x, y: p.y }));
   }
   return null;
+}
+
+// De punten waarmee uiteenhalen en samenvoegen rekenen. Een polylijn of
+// veelhoek met krommen (#1169) gaat als vlakgemaakt pad mee: de losse lijnen
+// en de samengevoegde polylijn kennen geen krommen, maar volgen zo wel de
+// vorm.
+function _rechtePunten(ann) {
+  return (heeftKrommen(ann) && vlakPadOpScherm(ann, 0.5)) || ann.points;
 }
 
 /**
@@ -89,7 +110,7 @@ export function explodeSelection() {
   const created = [];
   const exploded = [];
   for (const ann of sel) {
-    const pts = ann.points && ann.points.length >= 2 ? ann.points : null;
+    const pts = ann.points && ann.points.length >= 2 ? _rechtePunten(ann) : null;
     if (!pts) continue;
     const segCount = CLOSED_POLY_TYPES.has(ann.type) ? pts.length : pts.length - 1;
     for (let i = 0; i < segCount; i++) {
@@ -97,6 +118,8 @@ export function explodeSelection() {
       const b = pts[(i + 1) % pts.length];
       created.push({
         ..._inheritStyle(ann),
+        // Hoorde de bron bij een verzameling, dan blijven de stukken erin.
+        ...(ann.groupId ? { groupId: ann.groupId } : {}),
         type: 'line',
         startX: a.x, startY: a.y,
         endX: b.x, endY: b.y,
@@ -185,6 +208,11 @@ export function joinSelection(tol = 2.0) {
     type: 'polyline',
     points: chain.map(p => ({ x: p.x, y: p.y })),
   };
+  // Liggen de delen op verschillende lagen, dan wint de eerste geselecteerde
+  // (src, zie _inheritStyle). Een verzameling blijft alleen als alle delen
+  // er samen in zaten.
+  const groep = _gedeeld(members, 'groupId');
+  if (groep) joined.groupId = groep;
 
   beginUndoTransaction();
   recordBulkDelete(members);

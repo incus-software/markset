@@ -3,6 +3,7 @@
     "openPopUpNote": "Deschidere nota pop-up",
     "hidePopUpNote": "Ascundere nota pop-up",
     "resetPopUpLocation": "Resetare pozitie nota pop-up",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Editare text...",
     "addReply": "Adaugare raspuns",
     "locked": "Blocat",
@@ -12,11 +13,13 @@
     "printable": "Imprimabil",
     "status": "Stare",
     "showByStatus": "Afișare după stare",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Niciunul",
     "statusAccepted": "Acceptat",
     "statusCancelled": "Anulat",
     "statusCompleted": "Finalizat",
     "statusRejected": "Respins",
+    "statusReviewed": "Revizuit",
     "reviewHistory": "Istoric revizuire...",
     "layer": "Strat:",
     "noLayersAvailable": "Niciun strat disponibil",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Adăugare puncte la lanțul de cote",
     "dimChainRemove": "Eliminare linie ajutătoare din lanț",
     "selectRoom": "Selectare încăpere",
+    "checkScale": "Verifică scara cu această linie...",
     "saveToToolSet": "Salvează în setul de unelte"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Centrare verticala",
     "distributeHorizontally": "Distribuire orizontala",
     "distributeVertically": "Distribuire verticala",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Retezare colțuri pereți",
     "deleteAnnotations": "Stergere {{count}} adnotari",
     "deleteConfirm": "Stergeti {{count}} adnotari?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Imbricare sub un marcaj nou...",
     "indent": "Mărire indent",
     "outdent": "Micșorare indent",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Ștergere {{count}} marcaje"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Inserare din fișier...",
     "insertFromFileBefore": "Înainte de această pagină...",
     "insertFromFileAfter": "După această pagină...",
-    "pageLabels": "Etichete de pagină (generator de nume)..."
+    "pageLabels": "Etichete de pagină (generator de nume)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Evidentiare selectie",
     "strikethroughSelection": "Barare selectie",
     "underlineSelection": "Subliniere selectie",
-    "curvedLeaderSelection": "Adăugare explicație curbată"
+    "curvedLeaderSelection": "Adăugare explicație curbată",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Stergeti aceasta adnotare?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Ștergere vârf",
     "insertVertex": "Inserare vârf aici",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Conversie în arc",
     "convertToLine": "Conversie în linie"
   },

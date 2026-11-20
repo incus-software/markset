@@ -53,36 +53,36 @@ pub enum Papier {
     Letter,
     Legal,
     Tabloid,
-    // Markset: US engineering (ANSI C-E) and architectural (ARCH A-E1) sheets.
-    // ANSI A and B are Letter and Tabloid.
-    AnsiC,
-    AnsiD,
-    AnsiE,
+    // US-tekenvellen (ARCH A–E1, ANSI C–E; ANSI A en B zijn Letter en
+    // Tabloid). Zonder vaste code: ze gaan als eigen maat of als de code
+    // waaronder de driver die maat aanbiedt, net als A0 en A1.
     ArchA,
     ArchB,
     ArchC,
     ArchD,
-    ArchE1,
     ArchE,
+    ArchE1,
+    AnsiC,
+    AnsiD,
+    AnsiE,
 }
 
-/// Markset: US sheets without a printer form, as (key, short side, long side)
-/// in inches. ARCH sizes have no `DMPAPER_*` code, so they go as a custom
-/// size, or under the code a plotter driver lists for that size.
-const US_VELLEN_IN: [(Papier, &str, f64, f64); 9] = [
-    (Papier::AnsiC, "ansi-c", 17.0, 22.0),
-    (Papier::AnsiD, "ansi-d", 22.0, 34.0),
-    (Papier::AnsiE, "ansi-e", 34.0, 44.0),
-    (Papier::ArchA, "arch-a", 9.0, 12.0),
-    (Papier::ArchB, "arch-b", 12.0, 18.0),
-    (Papier::ArchC, "arch-c", 18.0, 24.0),
-    (Papier::ArchD, "arch-d", 24.0, 36.0),
-    (Papier::ArchE1, "arch-e1", 30.0, 42.0),
-    (Papier::ArchE, "arch-e", 36.0, 48.0),
+/// De US-tekenvellen, in de volgorde van de keuzelijst
+/// (js/core/us-papierformaten.js): sleutel en staande maat in inches.
+static US_VELLEN: [(Papier, &str, u32, u32); 9] = [
+    (Papier::ArchA, "arch-a", 9, 12),
+    (Papier::ArchB, "arch-b", 12, 18),
+    (Papier::ArchC, "arch-c", 18, 24),
+    (Papier::ArchD, "arch-d", 24, 36),
+    (Papier::ArchE, "arch-e", 36, 48),
+    (Papier::ArchE1, "arch-e1", 30, 42),
+    (Papier::AnsiC, "ansi-c", 17, 22),
+    (Papier::AnsiD, "ansi-d", 22, 34),
+    (Papier::AnsiE, "ansi-e", 34, 44),
 ];
 
-fn us_vel(papier: Papier) -> Option<&'static (Papier, &'static str, f64, f64)> {
-    US_VELLEN_IN.iter().find(|v| v.0 == papier)
+fn us_vel(papier: Papier) -> Option<&'static (Papier, &'static str, u32, u32)> {
+    US_VELLEN.iter().find(|v| v.0 == papier)
 }
 
 impl Papier {
@@ -102,7 +102,7 @@ impl Papier {
             Some("letter") => Papier::Letter,
             Some("legal") => Papier::Legal,
             Some("tabloid") => Papier::Tabloid,
-            Some(k) => US_VELLEN_IN.iter().find(|v| v.1 == k).map_or(Papier::Printer, |v| v.0), // Markset
+            Some(k) => US_VELLEN.iter().find(|v| v.1 == k).map_or(Papier::Printer, |v| v.0),
             _ => Papier::Printer,
         }
     }
@@ -132,11 +132,15 @@ pub fn dmpaper(papier: Papier) -> Option<i16> {
         Papier::Letter => Some(1),
         Papier::Legal => Some(5),
         Papier::Tabloid => Some(3),
-        // Markset: DMPAPER_CSHEET, DMPAPER_DSHEET, DMPAPER_ESHEET; ARCH has no code.
-        Papier::AnsiC => Some(24),
-        Papier::AnsiD => Some(25),
-        Papier::AnsiE => Some(26),
-        Papier::ArchA | Papier::ArchB | Papier::ArchC | Papier::ArchD | Papier::ArchE1 | Papier::ArchE => None,
+        Papier::ArchA
+        | Papier::ArchB
+        | Papier::ArchC
+        | Papier::ArchD
+        | Papier::ArchE
+        | Papier::ArchE1
+        | Papier::AnsiC
+        | Papier::AnsiD
+        | Papier::AnsiE => None,
     }
 }
 
@@ -158,7 +162,7 @@ impl Papier {
             Papier::Letter => "letter",
             Papier::Legal => "legal",
             Papier::Tabloid => "tabloid",
-            p => us_vel(p).map_or("printer", |v| v.1), // Markset
+            p => us_vel(p).map_or("printer", |v| v.1),
         }
     }
 
@@ -176,16 +180,12 @@ impl Papier {
     /// De maat die als eigen maat in de DEVMODE gaat (`dmPaperWidth`,
     /// `dmPaperLength`, in 0,1 mm, staand) voor een vel zonder vaste code.
     pub fn eigen_maat_tiende_mm(self) -> Option<(i16, i16)> {
-        // Markset: ARCH sheets (no code, no printer form) go by their own size.
-        if dmpaper(self).is_none() {
-            if let Some(&(_, _, k, l)) = us_vel(self) {
-                return Some(((k * 254.0).round() as i16, (l * 254.0).round() as i16));
-            }
-        }
-        self.formulier().map(|f| {
+        if let Some(f) = self.formulier() {
             let (b, l) = f.maat_tiende_mm();
-            (b as i16, l as i16)
-        })
+            return Some((b as i16, l as i16));
+        }
+        // US-tekenvellen: inches maal 254 is tienden van een millimeter.
+        us_vel(self).map(|v| ((v.2 * 254) as i16, (v.3 * 254) as i16))
     }
 
     /// Het vel staand in mm: (korte zijde, lange zijde). `None` bij `Printer`.
@@ -203,7 +203,7 @@ impl Papier {
             Papier::Letter => Some((215.9, 279.4)),
             Papier::Legal => Some((215.9, 355.6)),
             Papier::Tabloid => Some((279.4, 431.8)),
-            p => us_vel(p).map(|&(_, _, k, l)| (k * 25.4, l * 25.4)), // Markset
+            p => us_vel(p).map(|v| (f64::from(v.2 * 254) / 10.0, f64::from(v.3 * 254) / 10.0)), // Markset: exact 0.1 mm (17 * 25.4 is 431.79999...)
         }
     }
 }
@@ -223,16 +223,15 @@ const BEKENDE_VELLEN: [Papier; 22] = [
     Papier::Letter,
     Papier::Legal,
     Papier::Tabloid,
-    // Markset: US sheets
-    Papier::AnsiC,
-    Papier::AnsiD,
-    Papier::AnsiE,
     Papier::ArchA,
     Papier::ArchB,
     Papier::ArchC,
     Papier::ArchD,
-    Papier::ArchE1,
     Papier::ArchE,
+    Papier::ArchE1,
+    Papier::AnsiC,
+    Papier::AnsiD,
+    Papier::AnsiE,
 ];
 
 /// Welk bekend vel hoort bij een DEVMODE-papiercode (`dmPaperSize`)?
@@ -252,9 +251,9 @@ pub fn papier_uit_dmpaper(code: i16) -> Option<Papier> {
         1 | 2 | 54 | 75 => Some(Papier::Letter), // LETTER, LETTERSMALL, _TRANSVERSE, _ROTATED
         5 => Some(Papier::Legal),
         3 | 4 => Some(Papier::Tabloid),          // TABLOID, LEDGER
-        24 => Some(Papier::AnsiC),               // Markset: CSHEET
-        25 => Some(Papier::AnsiD),               // Markset: DSHEET
-        26 => Some(Papier::AnsiE),               // Markset: ESHEET
+        24 => Some(Papier::AnsiC),               // CSHEET (17 x 22 in)
+        25 => Some(Papier::AnsiD),               // DSHEET (22 x 34 in)
+        26 => Some(Papier::AnsiE),               // ESHEET (34 x 44 in)
         _ => None,
     }
 }
@@ -407,17 +406,12 @@ pub fn velkeuze_regel(k: &VelKeuze) -> String {
     )
 }
 
-/// De omgevingsvariabele waarmee het liggende vel als eigen maat uit gaat.
+/// De omgevingsvariabele die het liggende vel bij een printer die een
+/// document schrijft regelt: 0/uit = altijd de liggende stand, 1/aan/altijd =
+/// ook bij standaardvellen een liggend vel (het gedrag van vóór issue 699),
+/// niet gezet = alleen bij vellen zonder standaardmaat
+/// (`print_plan::liggend_vel_modus`).
 pub const LIGGEND_VEL_OMGEVING: &str = "OPDS_LIGGEND_VEL";
-
-/// Staat het liggende vel als eigen maat uit? Zo blijft het terug te zetten
-/// op de liggende stand (het gedrag van vóór deze regel) zonder nieuwe
-/// versie, als een stuurprogramma er iets onverwachts mee doet.
-/// `OPDS_LIGGEND_VEL=0` (of "uit", "off", "false") zet het uit; al het
-/// andere, en een lege of ontbrekende waarde, laat het aan.
-pub fn liggend_vel_uitgezet(waarde: Option<&str>) -> bool {
-    waarde.is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "uit" | "off" | "false"))
-}
 
 /// Het liggende vel als eigen maat voor een staande DEVMODE:
 /// `(dmPaperWidth, dmPaperLength)` in 0,1 mm, de lange zijde als breedte. Uit
@@ -657,10 +651,10 @@ pub fn lp_media(papier: Papier) -> Option<String> {
             let f = papier.formulier()?;
             return Some(format!("Custom.{}x{}mm", f.breedte_mm, f.hoogte_mm));
         }
-        // Markset: US sheets as a custom size in inches (CUPS accepts "in").
+        // US-tekenvellen als eigen maat in inches (#996).
         p => {
-            let &(_, _, k, l) = us_vel(p)?;
-            return Some(format!("Custom.{k}x{l}in"));
+            let v = us_vel(p)?;
+            return Some(format!("Custom.{}x{}in", v.2, v.3));
         }
     };
     Some(naam.to_string())
@@ -721,6 +715,22 @@ mod tests {
         assert_eq!(Papier::A4.eigen_maat_tiende_mm(), None);
         assert_eq!(Papier::Printer.eigen_maat_tiende_mm(), None);
         assert_eq!(Papier::A2.formulier(), None);
+    }
+
+    #[test]
+    fn us_tekenvellen_parsen_en_gaan_als_eigen_maat() {
+        assert_eq!(Papier::uit_keuze(Some("arch-d")), Papier::ArchD);
+        assert_eq!(Papier::uit_keuze(Some("arch-e1")), Papier::ArchE1);
+        assert_eq!(Papier::uit_keuze(Some("ansi-e")), Papier::AnsiE);
+        assert_eq!(Papier::ArchD.sleutel(), "arch-d");
+        assert_eq!(dmpaper(Papier::ArchD), None);
+        assert_eq!(Papier::ArchD.eigen_maat_tiende_mm(), Some((6096, 9144)));
+        assert_eq!(Papier::ArchE.eigen_maat_tiende_mm(), Some((9144, 12192)));
+        assert_eq!(Papier::AnsiC.staande_maat_mm(), Some((431.8, 558.8)));
+        assert_eq!(papier_uit_maat_mm(914.4, 609.6), Some(Papier::ArchD));
+        assert_eq!(papier_uit_dmpaper(25), Some(Papier::AnsiD));
+        assert_eq!(lp_media(Papier::ArchD).as_deref(), Some("Custom.24x36in"));
+        assert_eq!(US_VELLEN.len() + 13, BEKENDE_VELLEN.len());
     }
 
     #[test]
@@ -832,22 +842,6 @@ mod tests {
             let (b, h) = p.staande_maat_mm().unwrap();
             assert!(b < h, "{p:?} staat niet staand");
         }
-    }
-
-    // Markset
-    #[test]
-    fn us_vellen() {
-        assert_eq!(Papier::uit_keuze(Some("arch-d")), Papier::ArchD);
-        assert_eq!(Papier::uit_keuze(Some("ansi-d")), Papier::AnsiD);
-        assert_eq!(Papier::ArchD.sleutel(), "arch-d");
-        assert_eq!(dmpaper(Papier::AnsiD), Some(25));
-        assert_eq!(dmpaper(Papier::ArchD), None);
-        assert_eq!(Papier::ArchD.eigen_maat_tiende_mm(), Some((6096, 9144)));
-        assert_eq!(Papier::ArchE.eigen_maat_tiende_mm(), Some((9144, 12192)));
-        assert_eq!(Papier::AnsiD.eigen_maat_tiende_mm(), None);
-        assert_eq!(papier_uit_maat_mm(914.4, 609.6), Some(Papier::ArchD));
-        assert_eq!(papier_uit_maat_mm(558.8, 863.6), Some(Papier::AnsiD));
-        assert_eq!(papier_uit_dmpaper(24), Some(Papier::AnsiC));
     }
 
     #[test]
@@ -1250,17 +1244,6 @@ mod tests {
         let regel = velkeuze_regel(&geweigerd);
         assert!(regel.contains("nagemeten=210.0 x 297.0 mm (staand)"), "{regel}");
         assert!(regel.contains("weg=liggende stand (stuurprogramma nam het vel niet over)"), "{regel}");
-    }
-
-    #[test]
-    fn liggend_vel_is_uit_te_zetten_in_de_omgeving() {
-        for uit in ["0", " 0 ", "uit", "OFF", "False"] {
-            assert!(liggend_vel_uitgezet(Some(uit)), "{uit}");
-        }
-        for aan in ["", "1", "aan", "ja", "onzin"] {
-            assert!(!liggend_vel_uitgezet(Some(aan)), "{aan}");
-        }
-        assert!(!liggend_vel_uitgezet(None));
     }
 
     #[test]

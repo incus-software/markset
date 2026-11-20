@@ -1,6 +1,7 @@
 import { state, getActiveDocument, clearSelection, addToSelection, removeFromSelection, isSelected, getAnnotationBounds, getSelectionBounds } from '../core/state.js';
 import { annotationCanvas, annotationCtx } from '../ui/dom-elements.js';
 import { createAnnotation, cloneAnnotation } from '../annotations/factory.js';
+import { metLabelVooraf } from '../annotations/label-vooraf.js';
 import { findAnnotationAt } from '../annotations/geometry.js';
 import { findHandleAt, getCursorForHandle } from '../annotations/handles.js';
 import { applyResize, applyMove, applyRotation } from '../annotations/transforms.js';
@@ -163,7 +164,7 @@ export function buildToolContext(e, coords) {
     viewMode: ctxDoc?.viewMode || 'single',
 
     // Snapping
-    snap: (x, y, excludeId, extraPoints) => performSnap(x, y, ctxDoc?.annotations || [], coords.pageNum, ctxScale, excludeId, extraPoints),
+    snap: (x, y, excludeId, extraPoints, opties) => performSnap(x, y, ctxDoc?.annotations || [], coords.pageNum, ctxScale, excludeId, extraPoints, opties),
     snapToGrid,
     snapAngle,
     setPolarAnchor,
@@ -183,7 +184,8 @@ export function buildToolContext(e, coords) {
     // De cursor volgt de richting op het scherm: annotatierotatie plus de
     // weergaverotatie (#200).
     getCursorForHandle: (handle, rotation, ann) => getCursorForHandle(handle, (rotation || 0) + weergaveRotatie(ctxDoc), ann),
-    createAnnotation,
+    // Een nieuwe meting neemt het vooraf ingestelde label mee (#1055).
+    createAnnotation: (props) => createAnnotation(metLabelVooraf(props)),
     cloneAnnotation,
     applyResize,
     applyMove,

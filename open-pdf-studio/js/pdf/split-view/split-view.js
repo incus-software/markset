@@ -1,3 +1,4 @@
+import { wheelZoomDelta } from '../../core/wheel-zoom.js';
 // Gesplitste weergave (#715, #893): twee panelen, op hetzelfde of twee documenten.
 //
 // Zie split-staat.js voor het ontwerp. Hier de DOM-kant:
@@ -490,6 +491,27 @@ function plaatsKader() {
 
 // ── De stand van de echte viewer ──────────────────────────────────────────
 
+/**
+ * Momentopname van de viewer voor een ander tabblad van hetzelfde document
+ * (#919, ui/chrome/weergave-tabs.js): dezelfde stand als die van een paneel,
+ * zonder beelden (die horen bij het moment van opnemen).
+ */
+export function leesWeergaveStand(doc) {
+  const stand = leesLiveStand(doc);
+  if (stand.vp) { stand.vp.tile = null; stand.vp.tileMeta = null; }
+  return stand;
+}
+
+/** De viewer een eerder opgenomen stand laten aannemen (#919). */
+export async function zetWeergaveStand(doc, stand) {
+  if (!stand || getActiveDocument() !== doc) return;
+  stopPanMomentum();
+  await zetLiveStand(doc, S.kopieerStand(stand));
+  _syncBasis = waarnemingLive(doc);
+  _laatsteKenmerk = null;
+  planTekenen();
+}
+
 function liveViewportToont(doc) {
   return !!(doc?.filePath && viewport.active && viewport.filePath === doc.filePath && doc.viewMode !== 'continuous');
 }
@@ -733,7 +755,9 @@ function opWiel(e) {
   const W = pane.clientWidth;
   const H = pane.clientHeight;
   const zoomen = e.ctrlKey || e.metaKey || !!state.preferences?.wheelZoomWithoutCtrl;
-  const richting = (e.deltaY || 0) < 0 ? 1 : -1;
+  const zoomDelta = wheelZoomDelta(e.deltaY, state.preferences);
+  if (zoomen && zoomDelta === 0) return;
+  const richting = zoomDelta < 0 ? 1 : -1;
   const { dx, dy, stap } = wielDelta(e, H);
 
   if (st.sync) {

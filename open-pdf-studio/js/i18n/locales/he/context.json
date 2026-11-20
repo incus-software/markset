@@ -3,6 +3,7 @@
     "openPopUpNote": "פתיחת הערה קופצת",
     "hidePopUpNote": "הסתרת הערה קופצת",
     "resetPopUpLocation": "איפוס מיקום הערה קופצת",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "עריכת טקסט...",
     "addReply": "הוספת תגובה",
     "locked": "נעול",
@@ -12,11 +13,13 @@
     "printable": "ניתן להדפסה",
     "status": "מצב",
     "showByStatus": "הצגה לפי סטטוס",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "ללא",
     "statusAccepted": "התקבל",
     "statusCancelled": "בוטל",
     "statusCompleted": "הושלם",
     "statusRejected": "נדחה",
+    "statusReviewed": "נסקר",
     "reviewHistory": "היסטוריית סקירה...",
     "layer": "שכבה:",
     "noLayersAvailable": "אין שכבות זמינות",
@@ -49,6 +52,7 @@
     "dimChainAdd": "הוספת נקודות לשרשרת המידות",
     "dimChainRemove": "הסרת קו עזר מהשרשרת",
     "selectRoom": "בחירת חדר",
+    "checkScale": "בדיקת קנה מידה עם קו זה...",
     "saveToToolSet": "שמירה בערכת כלים"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "מרכוז אנכי",
     "distributeHorizontally": "חלוקה אופקית",
     "distributeVertically": "חלוקה אנכית",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "גיזום פינות קירות",
     "deleteAnnotations": "מחיקת {{count}} הערות",
     "deleteConfirm": "למחוק {{count}} הערות?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "קינון תחת סימנייה חדשה...",
     "indent": "הגדלת כניסה",
     "outdent": "הקטנת כניסה",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "מחיקת {{count}} סימניות"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "הוספה מקובץ...",
     "insertFromFileBefore": "לפני עמוד זה...",
     "insertFromFileAfter": "אחרי עמוד זה...",
-    "pageLabels": "תוויות עמודים (בונה שמות)..."
+    "pageLabels": "תוויות עמודים (בונה שמות)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "הדגשת הבחירה",
     "strikethroughSelection": "קו חוצה על הבחירה",
     "underlineSelection": "קו תחתון לבחירה",
-    "curvedLeaderSelection": "הוספת הסבר מעוקל"
+    "curvedLeaderSelection": "הוספת הסבר מעוקל",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "למחוק הערה זו?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "מחיקת קודקוד",
     "insertVertex": "הוספת קודקוד כאן",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "המרה לקשת",
     "convertToLine": "המרה לקו"
   },

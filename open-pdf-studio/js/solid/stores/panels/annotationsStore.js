@@ -6,8 +6,9 @@ const [countText, setCountText] = createSignal('0 annotations');
 const [emptyMessage, setEmptyMessage] = createSignal('');
 const [sortMode, setSortMode] = createSignal('page');
 const [filterMode, setFilterMode] = createSignal('all');
-// Review-statussen (kleine letters: none/accepted/cancelled/completed/rejected)
-// die de gebruiker via Tonen > Status heeft verborgen. Leeg = alles zichtbaar.
+// Review-statussen (kleine letters: none/accepted/cancelled/completed/rejected
+// en de eigen statussen, #1076) die de gebruiker via Tonen > Status heeft
+// verborgen. Leeg = alles zichtbaar.
 const [hiddenStatuses, setHiddenStatuses] = createSignal(new Set());
 const [collapsedGroups, setCollapsedGroups] = createSignal(new Set());
 
@@ -29,6 +30,23 @@ function toggleHiddenStatus(statusKey) {
     else next.add(statusKey);
     return next;
   });
+  naStatusFilterWijziging();
+}
+
+/** Precies deze statussen verbergen ("alleen open punten", #1076). */
+function setHiddenStatusSet(keys) {
+  setHiddenStatuses(new Set(keys));
+  naStatusFilterWijziging();
+}
+
+/** Zijn precies deze statussen verborgen, en niets anders? */
+function isHiddenStatusSet(keys) {
+  const hidden = hiddenStatuses();
+  const doel = new Set(keys);
+  return doel.size > 0 && hidden.size === doel.size && [...doel].every((k) => hidden.has(k));
+}
+
+function naStatusFilterWijziging() {
   // Canvas volgt het statusfilter (#333): laat een selectie die zojuist
   // onzichtbaar werd los (onzichtbaar = niet klik- of sleepbaar, dus ook
   // niet geselecteerd) en herteken de actieve weergave. Lazy imports om
@@ -57,7 +75,12 @@ function toggleHiddenStatus(statusKey) {
 // datumbereik. Werkt alleen op de lijst (en daarmee op CSV en rapport); het
 // statusfilter hierboven werkt ook op het canvas.
 const [listFilter, setListFilterSignal] = createSignal(leegFilter());
-const [filterOptions, setFilterOptions] = createSignal({ authors: [], types: [] });
+// Gelijke keuzes niet opnieuw zetten: elke lijstverversing maakte nieuwe
+// soort-objecten, waardoor de <option>-elementen opnieuw gemaakt werden en de
+// gekozen soort uit de keuzelijst viel terwijl het filter nog actief was (#1002).
+const [filterOptions, setFilterOptions] = createSignal({ authors: [], types: [] }, {
+  equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+});
 const [filterBarOpen, setFilterBarOpen] = createSignal(false);
 
 function updateListFilter(patch) {
@@ -96,7 +119,7 @@ export {
   emptyMessage, setEmptyMessage,
   sortMode, setSortMode,
   filterMode, setFilterMode,
-  hiddenStatuses, toggleHiddenStatus, isStatusHidden,
+  hiddenStatuses, toggleHiddenStatus, isStatusHidden, setHiddenStatusSet, isHiddenStatusSet,
   collapsedGroups, toggleGroup, expandAllGroups, collapseAllGroups,
   listFilter, updateListFilter, clearListFilter, anyListFilterActive,
   filterOptions, setFilterOptions,

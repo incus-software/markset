@@ -48,11 +48,12 @@ import { parseCoordBuffer } from './coord-invoer.js';
 import {
   gripLengteEindpunten,
   pixelsPerEenheidVoor,
+  eenheidVoor,
   nieuwEindpuntVoorInvoer,
   isGripLengteStartToets,
 } from './grip-lengte.js';
 import { greepOorsprong, strekBasispunt, strekLengteTekst } from './greep-strek.js';
-import { isBewerkbareVeelhoek, veelhoekPuntenOpScherm, veelhoekDeelBij, voegVeelhoekHoekpuntIn } from '../annotations/veelhoek-punten.js';
+import { isBewerkbareVeelhoek, veelhoekPuntenOpScherm, veelhoekDeelBij, voegVeelhoekHoekpuntIn, pasVeelhoekToe } from '../annotations/veelhoek-punten.js';
 import {
   isStramien, startMeeslepen, sleepMee, meesleepWijzigingen, herstelMeeslepen,
 } from '../annotations/stramien-koppeling.js';
@@ -154,18 +155,20 @@ function _pasGripLengteToe(ann) {
     return;
   }
   const buffer = typeLengthBuffer();
-  const schaal = getMeasureScale(ann.page, o.vast.x, o.vast.y).pixelsPerUnit;
-  const px = pixelsPerEenheidVoor(orig, schaal);
-  let doel = nieuwEindpuntVoorInvoer(buffer, o.vast, _gripLengte.richting || nu.beweeg, px, o.beweeg);
+  const terPlaatse = getMeasureScale(ann.page, o.vast.x, o.vast.y);
+  const px = pixelsPerEenheidVoor(orig, terPlaatse.pixelsPerUnit);
+  // Met de eenheid mag de lengte ook een voet-inchmaat zijn (#1145).
+  const eenheid = eenheidVoor(orig, terPlaatse.unit);
+  let doel = nieuwEindpuntVoorInvoer(buffer, o.vast, _gripLengte.richting || nu.beweeg, px, o.beweeg, eenheid);
   if (!doel) return;
-  const herhaal = parseCoordBuffer(buffer).kind === 'length' ? 2 : 1;
+  const herhaal = parseCoordBuffer(buffer, eenheid).kind === 'length' ? 2 : 1;
   for (let i = 0; i < herhaal; i++) {
     Object.assign(ann, cloneAnnotation(orig));
     applyResize(ann, h, doel.x - o.beweeg.x, doel.y - o.beweeg.y, orig, false, false);
     // Uitlijn-snap van de maatlijn kan het punt een fractie verzetten; leg
     // de lengte dan opnieuw langs de zo ontstane richting.
     const na = gripLengteEindpunten(ann, h);
-    const volgende = na && nieuwEindpuntVoorInvoer(buffer, o.vast, na.beweeg, px, o.beweeg);
+    const volgende = na && nieuwEindpuntVoorInvoer(buffer, o.vast, na.beweeg, px, o.beweeg, eenheid);
     if (!volgende || (Math.abs(volgende.x - doel.x) < 1e-9 && Math.abs(volgende.y - doel.y) < 1e-9)) break;
     doel = volgende;
   }
@@ -261,7 +264,10 @@ export function handlePointerDown(e) {
 
   // Object snap start point, fall back to grid
   const doc = getActiveDocument();
-  const scale = doc?.scale || 1.5;
+  // Zelfde zoom als ctx.snap (in een actieve viewport de viewport-zoom), zodat
+  // de vangstraal van het eerste punt in schermpixels gelijk is aan die van
+  // de volgende punten.
+  const scale = ctx?.scale || doc?.scale || 1.5;
   const startSnap = performSnap(coords.x, coords.y, doc?.annotations || [], coords.pageNum, scale);
   state.startX = startSnap.snapped ? startSnap.x : snapToGrid(coords.x);
   state.startY = startSnap.snapped ? startSnap.y : snapToGrid(coords.y);
@@ -610,12 +616,20 @@ export function handleDblClick(e) {
       const nieuw = deel?.kind === 'edge' ? voegVeelhoekHoekpuntIn(clicked, deel.edgeIndex, deel.punt) : null;
       if (nieuw) {
         const voor = cloneAnnotation(clicked);
-        Object.assign(clicked, nieuw);
+        pasVeelhoekToe(clicked, nieuw);
         clicked.modifiedAt = new Date().toISOString();
         recordModify(clicked.id, voor, cloneAnnotation(clicked));
         showProperties(clicked);
         redraw();
       }
+    } else if (clicked.type === 'link' && state.currentTool === 'select') {
+      // Hyperlink (#953): dubbelklik opent het venster om het doel te bewerken.
+      state.isDrawing = false;
+      if (dblDoc) { dblDoc.selectedAnnotations = [clicked]; dblDoc.selectedAnnotation = clicked; }
+      showProperties(clicked);
+      import('../annotations/link/link-maken.js')
+        .then((m) => m.bewerkLink(clicked))
+        .catch((err) => console.error('[dispatcher] edit link failed', err));
     } else if (clicked.type === 'fileAttachment') {
       // Bijlage-annotatie (#376): het bestand openen in het standaardprogramma.
       state.isDrawing = false;
@@ -703,8 +717,11 @@ function _handleResize(ctx, e, coords) {
   const resizeDoc = getActiveDocument();
   const resizeScale = getEffectiveScale();
   const RECT_RESIZE_HANDLES = ['tl', 'tr', 'bl', 'br', 't', 'b', 'l', 'r'];
-  const skipResizeSnap = (ann.type === 'textbox' || ann.type === 'callout') &&
-    RECT_RESIZE_HANDLES.includes(state.activeHandle);
+  // Ook een stuurpunt of het buigen van een kromme (#1169) snapt niet: die
+  // bepalen de vorm van de kromme, niet een punt op de tekening.
+  const skipResizeSnap = ((ann.type === 'textbox' || ann.type === 'callout') &&
+    RECT_RESIZE_HANDLES.includes(state.activeHandle))
+    || (typeof state.activeHandle === 'string' && state.activeHandle.startsWith('curve_'));
   // Meeschuivende stramienuiteinden zijn geen snapdoel: ze bewegen zelf met
   // de sleep mee en zouden de greep op hun vorige positie vasthouden.
   const _meeSessie = _stramienMeeSessie();
@@ -766,7 +783,7 @@ function _handleResize(ctx, e, coords) {
   // De zoom gaat mee: ondergrenzen die over het scherm gaan (schaalgebied,
   // viewport, schaalbalk) rekenen in schermpixels, niet in paginapunten.
   applyResize(ann, state.activeHandle, deltaX, deltaY, state.originalAnnotation, e.shiftKey, e.ctrlKey,
-    { schaal: resizeScale });
+    { schaal: resizeScale, alt: !!e.altKey });
   _pasGripLengteToe(ann);
   _sleepStramienMee(ann);
 
@@ -990,16 +1007,14 @@ function _handleDrag(ctx, e, coords) {
   if (_dSel2.length > 1 && state.originalAnnotations.length > 0) {
     for (let i = 0; i < _dSel2.length; i++) {
       if (state.originalAnnotations[i]) {
-        Object.assign(_dSel2[i], cloneAnnotation(state.originalAnnotations[i]));
-        applyMove(_dSel2[i], adjDX, adjDY);
+        applyMove(_dSel2[i], adjDX, adjDY, state.originalAnnotations[i]);
       }
     }
   } else if (_dSel2.length === 1) {
     const ann = _dSel2[0];
     const orig = state.originalAnnotation || state.originalAnnotations[0];
     if (ann && orig) {
-      Object.assign(ann, cloneAnnotation(orig));
-      applyMove(ann, adjDX, adjDY);
+      applyMove(ann, adjDX, adjDY, orig);
     }
   }
 
@@ -1197,7 +1212,7 @@ function _finishDrawing(ctx, e, coords) {
     showProperties(ann);
     import('./manager.js').then(m => {
       m.setTool('select');
-      startTextEditing(ann);
+      startTextEditing(ann, { nieuw: true });
     });
   } else {
     // Auto-reset to select tool for non-text annotations

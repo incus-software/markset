@@ -20,10 +20,11 @@ import { zoneDefinition } from '../../annotations/spatial-zones.js';
 import { PDFName, PDFString, PDFRef } from 'pdf-lib';
 import { pdfTextString } from './pdf-text.js';
 import { onderwerpPlek } from '../loader/annotatie-opmerking.js';
+import { statusAntwoordStappen } from '../../review/status-history.js';
 
 const N = (naam) => PDFName.of(naam);
 
-function pdfDatum(iso) {
+export function pdfDatum(iso) {
   const d = iso ? new Date(iso) : new Date();
   return PDFString.fromDate(Number.isNaN(d.getTime()) ? new Date() : d);
 }
@@ -36,6 +37,13 @@ function pdfDatum(iso) {
 export function schrijfAlgemeneSleutels(dict, ann, gebruikteNm) {
   if (!dict || typeof dict.set !== 'function' || !ann) return;
   const heeft = (sleutel) => dict.get(N(sleutel)) !== undefined;
+  // Nieuwe annotaties krijgen hun aanmaakdatum mee (#1189). Bij een
+  // geïmporteerde annotatie bewaart bron-behoud de oorspronkelijke waarde,
+  // inclusief tijdzone en precisie; geen ontbrekende datum erbij verzinnen.
+  if (!ann.pdfBron && !heeft('CreationDate') && ann.createdAt
+      && Number.isFinite(new Date(ann.createdAt).getTime())) {
+    dict.set(N('CreationDate'), pdfDatum(ann.createdAt));
+  }
   const nm = ann.nm != null ? String(ann.nm) : '';
   if (nm && !heeft('NM') && !gebruikteNm?.has(nm)) {
     gebruikteNm?.add(nm);
@@ -64,27 +72,37 @@ export function schrijfAlgemeneSleutels(dict, ann, gebruikteNm) {
  * @param {import('pdf-lib').PDFDict} ouderDict
  * @param {Set<string>} [gebruikteNm]  /NM per pagina uniek (een geplakte kopie
  *   draagt dezelfde antwoorden mee)
+ * @param {{zonderStatus?: boolean, zonderAntwoorden?: boolean, eigenStatussen?: object[]}} [opties]
+ *   status of antwoorden niet maken: de saver liet die uit het bestand staan
+ *   (#629, saver/bron-behoud.js); eigenStatussen: statusLijst(voorkeuren) uit
+ *   review/status-sets.js, voor de naam in /State en het model (#1076)
  * @returns {import('pdf-lib').PDFDict[]}
  */
-export function antwoordAnnotaties(context, ann, ouderRef, ouderDict, gebruikteNm) {
+export function antwoordAnnotaties(context, ann, ouderRef, ouderDict, gebruikteNm, { zonderStatus = false, zonderAntwoorden = false, eigenStatussen = [] } = {}) {
   const uit = [];
   if (!ann || !(ouderRef instanceof PDFRef) || !ouderDict) return uit;
   const ouderRect = ouderDict.get(N('Rect'));
 
   // Reviewstatus (#308): verborgen, de status hoort bij de annotatie zelf.
-  if (ann.status && ann.status !== 'none') {
-    const stateStr = String(ann.status).charAt(0).toUpperCase() + String(ann.status).slice(1);
-    const datum = pdfDatum(ann.statusAt);
+  // Elke stap van de reviewgeschiedenis (#629, review/status-history.js) is
+  // een eigen statusantwoord, van oud naar nieuw; de laatste is de huidige
+  // status. Zonder geschiedenis is dat alleen de huidige status.
+  // Een vaste status staat onder het model Review, een eigen status onder de
+  // naam van zijn statusset (#1076, statusAntwoordStappen).
+  const stappen = zonderStatus ? [] : statusAntwoordStappen(ann, eigenStatussen);
+  for (const stap of stappen) {
+    const stateStr = stap.state;
+    const datum = pdfDatum(stap.at);
     const st = context.obj({
       Type: 'Annot',
       Subtype: 'Text',
       Contents: pdfTextString(stateStr),
-      T: pdfTextString(ann.statusBy || ann.author || 'User'),
+      T: pdfTextString(stap.by || ann.author || 'User'),
       M: datum,
       CreationDate: datum,
       F: 30, // Hidden + Print + NoZoom + NoRotate — niet los tonen
       State: pdfTextString(stateStr),
-      StateModel: PDFString.of('Review'),
+      StateModel: stap.model === 'Review' ? PDFString.of('Review') : pdfTextString(stap.model),
     });
     st.set(N('Rect'), ouderRect);
     st.set(N('IRT'), ouderRef);
@@ -92,7 +110,7 @@ export function antwoordAnnotaties(context, ann, ouderRef, ouderDict, gebruikteN
   }
 
   // Gemarkeerd: het statusmodel Marked, net zo verborgen.
-  if (ann.marked) {
+  if (!zonderStatus && ann.marked) {
     const datum = pdfDatum(ann.modifiedAt);
     const mk = context.obj({
       Type: 'Annot',
@@ -112,7 +130,7 @@ export function antwoordAnnotaties(context, ann, ouderRef, ouderDict, gebruikteN
 
   // Antwoorden: een notitie in de linkerbovenhoek van de annotatie, zoals een
   // lezer zonder discussievenster haar toont.
-  const replies = Array.isArray(ann.replies) ? ann.replies : [];
+  const replies = !zonderAntwoorden && Array.isArray(ann.replies) ? ann.replies : [];
   if (replies.length) {
     const r = Array.isArray(ouderRect?.asArray?.()) ? ouderRect.asArray().map((v) => v.asNumber?.() ?? 0) : null;
     const links = r ? Math.min(r[0], r[2]) : 0;

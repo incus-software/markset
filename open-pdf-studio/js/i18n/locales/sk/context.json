@@ -3,6 +3,7 @@
     "openPopUpNote": "Otvoriť vyskakovaciu poznámku",
     "hidePopUpNote": "Skryť vyskakovaciu poznámku",
     "resetPopUpLocation": "Obnoviť polohu vyskakovacej poznámky",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Upraviť text...",
     "addReply": "Pridať odpoveď",
     "locked": "Zamknuté",
@@ -12,11 +13,13 @@
     "printable": "Tlačiteľné",
     "status": "Stav",
     "showByStatus": "Zobraziť podľa stavu",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Žiadny",
     "statusAccepted": "Prijaté",
     "statusCancelled": "Zrušené",
     "statusCompleted": "Dokončené",
     "statusRejected": "Zamietnuté",
+    "statusReviewed": "Skontrolované",
     "reviewHistory": "História kontroly...",
     "layer": "Vrstva:",
     "noLayersAvailable": "Žiadne vrstvy nie sú k dispozícii",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Pridať body do reťazca kót",
     "dimChainRemove": "Odobrať vynášaciu čiaru z reťazca",
     "selectRoom": "Vybrať miestnosť",
+    "checkScale": "Skontrolovať mierku touto čiarou...",
     "saveToToolSet": "Uložiť do sady nástrojov"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Centrovať zvisle",
     "distributeHorizontally": "Rozmiestniť vodorovne",
     "distributeVertically": "Rozmiestniť zvisle",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Orezať rohy stien",
     "deleteAnnotations": "Odstrániť {{count}} anotácií",
     "deleteConfirm": "Odstrániť {{count}} anotácií?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Vnoriť pod novú záložku...",
     "indent": "Zväčšiť odsadenie",
     "outdent": "Zmenšiť odsadenie",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Odstrániť záložky ({{count}})"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Vložiť zo súboru...",
     "insertFromFileBefore": "Pred túto stranu...",
     "insertFromFileAfter": "Za túto stranu...",
-    "pageLabels": "Menovky strán (tvorba názvov)..."
+    "pageLabels": "Menovky strán (tvorba názvov)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Zvýrazniť výber",
     "strikethroughSelection": "Prečiarknuť výber",
     "underlineSelection": "Podčiarknuť výber",
-    "curvedLeaderSelection": "Pridať zakrivený popisok"
+    "curvedLeaderSelection": "Pridať zakrivený popisok",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Odstrániť túto anotáciu?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Odstrániť vrchol",
     "insertVertex": "Vložiť vrchol sem",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Previesť na oblúk",
     "convertToLine": "Previesť na čiaru"
   },

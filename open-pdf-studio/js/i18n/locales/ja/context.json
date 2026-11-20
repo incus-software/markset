@@ -3,6 +3,7 @@
     "openPopUpNote": "ポップアップノートを開く",
     "hidePopUpNote": "ポップアップノートを非表示",
     "resetPopUpLocation": "ポップアップノートの位置をリセット",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "テキストを編集...",
     "addReply": "返信を追加",
     "locked": "ロック",
@@ -12,11 +13,13 @@
     "printable": "印刷可能",
     "status": "状態",
     "showByStatus": "ステータス別に表示",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "なし",
     "statusAccepted": "承認",
     "statusCancelled": "取消",
     "statusCompleted": "完了",
     "statusRejected": "却下",
+    "statusReviewed": "レビュー済み",
     "reviewHistory": "レビュー履歴...",
     "layer": "レイヤー：",
     "noLayersAvailable": "利用可能なレイヤーがありません",
@@ -49,6 +52,7 @@
     "dimChainAdd": "寸法チェーンに点を追加",
     "dimChainRemove": "寸法チェーンから補助線を削除",
     "selectRoom": "部屋を選択",
+    "checkScale": "この線で縮尺を確認...",
     "saveToToolSet": "ツールセットに保存"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "垂直方向に中央揃え",
     "distributeHorizontally": "水平方向に分布",
     "distributeVertically": "垂直方向に分布",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "壁の角をトリム",
     "deleteAnnotations": "{{count}} 個の注釈を削除",
     "deleteConfirm": "{{count}} 個の注釈を削除しますか？",
@@ -109,6 +114,8 @@
     "nestUnderNew": "新しいしおりの下に入れる...",
     "indent": "インデント",
     "outdent": "インデント解除",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "{{count}} 件のしおりを削除"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "ファイルから挿入...",
     "insertFromFileBefore": "このページの前に...",
     "insertFromFileAfter": "このページの後に...",
-    "pageLabels": "ページラベル (名前ビルダー)..."
+    "pageLabels": "ページラベル (名前ビルダー)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "選択範囲をハイライト",
     "strikethroughSelection": "選択範囲に取り消し線",
     "underlineSelection": "選択範囲に下線",
-    "curvedLeaderSelection": "曲線の吹き出しを追加"
+    "curvedLeaderSelection": "曲線の吹き出しを追加",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "この注釈を削除しますか？",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "頂点を削除",
     "insertVertex": "ここに頂点を挿入",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "円弧に変換",
     "convertToLine": "直線に変換"
   },

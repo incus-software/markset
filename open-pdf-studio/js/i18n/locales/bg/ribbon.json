@@ -48,7 +48,9 @@
     "autoDetectTitle": "Detect scale from title block",
     "scaleDetected": "Мащабът е разпознат",
     "noScaleFound": "Не е намерен мащаб",
-    "detecting": "Разпознаване..."
+    "detecting": "Разпознаване...",
+    "scaleCheck": "Проверка на мащаба",
+    "scaleCheckTitle": "Измерете известен размер и покажете отклонението на мащаба в проценти"
   },
   "home": {
     "document": "Документ",
@@ -81,6 +83,7 @@
     "fitPageLabel": "Побиране на страница",
     "rotateLeft": "Завъртане наляво",
     "rotateRight": "Завъртане надясно",
+    "rotatePages": "Завъртане на страници",
     "edit": "Редактиране",
     "editText": "Редактиране на текст",
     "addText": "Добавяне на текст",
@@ -110,6 +113,12 @@
     "scaleRegionFullPageTitle": "Поставяне на област с мащаб върху цялата страница",
     "drawing": "Чертане",
     "highlight": "Маркиране",
+    "textHighlight": "Text highlight",
+    "textHighlightTitle": "Drag across text to highlight it. Double-click: one word. Triple-click: the whole label.",
+    "areaHighlight": "Area highlight",
+    "areaHighlightTitle": "Draw a box to highlight an area",
+    "highlightMode": "Highlight: area or text",
+    "highlightSwitchTip": "Click again to switch between area and text",
     "freehand": "Свободна ръка",
     "line": "Линия",
     "arrow": "Стрелка",
@@ -134,6 +143,8 @@
     "callout": "Износка",
     "stamp": "Печат",
     "signature": "Подпис",
+    "digitalSign": "Електронен подпис",
+    "digitalSignTooltip": "Подписване на документа със сертификат (.p12/.pfx). Бутонът „Подпис“ само поставя изображение.",
     "measure": "Измерване",
     "measureDistance": "Измерване на разстояние",
     "distance": "Разстояние",
@@ -171,7 +182,9 @@
     "unflattenAll": "Отмяна на изравняването",
     "unflattenAllTooltip": "Възстановяване на маркировки, изравнени с разрешено възстановяване",
     "fileAttachment": "Прикачване на файл",
-    "fileAttachmentTitle": "Прикачен файл: щракнете върху страницата и изберете файл"
+    "fileAttachmentTitle": "Прикачен файл: щракнете върху страницата и изберете файл",
+    "link": "Link",
+    "linkTitle": "Insert a hyperlink: select text first, or drag a rectangle on the page"
   },
   "view": {
     "pageDisplay": "Показване на страница",
@@ -308,6 +321,8 @@
     "box": "Площ",
     "boxHint": "Показване на промените като запълнена площ",
     "contour": "Контур",
+    "colourOverlay": "Цветове",
+    "colourOverlayHint": "Показване на двата чертежа един върху друг, всеки в свой цвят",
     "contourHint": "Показване на промените с контур",
     "annotation": "Анотация",
     "changes": "Промени",
@@ -316,7 +331,98 @@
     "modified": "Променено",
     "noChanges": "Няма промени",
     "textTab": "Текст",
-    "noTextChanges": "Няма разлики в текста"
+    "noTextChanges": "Няма разлики в текста",
+    "previousVersion": "преди последното запазване",
+    "fromDisk": "файл",
+    "fileLoadError": "Файлът не можа да се отвори като PDF.",
+    "browse": "Преглед…",
+    "browseHint": "Изберете PDF файл от диска",
+    "pickSecondSide": "Изберете другата страна от файл на диска или отворете втори PDF в раздел.",
+    "sensitivity": "Чувствителност",
+    "sensitivityHint": "Задава заедно прага на мастилото, минималния размер на промяна и разстоянието за обединяване",
+    "preset": {
+      "line": "Линеен чертеж",
+      "scan": "Сканиране",
+      "text": "Текстов документ"
+    },
+    "autoAlign": "Автоматично подравняване",
+    "autoAlignHint": "Оценка на изместване, завъртане и мащаб от чертежите",
+    "autoAlignEach": "Авто",
+    "autoAlignEachHint": "Автоматично подравняване на всяка двойка страници при първото показване",
+    "rotation": "завърт.",
+    "scale": "мащаб",
+    "resetAlignHint": "Премахване на подравняването",
+    "alignManual": "ръчно",
+    "confidence": "Надеждност",
+    "confidenceHint": "Дял на мастилото, който съвпада след подравняване",
+    "alignByMeasure": "мащаб от измервателните мащаби",
+    "alignNone": "вече подравнено",
+    "alignByContent": "от съдържанието на чертежа",
+    "pair": "Двойка",
+    "pagesTab": "Страници",
+    "pairing": "Свързване на страници…",
+    "onlyInOld": "Само в старото",
+    "onlyInNew": "Само в новото",
+    "pairReason": {
+      "sheet": "Свързани по номер на лист",
+      "label": "Свързани по етикет на страница",
+      "content": "Свързани по съдържание",
+      "index": "Свързани по реда на страниците",
+      "manual": "Свързани ръчно"
+    },
+    "truncated": "Твърде много разлики: проверете подравняването или чувствителността.",
+    "selectForClouds": "Избор за облачета в новия документ",
+    "report": {
+      "button": "Отчет",
+      "csv": "Експорт на списъка с промени (CSV)…",
+      "pdf": "Експорт на PDF обобщение…",
+      "clouds": "Поставяне на избраните промени като облачета",
+      "cloudsNeedTab": "Новият документ трябва да е отворен в раздел",
+      "saved": "Отчетът е запазен",
+      "failed": "Отчетът не можа да бъде създаден",
+      "cloudsPlaced": "Поставени облачета в новия документ: {{count}}",
+      "title": "Отчет за сравнение",
+      "generated": "Създаден",
+      "settings": "Настройки",
+      "fileSuffix": "promeni",
+      "sourcePixel": "Чертеж",
+      "sourceText": "Текст",
+      "cloudSubject": "Сравнение",
+      "before": "Преди",
+      "after": "След",
+      "col": {
+        "no": "№",
+        "pair": "Двойка",
+        "oldPage": "Стара страница",
+        "newPage": "Нова страница",
+        "sheet": "Лист",
+        "type": "Вид",
+        "source": "Източник",
+        "xMm": "X (mm)",
+        "yMm": "Y (mm)",
+        "widthMm": "Ширина (mm)",
+        "heightMm": "Височина (mm)",
+        "oldText": "Текст преди",
+        "newText": "Текст след"
+      },
+      "sourceVector": "Вектор"
+    },
+    "methodVector": "Вектор",
+    "methodVectorHint": "Точно сравнение на начертаните контури, където и двете страници са векторни чертежи; другите страници се сравняват по пиксели",
+    "methodPixelFallback": "пиксели: не е векторна страница",
+    "precision": "Precision",
+    "precisionHint": "Lower: only larger differences count. Higher: small differences and line edges count too.",
+    "precisionLevel": {
+      "lowest": "Lowest",
+      "low": "Low",
+      "normal": "Normal",
+      "high": "High",
+      "highest": "Highest"
+    },
+    "selectAll": "Select all",
+    "selectGroup": "Select all of this kind",
+    "selectHint": "Ctrl+click adds or removes a change, Shift+click selects a range, Ctrl+A selects all",
+    "cloudsButton": "Place clouds"
   },
   "organize": {
     "pages": "Страници",
@@ -350,8 +456,16 @@
     "scanTextHint": "Щракнете върху разпозната дума, за да я замените. Старата дума в сканираното изображение се покрива.",
     "scanTextNone": "Няма разпознат текст на тази страница. Първо изпълнете Разпознаване на текст (OCR).",
     "shiftPage": "Преместване на страница",
+    "scanGroup": "Сканиране",
+    "scan": "Сканирай",
+    "scanTitle": "Сканирай страници в PDF с търсене",
+    "batchOcr": "Пакетно OCR",
+    "batchOcrTitle": "Разпознай текста във всички PDF файлове в папка",
     "editPages": "Редактиране на страници",
-    "editPagesTitle": "Визуално редактиране на страници: пренареждане, завъртане, вмъкване, изтриване, извличане и разделяне"
+    "editPagesTitle": "Визуално редактиране на страници: пренареждане, завъртане, вмъкване, изтриване, извличане и разделяне",
+    "protect": "Защита",
+    "security": "Сигурност",
+    "securityTitle": "Задаване или премахване на пароли и права"
   },
   "help": {
     "settings": "Настройки",
@@ -378,7 +492,9 @@
     "setDefaultPdf": "Задаване като програма по подразбиране за PDF",
     "fileAssociations": "Асоциации на файлове",
     "previousVersionTitle": "Инсталиране на предишната версия на Open PDF Studio",
-    "previousVersion": "Предишна версия"
+    "previousVersion": "Предишна версия",
+    "virusWarningTitle": "Did your virus scanner give a warning? Read what to do and report it",
+    "virusWarning": "Virus scanner"
   },
   "format": {
     "styleRed": "Червен",
@@ -482,6 +598,8 @@
     "size": "Размер",
     "sameSize": "Еднакъв размер",
     "sameWidth": "Еднаква ширина",
+    "fitBoxToText": "Fit Box to Text",
+    "fitBoxToTextTip": "Resize the box of the selected text boxes and callouts to fit their text",
     "sameHeight": "Еднаква височина",
     "rotate": "Завъртане",
     "rotate90CCW": "Завъртане на 90° обратно на ч.с.",
@@ -501,7 +619,11 @@
     "x": "X:",
     "w": "Ш:",
     "y": "Y:",
-    "h": "В:"
+    "h": "В:",
+    "alignToPage": "Align to Page",
+    "alignToPageTip": "Align the selection to the edges or the centre of the page (also works with one markup)",
+    "alignPageEach": "Align Each Markup Separately",
+    "alignPageEachTip": "With Align to Page: move every markup to the page edge on its own instead of as a group"
   },
   "theme": {
     "system": "Системна (Автоматично)",
@@ -683,7 +805,21 @@
     "symbolScaleTitle": "Размер, в който се поставя нов символ",
     "symbolScaleCustom": "Потребителски мащаб",
     "count": "Броене",
-    "arc": "Дъга"
+    "arc": "Дъга",
+    "countGroup": "Count group",
+    "countGroupLabel": "Group",
+    "countGroupTip": "New count markers go into this group; the number is the total in the group",
+    "countGroupColor": "Color",
+    "countGroupColorTip": "Color of the whole group, including the markers already placed",
+    "countGroupNew": "New group",
+    "countGroupAdd": "Add group",
+    "countNew": "Ново броене",
+    "countNewTip": "New count: starts a new group with its own colour; numbering starts again at 1. Earlier counts keep their numbers and colour. While counting: Enter",
+    "countNewName": "Броене",
+    "countNewStarted": "Ново броене: {{name}}",
+    "countDefaultDoors": "Врати",
+    "countDefaultWindows": "Прозорци",
+    "countDefaultSockets": "Контакти"
   },
   "proofread": {
     "group": "Коректура",
@@ -764,7 +900,8 @@
       "nen1414-tn": "NL NEN 1414 — Аварийно осветление",
       "nen1414-tr": "NL NEN 1414 — Отвеждане на дим и топлина",
       "nen1414-tv": "NL NEN 1414 — Вентилация",
-      "nen1414-tw": "NL NEN 1414 — Вода/Спринклери"
+      "nen1414-tw": "NL NEN 1414 — Вода/Спринклери",
+      "gdt-bewerking": "GD&T и механична обработка"
     },
     "sectors": {
       "aec": "AEC (Строителство)",
@@ -773,5 +910,34 @@
       "mep": "Сградни инсталации (MEP)",
       "infra": "Инфраструктура"
     }
+  },
+  "clipboardPalette": {
+    "title": "Clipboard",
+    "tip": "Click a copy, then press Ctrl+V on the sheet: it lands at the mouse.",
+    "empty": "Copy markups (Ctrl+C) to collect them here.",
+    "clear": "Clear the clipboard",
+    "clearShort": "Clear",
+    "remove": "Remove",
+    "close": "Close",
+    "markups": "{{count}} markups",
+    "picked": "Copy is on the clipboard: press Ctrl+V on the sheet"
+  },
+  "workspace": {
+    "button": "Workspace",
+    "buttonTitle": "Workspaces: switch between saved panel layouts, save the current layout, reset it, or change the interface size",
+    "saved": "Saved workspaces",
+    "none": "No saved workspaces",
+    "manage": "Save or manage workspaces...",
+    "reset": "Reset to default layout",
+    "interfaceSize": "Interface size",
+    "dialogTitle": "Workspaces",
+    "intro": "A workspace remembers which panels and palettes are open, collapsed or floating, the width of the navigation panel and whether the ribbon is collapsed.",
+    "name": "Name:",
+    "save": "Save current layout",
+    "overwrite": "Overwrite",
+    "savedAs": "Saved as \"{{name}}\".",
+    "full": "You can save up to {{max}} workspaces. Delete one first.",
+    "apply": "Apply",
+    "delete": "Delete"
   }
 }

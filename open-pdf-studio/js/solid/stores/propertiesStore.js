@@ -6,14 +6,16 @@ import { state, getActiveDocument } from '../../core/state.js';
 import { imperialOr } from '../../../markset/us-units.js'; // Markset
 import { fitToContent } from '../../../markset/smart/hooks.js'; // Markset
 import { getTemplate as getSmartTemplate } from '../../symbols/registry.js'; // Markset
-import { formatPageSizeIn } from '../../../markset/us-units.js'; // Markset
 import { PLAIN_TEXT_TOOL, PLAIN_TEXT_FONT_SIZE } from '../../../markset/plain-text.js'; // Markset
+import { bewaarLayoutVoorkeur } from '../../core/layout-voorkeur.js';
 import { parseScaleString, pixelsPerUnitFor, userUnitVanPagina } from '../../annotations/scale-region-scale.js';
+import { isImperialScalePreset } from '../../annotations/scale-presets.js';
 import {
   recordPropertyChange,
   recordModify,
   recordBulkModify,
   recordMeasureScale,
+  recordDocumentInfoChange,
   beginUndoTransaction,
   endUndoTransaction,
 } from '../../core/undo-manager.js';
@@ -29,6 +31,7 @@ import { getPropertyPanel } from '../../plugins/property-panel-registry.js';
 import { fireSelectionChange } from '../../plugins/selection-listener-registry.js';
 import i18next from '../../i18n/config.js';
 import { DOC_INFO_EMPTY, formatDocPages, formatPageSizeMm, createLatestOnly } from './doc-info-format.js';
+import { BEWERKBARE_VELDEN, overlayMet, zichtbareWaarden, normaliseerWaarde } from '../../pdf/documentgegevens.js';
 import { syncDocScale } from '../../annotations/scale-bar.js';
 import { STAVENREEKS_DEFAULTS } from '../../annotations/stavenreeks.js';
 import { BETONBALK_DEFAULTS, BETONBALK_BREEDTE_RANGE, BETONBALK_HOOGTE_RANGE, BETONBALK_LIJNSTIJLEN } from '../../annotations/betonbalk.js';
@@ -46,8 +49,10 @@ import { kenSysteemTypeToe } from '../../annotations/systeem-instance-links.js';
 import {
   getSysteemTypeById, getSysteemTypenData, updateSysteemType,
 } from '../../annotations/systeem-typen-registry.js';
-import { recalculateAllMeasurements, calculateArea, calculatePerimeter, calculateDistance, formatMeasurement, formatDimensionText, getMeasureScale, herberekenVlakMaat, vlakLengteSchaal } from '../../annotations/measurement.js';
+import { recalculateAllMeasurements, calculateArea, calculatePerimeter, calculateDistance, formatMeasurement, maatlijnTekst, getMeasureScale, herberekenVlakMaat, vlakLengteSchaal } from '../../annotations/measurement.js';
+import { geldigeFractie, maatEenheid } from '../../core/maat-opmaak.js';
 import { lengteEenheid, schaalInEenheid } from '../../annotations/vlak-zijden.js';
+import { oppervlakteEenheid } from '../../annotations/oppervlakte-eenheid.js';
 import { parseDepth } from '../../annotations/measure-depth.js';
 import {
   isRuimteVlak, isRuimteTag, ruimteVanTag, tagWeergaveParams, tagWijziging,
@@ -63,7 +68,10 @@ import { heeftVulDekking, zetLijnDekking } from '../../annotations/vul-dekking.j
 import { isWisselbaarProfiel, profielTypen, wisselProfielType } from '../../symbols/profieltype.js';
 import { schaalgebiedStijl } from '../../annotations/scale-region-style.js';
 import { leesGetalBegin, leesGeheelGetal } from '../../core/getal-invoer.js';
+import { leesLengte } from '../../core/voet-inch.js';
 import { inktPaneelWaarden, inktPropWaarde } from '../../annotations/pressure-ink-panel.js';
+import { setStatusWithHistory, statusHistory } from '../../review/status-history.js';
+import { isLabelVeld, zetLabelVooraf, labelVooraf } from '../../annotations/label-vooraf.js';
 
 // Types whose single 'color' control IS their stroke colour and which render
 // via `strokeColor || color`. For these, the 'color' control must mirror onto
@@ -75,7 +83,19 @@ const _STROKE_COLOR_DRIVEN = new Set([
 
 // Panel visibility and collapsed state
 const [panelVisible, setPanelVisible] = createSignal(true);
-const [panelCollapsed, setPanelCollapsed] = createSignal(false);
+const [panelCollapsed, setPanelCollapsedRaw] = createSignal(false);
+
+// Ingeklapt tot de smalle strook blijft over een herstart bewaard (#932).
+// Alle aanroepers zijn handelingen van de gebruiker; herstellen bij de
+// opstart of een werkruimtewissel gaat via herstelPanelCollapsed.
+function setPanelCollapsed(value) {
+  setPanelCollapsedRaw(!!value);
+  bewaarLayoutVoorkeur('propertiesPanelCollapsed', !!value);
+}
+
+export function herstelPanelCollapsed(value) {
+  setPanelCollapsedRaw(!!value);
+}
 
 // Panel mode: 'none' | 'annotation' | 'multi' | 'textEdit'
 const [panelMode, setPanelMode] = createSignal('none');
@@ -114,6 +134,8 @@ const [annotProps, setAnnotProps] = createStore({
   status: 'none',
   statusBy: '',
   statusAt: '',
+  statusLabel: '',
+  statusHistory: [],
   color: '#000000',
   fillColor: null,
   strokeColor: '#000000',
@@ -132,6 +154,7 @@ const [annotProps, setAnnotProps] = createStore({
   fontSize: 16,
   fontFamily: 'Arial',
   textFontSize: 14,
+  textRotationAvailable: false,
   fontBold: false,
   fontItalic: false,
   fontUnderline: false,
@@ -162,6 +185,8 @@ const [annotProps, setAnnotProps] = createStore({
   measureScale: 0,
   measureUnit: '',
   measurePrecision: 2,
+  measureFraction: '',
+  measureInchOnly: false,
   measureName: '',
   measureDepth: '',
   dimType: '',
@@ -170,6 +195,7 @@ const [annotProps, setAnnotProps] = createStore({
   dimShowUnit: true,
   measureShowLabel: true,
   measureShowEdgeLengths: false,
+  measureAreaUnit: '',
   isRuimte: false,
   opsRuimteNummer: '',
   ruimteOppervlakte: '',
@@ -240,16 +266,21 @@ const [sectionVis, setSectionVis] = createStore({
   rotationGroup: false,
 });
 
-// Document info store
+// Document info store. Titel t/m maker zijn bewerkbaar (#1017) en zijn ''
+// als ze leeg zijn; de overige velden tonen '-'.
 const [docInfo, setDocInfo] = createStore({
   filename: '-',
   filepath: '-',
   pages: '-',
   pageSize: '-',
-  title: '-',
-  author: '-',
-  subject: '-',
-  creator: '-',
+  // Paginamaat in punten; de weergave rekent hem om naar het gekozen stelsel (#1121).
+  pageSizePt: null,
+  title: '',
+  author: '',
+  subject: '',
+  keywords: '',
+  creator: '',
+  editable: false,
   producer: '-',
   version: '-',
   annotCount: '0',
@@ -295,7 +326,7 @@ function computeSectionVisibility(type) {
   // randkleur (het oude uiterlijk).
   const isScaleRegion = type === 'scaleRegion';
   const hasFillColor = ['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line', 'measureArea', 'filledArea', 'scaleRegion'].includes(type);
-  const hideColor = ['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud', 'measureDistance', 'measureArea', 'measurePerimeter', 'filledArea'].includes(type);
+  const hideColor = ['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud', 'measureDistance', 'measureArea', 'measurePerimeter', 'filledArea', 'vectorSnippet'].includes(type);
   const hasBorderStyle = ['textbox', 'callout', 'arrow', 'line', 'box', 'circle', 'polygon', 'cloud', 'draw', 'polyline', 'splineArrow', 'measureDistance', 'measureArea', 'measurePerimeter', 'filledArea'].includes(type);
   const hasHatchPattern = ['box', 'circle', 'polygon', 'cloud', 'measureArea', 'filledArea'].includes(type);
   const hasRotation = ['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature'].includes(type);
@@ -339,10 +370,12 @@ function computeSectionVisibility(type) {
     crossGroup: ondersteuntKruis(type),
     textGroup: isTextContent,
     fontSizeGroup: type === 'text',
-    opacityGroup: !isScaleBar,
+    // Een link (#953) heeft geen doorzichtigheid in het bestand.
+    opacityGroup: !isScaleBar && type !== 'link',
     fillOpacityGroup: isScaleRegion || heeftVulDekking(type),
     aparteDekking: heeftVulDekking(type),
     rotationGroup: hasRotation,
+    lijnKleurGroup: type === 'vectorSnippet',
   });
 }
 
@@ -443,9 +476,13 @@ export function storeShowProperties(annotation) {
     altText: annotation.altText || '',
     status: annotation.status || 'none',
     statusBy: annotation.statusBy || '',
+    statusLabel: annotation.statusLabel || '',
     statusAt: annotation.statusAt ? formatDate(annotation.statusAt) : '',
+    statusHistory: statusHistoryProps(annotation),
     ifcCategory: annotation.ifcCategory || '',
     color: annotation.color || '#000000',
+    // Vectorknipsel (#1024): lijnwerk in één kleur; null = eigen kleuren.
+    lijnKleur: annotation.lijnKleur || null,
     fillColor: annotation.type === 'scaleRegion'
       ? schaalgebiedStijl(annotation).vulKleur : (annotation.fillColor || null),
     fillOpacity: _vulDoorzichtigheidPct(annotation),
@@ -524,6 +561,9 @@ export function storeShowProperties(annotation) {
     // kent lengte-eenheden (#536).
     measureUnit: (annotation.type === 'measureArea' ? lengteEenheid(annotation.measureUnit) : annotation.measureUnit) || '',
     measurePrecision: annotation.measurePrecision !== undefined ? annotation.measurePrecision : 2,
+    // '' = automatisch, 0 = decimaal, 1 .. 64 = breuk (core/maat-opmaak.js).
+    measureFraction: annotation.measureFraction ?? '',
+    measureInchOnly: annotation.measureInchOnly === true,
     measureName: annotation.measureName || '',
     // Diepte van de meting (#311), in de eenheid van de meting; leeg = geen.
     measureDepth: annotation.measureDepth ?? '',
@@ -536,6 +576,8 @@ export function storeShowProperties(annotation) {
     measureShowLabel: annotation.measureShowLabel !== false,
     // Zijdematen van een meetvlak: standaard uit (#536).
     measureShowEdgeLengths: annotation.measureShowEdgeLengths === true,
+    // Weergave-eenheid van de oppervlakte (#1129); leeg volgt de schaal.
+    measureAreaUnit: annotation.measureAreaUnit || '',
     // Uitloop en hulplijnen in mm op papier; leeg = automatisch (oude beeld).
     dimLineOvershootMm: annotation.dimLineOvershootMm ?? '',
     dimExtGapMm: annotation.dimExtGapMm ?? '',
@@ -556,6 +598,9 @@ export function storeShowProperties(annotation) {
     scaleRegionHeight: annotation.type === 'scaleRegion'
       ? Math.round(((annotation.height || 0) / _scaleRegionPpu(annotation)) * 10) / 10 : 0,
     annotationType: annotation.type,
+    // Hyperlink (#953): doel en rand voor de sectie Link.
+    linkTarget: annotation.type === 'link' && annotation.linkTarget ? { ...annotation.linkTarget } : null,
+    linkBorder: annotation.type === 'link' ? (annotation.linkBorder || 'none') : 'none',
     // Stavenreeks (wapeningsstaven-reeks)
     srCount: annotation.count ?? 3,
     srDiameter: annotation.diameter ?? 12,
@@ -966,6 +1011,8 @@ export function storeShowTextEditProperties(info) {
   // Override type display and hide irrelevant sections
   setAnnotProps('typeDisplay', i18next.t('pdfText', { ns: 'properties' }));
   setAnnotProps('textFontSize', Math.round(info.fontSize || 12));
+  setAnnotProps('textRotationAvailable', info.canRotate === true);
+  setAnnotProps('rotation', Number(info.rotation) || 0);
 
   setSectionVis({
     general: false,
@@ -1029,30 +1076,35 @@ export async function populateDocInfo() {
       const page = await pdfDoc.getPage(pageNum);
       if (!_docInfoRefresh.isCurrent(token)) return;
       const vp = page.getViewport({ scale: 1 });
-      setDocInfo('pageSize', (state.preferences.unitSystem !== 'metric' && formatPageSizeIn(vp.width, vp.height)) // Markset: inches with US units
-        || formatPageSizeMm(vp.width, vp.height));
+      setDocInfo('pageSize', formatPageSizeMm(vp.width, vp.height));
+      setDocInfo('pageSizePt', [vp.width, vp.height]);
     } catch (e) {
       if (!_docInfoRefresh.isCurrent(token)) return;
       setDocInfo('pageSize', DOC_INFO_EMPTY);
+      setDocInfo('pageSizePt', null);
     }
 
     try {
       const metadata = await pdfDoc.getMetadata();
       if (!_docInfoRefresh.isCurrent(token)) return;
       const info = metadata.info || {};
-      setDocInfo('title', info.Title || '-');
-      setDocInfo('author', info.Author || '-');
-      setDocInfo('subject', info.Subject || '-');
-      setDocInfo('creator', info.Creator || '-');
+      // Wat de gebruiker invulde (doc.documentgegevens) gaat voor op het
+      // bestand: pdf.js leest na een save nog de oude bytes.
+      const zichtbaar = zichtbareWaarden(info, doc.documentgegevens);
+      for (const veld of BEWERKBARE_VELDEN) setDocInfo(veld, zichtbaar[veld]);
+      setDocInfo('editable', true);
       setDocInfo('producer', info.Producer || '-');
       setDocInfo('version', info.PDFFormatVersion || '-');
     } catch (e) { /* ignore */ }
     if (!_docInfoRefresh.isCurrent(token)) return;
   } else {
     // Document (nog) niet geladen: geen gegevens van een vorig document laten staan.
-    for (const key of ['pages', 'pageSize', 'title', 'author', 'subject', 'creator', 'producer', 'version']) {
+    setDocInfo('pageSizePt', null);
+    for (const key of ['pages', 'pageSize', 'producer', 'version']) {
       setDocInfo(key, DOC_INFO_EMPTY);
     }
+    for (const veld of BEWERKBARE_VELDEN) setDocInfo(veld, '');
+    setDocInfo('editable', false);
   }
 
   const docAnnotations = doc?.annotations || [];
@@ -1063,18 +1115,40 @@ export async function populateDocInfo() {
   setDocInfo('annotPage', i18next.t('docInfo.onPageCount', { count: onPage, page: docPage, ns: 'properties' }));
 }
 
+/**
+ * Eén documentgegeven (titel, auteur, onderwerp, trefwoorden, maker) uit het
+ * paneel (#1017). Komt in de overlay van het document, maakt het gewijzigd
+ * (één undo-stap per veld) en gaat bij de volgende save het bestand in.
+ * @returns {boolean} of er iets veranderde
+ */
+export function zetDocumentgegeven(veld, waarde) {
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc || !BEWERKBARE_VELDEN.includes(veld)) return false;
+  const w = normaliseerWaarde(waarde);
+  if (docInfo[veld] === w) return false;
+  const oud = doc.documentgegevens || null;
+  const nieuw = overlayMet(oud, veld, w);
+  // Eén toewijzing: het document bewaart een kopie.
+  doc.documentgegevens = nieuw;
+  recordDocumentInfoChange(oud, nieuw);
+  setDocInfo(veld, w);
+  return true;
+}
+
 // Apply a property change to a single annotation object
 // Review-status metadata (issue #308): onthoud wie de status zette en
 // wanneer, zodat de saver de status als spec-conforme status-reply
 // (Text + /IRT + /State) met juiste auteur/datum kan wegschrijven.
+// Zet ook de stap in de reviewgeschiedenis (#629, review/status-history.js).
 function _stampStatusMeta(ann, value) {
-  if (value === 'none') {
-    delete ann.statusBy;
-    delete ann.statusAt;
-  } else {
-    ann.statusBy = state.defaultAuthor || ann.author || 'User';
-    ann.statusAt = new Date().toISOString();
-  }
+  setStatusWithHistory(ann, value, { door: state.defaultAuthor || ann.author || 'User' });
+}
+
+// De reviewgeschiedenis voor het paneel: alleen als er meer dan één stap is.
+function statusHistoryProps(ann) {
+  const stappen = statusHistory(ann);
+  if (stappen.length < 2) return [];
+  return stappen.map(s => ({ status: s.status, label: s.label || '', by: s.by, at: s.at ? formatDate(s.at) : '' }));
 }
 
 // Uitloop van de stavenreeks-aanhaallijn: 0 is geldig (lijn stopt op de
@@ -1220,7 +1294,6 @@ function applyPropToAnnotation(ann, key, value) {
     case 'marked': ann.marked = value; break;
     case 'altText': ann.altText = value; break;
     case 'status':
-      ann.status = value === 'none' ? undefined : value;
       _stampStatusMeta(ann, value);
       break;
     case 'ifcCategory': ann.ifcCategory = value || undefined; break;
@@ -1280,7 +1353,10 @@ function applyPropToAnnotation(ann, key, value) {
     case 'rotation': ann.rotation = Math.max(-360, Math.min(360, leesGeheelGetal(value) || 0)); break;
     case 'measureScale': ann.measureScale = leesGetalBegin(value) || 0; recomputeMeasureText(ann); break;
     case 'measureUnit': zetMeetEenheid(ann, value); break;
-    case 'measurePrecision': ann.measurePrecision = leesGeheelGetal(value); recomputeMeasureText(ann); break;
+    case 'measureAreaUnit': zetVlakEenheid(ann, value); break;
+    case 'measurePrecision': ann.measurePrecision = leesGeheelGetal(value); if (ann.type === 'measureDistance') { ann.measureFraction = 0; delete ann.measureInchOnly; setAnnotProps('measureFraction', 0); } recomputeMeasureText(ann); break;
+    // Voet-inch met een breuk (core/maat-opmaak.js); gaat voor measurePrecision.
+    case 'measureFraction': zetMeetFractie(ann, value); setAnnotProps('measureInchOnly', ann.measureInchOnly === true); recomputeMeasureText(ann); break;
     case 'measureName':
       ann.measureName = value;
       if (isRuimteVlak(ann)) ann.opsRuimteNaam = value;
@@ -1366,8 +1442,9 @@ function applyPropToAnnotation(ann, key, value) {
       const ratio = leesGeheelGetal(value);
       if (ratio > 0) {
         ann.scaleRatio = `1:${ratio}`;
-        ann.pixelsPerUnit = pixelsPerUnitFor(`1:${ratio}`, 'mm', userUnitVanPagina(getActiveDocument(), ann.page));
-        ann.unit = 'mm';
+        // Een imperiale standaardschaal meet in voeten (#972).
+        ann.unit = isImperialScalePreset(`1:${ratio}`) ? 'ft' : 'mm';
+        ann.pixelsPerUnit = pixelsPerUnitFor(`1:${ratio}`, ann.unit, userUnitVanPagina(getActiveDocument(), ann.page));
       }
       break;
     }
@@ -1402,9 +1479,80 @@ function zetMeetEenheid(ann, eenheid) {
   if (ann?.type === 'measureArea' && eenheid) {
     const huidig = vlakLengteSchaal(ann);
     ann.measureScale = schaalInEenheid(huidig.perPt, huidig.unit, eenheid);
+  } else if (ann?.type === 'measureDistance' && eenheid) {
+    // Lengte en maatlijn (#1091): hetzelfde als bij een meetvlak. Zonder dit
+    // rekende de maatlijn opnieuw met de documentschaal en zette de eenheid
+    // terug (ft bleef ft). Pixels hebben geen vaste maat; die blijven zoals ze zijn.
+    const huidig = lijnLengteSchaal(ann);
+    // Een maat die de documentschaal volgde, toonde zijn waarde met de opmaak
+    // van de pagina of de standaard per eenheid; de precisie van het
+    // gereedschap telde niet mee (core/maat-opmaak.js, opmaakVanMaat). Nu hij
+    // een eigen schaal krijgt, leggen we die opmaak vast, anders werd "7338"
+    // in meters ineens "7 m" (#1099 samen met #1091).
+    if (huidig && !(Number(ann.measureScale) > 0) && ann.measureFraction === undefined) {
+      const opmaak = calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page, ann).opmaak;
+      const naarVoetInch = eenheid === 'ft' || eenheid === 'in';
+      if (opmaak?.fractie && naarVoetInch) {
+        ann.measureFraction = opmaak.fractie;
+        setAnnotProps('measureFraction', opmaak.fractie);
+      } else if (opmaak && opmaak.decimalen !== undefined && !opmaak.fractie) {
+        ann.measurePrecision = opmaak.decimalen;
+      } else {
+        delete ann.measurePrecision; // de standaard van de nieuwe eenheid
+      }
+    }
+    if (huidig) ann.measureScale = schaalInEenheid(huidig.perPt, huidig.unit, eenheid);
+  }
+  // "Alleen inches" hoort bij een maat in voet; een andere eenheid begint
+  // weer zonder (voet → inch → voet geeft weer voet-inch).
+  if (ann?.type === 'measureDistance' && ann.measureInchOnly) {
+    delete ann.measureInchOnly;
+    setAnnotProps('measureInchOnly', false);
   }
   ann.measureUnit = eenheid;
   recomputeMeasureText(ann);
+}
+
+// Weergave-eenheid van de oppervlakte van een meetvlak (#1129): acres,
+// hectares, m², ft²; leeg volgt de schaal. Alleen de tekst verandert: de
+// waarde en de lengte-eenheid van het vlak blijven zoals ze zijn.
+function zetVlakEenheid(ann, value) {
+  if (ann?.type !== 'measureArea') return;
+  const eenheid = oppervlakteEenheid(value);
+  if (eenheid) ann.measureAreaUnit = eenheid;
+  else delete ann.measureAreaUnit;
+  recomputeMeasureText(ann);
+}
+
+// De lengteschaal van een maatlijn ({ perPt, unit }): de eigen schaal, anders
+// die op het midden van de lijn (documentschaal, schaalgebied, viewport).
+function lijnLengteSchaal(ann) {
+  const eigen = Number(ann?.measureScale);
+  if (eigen > 0) return { perPt: eigen, unit: ann.measureUnit || 'mm' };
+  const dist = calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page, ann);
+  if (!(dist.pixels > 0) || !(dist.value > 0) || !dist.unit) return null;
+  return { perPt: dist.value / dist.pixels, unit: dist.unit };
+}
+
+// Breuk van een maat in voet en inch (core/maat-opmaak.js): "f16" = voet-inch
+// met 1/16", "i16" = alleen inches met 1/16", een kaal getal = de breuk met de
+// huidige weergave; "auto" of "" = automatisch (de viewport van de pagina of
+// de voorkeur).
+function zetMeetFractie(ann, value) {
+  const tekst = String(value ?? '');
+  const soort = tekst[0];
+  const n = geldigeFractie(soort === 'f' || soort === 'i' ? tekst.slice(1) : tekst);
+  if (!n) {
+    delete ann.measureFraction;
+    delete ann.measureInchOnly;
+    return;
+  }
+  ann.measureFraction = n;
+  // Alleen inches is een keuze bij een maat in voet; een maat in inches
+  // toont al alleen inches en krijgt de vlag niet (die bleef anders hangen
+  // na terugschakelen naar voet).
+  if (soort === 'i' && maatEenheid(ann.measureUnit) === 'ft') ann.measureInchOnly = true;
+  else if (soort === 'f' || soort === 'i') delete ann.measureInchOnly;
 }
 
 // Diepte van een meting (#311): een positief getal, of weg.
@@ -1418,7 +1566,6 @@ function zetMeetDiepte(ann, value) {
 function recomputeMeasureText(ann) {
   if (!ann || !ann.type?.startsWith('measure')) return;
   if (ann.type === 'measureDistance' && ann.measureScale) {
-    const prec = ann.measurePrecision !== undefined ? ann.measurePrecision : 2;
     const unit = ann.measureUnit || 'mm';
     const dx = ann.endX - ann.startX;
     const dy = ann.endY - ann.startY;
@@ -1426,15 +1573,14 @@ function recomputeMeasureText(ann) {
     const scaledVal = pixelDist * ann.measureScale;
     ann.measurePixels = pixelDist;
     ann.measureValue = scaledVal;
-    // mm is the implied drawing unit on dimensions — no suffix.
-    ann.measureText = imperialOr(scaledVal, unit, state.preferences, // Markset: feet-inch
-      unit === 'mm' ? scaledVal.toFixed(prec) : `${scaledVal.toFixed(prec)} ${unit}`);
+    // Dezelfde opmaak als slepen en tekenen (core/maat-opmaak.js).
+    ann.measureText = maatlijnTekst(ann, { value: scaledVal, unit });
   } else if (ann.type === 'measureDistance') {
     // No per-annotation scale override (cleared or never set): fall back to
     // the document/region scale so clearing the override actually reverts
     // the shown value instead of leaving the old text.
-    const dist = calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page);
-    ann.measureText = formatDimensionText(dist);
+    const dist = calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page, ann);
+    ann.measureText = maatlijnTekst(ann, dist);
     ann.measureValue = dist.value;
     ann.measureUnit = dist.unit;
     ann.measurePixels = dist.pixels;
@@ -1497,7 +1643,11 @@ function applyAnnotProp(key, value) {
     if (annotProps.locked !== false && key !== 'locked') return;
 
     const originals = selected.map(annotation => cloneAnnotation(annotation));
-    for (const ann of selected) applyPropToAnnotation(ann, key, value);
+    for (const ann of selected) {
+      // A locked dynamic stamp (#629) stays locked.
+      if ((key === 'locked' || key === 'readOnly') && ann.dynamicStamp?.locked) continue;
+      applyPropToAnnotation(ann, key, value);
+    }
     recordBulkModify(selected, originals);
     setAnnotProps(key, value);
 
@@ -1532,6 +1682,12 @@ function applyAnnotProp(key, value) {
     // Apply to synthetic for immediate panel feedback.
     applyPropToAnnotation(currentAnnotation, key, value);
     setAnnotProps(key, value);
+    // Het label van een meting (#1055) gaat mee naar de volgende metingen van
+    // deze sessie; het is geen opgeslagen stijl.
+    if (isLabelVeld(currentAnnotation.type, key)) {
+      zetLabelVooraf(currentAnnotation.type, key, value);
+      return;
+    }
     // Persist to state.preferences so annotation-creators picks it up.
     (async () => {
       try {
@@ -1564,6 +1720,12 @@ function applyAnnotProp(key, value) {
     import('../../tools/text-edit-tool.js')
       .then(m => m.applyActiveTextEditStyle && m.applyActiveTextEditStyle(key, value))
       .catch(() => {});
+    return;
+  }
+
+  // A locked dynamic stamp (#629) is final: it cannot be unlocked again.
+  if (currentAnnotation.dynamicStamp?.locked && (key === 'locked' || key === 'readOnly')) {
+    storeShowProperties(currentAnnotation);
     return;
   }
 
@@ -1634,11 +1796,12 @@ function applyAnnotProp(key, value) {
     case 'marked': currentAnnotation.marked = value; break;
     case 'altText': currentAnnotation.altText = value; break;
     case 'status':
-      currentAnnotation.status = value === 'none' ? undefined : value;
       _stampStatusMeta(currentAnnotation, value);
       setAnnotProps({
         statusBy: currentAnnotation.statusBy || '',
+        statusLabel: currentAnnotation.statusLabel || '',
         statusAt: currentAnnotation.statusAt ? formatDate(currentAnnotation.statusAt) : '',
+        statusHistory: statusHistoryProps(currentAnnotation),
       });
       break;
     case 'ifcCategory': currentAnnotation.ifcCategory = value || undefined; break;
@@ -1763,7 +1926,12 @@ function applyAnnotProp(key, value) {
       zetMeetEenheid(currentAnnotation, value);
       if (currentAnnotation.type === 'measureArea') setAnnotProps('measureScale', currentAnnotation.measureScale || 0);
       break;
-    case 'measurePrecision': currentAnnotation.measurePrecision = leesGeheelGetal(value); recomputeMeasureText(currentAnnotation); break;
+    case 'measureAreaUnit':
+      zetVlakEenheid(currentAnnotation, value);
+      value = currentAnnotation.measureAreaUnit || '';
+      break;
+    case 'measurePrecision': currentAnnotation.measurePrecision = leesGeheelGetal(value); if (currentAnnotation.type === 'measureDistance') { currentAnnotation.measureFraction = 0; delete currentAnnotation.measureInchOnly; setAnnotProps('measureFraction', 0); } recomputeMeasureText(currentAnnotation); break;
+    case 'measureFraction': zetMeetFractie(currentAnnotation, value); setAnnotProps('measureInchOnly', currentAnnotation.measureInchOnly === true); recomputeMeasureText(currentAnnotation); break;
     case 'measureName':
       currentAnnotation.measureName = value;
       if (isRuimteVlak(currentAnnotation)) currentAnnotation.opsRuimteNaam = value;
@@ -1868,11 +2036,13 @@ function applyAnnotProp(key, value) {
       if (vpRatio > 0) {
         currentAnnotation.scaleRatio = `1:${vpRatio}`;
         // In pagina-eenheden, /UserUnit meegerekend (#884), zoals bij meervoudige selectie.
-        currentAnnotation.pixelsPerUnit = pixelsPerUnitFor(`1:${vpRatio}`, 'mm', userUnitVanPagina(getActiveDocument(), currentAnnotation.page));
-        currentAnnotation.unit = 'mm';
+        // Een imperiale standaardschaal meet in voeten (#972).
+        const vpUnit = isImperialScalePreset(`1:${vpRatio}`) ? 'ft' : 'mm';
+        currentAnnotation.pixelsPerUnit = pixelsPerUnitFor(`1:${vpRatio}`, vpUnit, userUnitVanPagina(getActiveDocument(), currentAnnotation.page));
+        currentAnnotation.unit = vpUnit;
         currentAnnotation.name = currentAnnotation.name || `1:${vpRatio}`;
         setAnnotProps('viewportScaleRatio', `1:${vpRatio}`);
-        setAnnotProps('viewportUnit', 'mm');
+        setAnnotProps('viewportUnit', vpUnit);
         recalculateAllMeasurements();
       }
       break;
@@ -1912,7 +2082,8 @@ function applyAnnotProp(key, value) {
     case 'scaleRegionHeight': {
       // Real-world size of the region itself (in its own scale + units) →
       // page-pixel bbox, top-left anchored.
-      const real = leesGetalBegin(value);
+      // Een getal in de eenheid van het gebied, of een voet-inchmaat (#1145).
+      const real = leesLengte(value, currentAnnotation.units || 'mm', { begin: true });
       if (!(real > 0)) break;
       // Elke positieve waarde mag (ook kleiner dan de schermpixel-grens bij
       // slepen: die duwt een al kleiner gebied niet omhoog); alleen technisch
@@ -2282,7 +2453,7 @@ export async function showToolDefaults(toolName, overrides = {}, shouldShow = nu
   }
 
   if (typeof shouldShow === 'function' && !shouldShow()) return false;
-  Object.assign(synthetic, overrides);
+  Object.assign(synthetic, labelVooraf(annType), overrides);
   storeShowProperties(synthetic);
   return true;
 }

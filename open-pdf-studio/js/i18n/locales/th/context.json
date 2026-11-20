@@ -3,6 +3,7 @@
     "openPopUpNote": "เปิดหมายเหตุป๊อปอัป",
     "hidePopUpNote": "ซ่อนหมายเหตุป๊อปอัป",
     "resetPopUpLocation": "รีเซ็ตตำแหน่งหมายเหตุป๊อปอัป",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "แก้ไขข้อความ...",
     "addReply": "เพิ่มการตอบกลับ",
     "locked": "ล็อค",
@@ -12,11 +13,13 @@
     "printable": "พิมพ์ได้",
     "status": "สถานะ",
     "showByStatus": "แสดงตามสถานะ",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "ไม่มี",
     "statusAccepted": "อนุมัติแล้ว",
     "statusCancelled": "ยกเลิกแล้ว",
     "statusCompleted": "เสร็จสิ้นแล้ว",
     "statusRejected": "ปฏิเสธแล้ว",
+    "statusReviewed": "ตรวจสอบแล้ว",
     "reviewHistory": "ประวัติการตรวจสอบ...",
     "layer": "ชั้น:",
     "noLayersAvailable": "ไม่มีชั้นที่พร้อมใช้",
@@ -49,6 +52,7 @@
     "dimChainAdd": "เพิ่มจุดในโซ่เส้นบอกขนาด",
     "dimChainRemove": "ลบเส้นช่วยบอกขนาดออกจากโซ่",
     "selectRoom": "เลือกห้อง",
+    "checkScale": "ตรวจสอบมาตราส่วนด้วยเส้นนี้...",
     "saveToToolSet": "บันทึกลงชุดเครื่องมือ"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "จัดกึ่งกลางแนวตั้ง",
     "distributeHorizontally": "กระจายแนวนอน",
     "distributeVertically": "กระจายแนวตั้ง",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "ตัดมุมผนัง",
     "deleteAnnotations": "ลบ {{count}} คำอธิบายประกอบ",
     "deleteConfirm": "ลบ {{count}} คำอธิบายประกอบ?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "ซ้อนไว้ใต้บุ๊กมาร์กใหม่...",
     "indent": "เพิ่มการเยื้อง",
     "outdent": "ลดการเยื้อง",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "ลบบุ๊กมาร์ก {{count}} รายการ"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "แทรกจากไฟล์...",
     "insertFromFileBefore": "ก่อนหน้านี้...",
     "insertFromFileAfter": "หลังหน้านี้...",
-    "pageLabels": "ป้ายชื่อหน้า (ตัวสร้างชื่อ)..."
+    "pageLabels": "ป้ายชื่อหน้า (ตัวสร้างชื่อ)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "เน้นข้อความที่เลือก",
     "strikethroughSelection": "ขีดฆ่าข้อความที่เลือก",
     "underlineSelection": "ขีดเส้นใต้ข้อความที่เลือก",
-    "curvedLeaderSelection": "เพิ่มคำบรรยายเส้นโค้ง"
+    "curvedLeaderSelection": "เพิ่มคำบรรยายเส้นโค้ง",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "ลบคำอธิบายประกอบนี้?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "ลบจุดยอด",
     "insertVertex": "แทรกจุดยอดที่นี่",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "แปลงเป็นส่วนโค้ง",
     "convertToLine": "แปลงเป็นเส้นตรง"
   },

@@ -18,6 +18,10 @@ use pdfium_render::prelude::*;
 pub mod thin_lines;
 #[path = "../../../pdfium-worker/src/mesh_bbox.rs"]
 pub mod mesh_bbox;
+/// Editable widgets out of, signatures and push buttons in, the screen
+/// bitmap (#1101). Same file as the pdfium-worker sidecar uses.
+#[path = "../../../pdfium-worker/src/screen_widgets.rs"]
+mod screen_widgets;
 #[path = "../../../pdfium-worker/src/render_budget.rs"]
 #[allow(dead_code)] // SCREEN_RGBA_BYTES is de worker-grens; de app gebruikt eigen budgetten.
 mod render_budget;
@@ -194,24 +198,9 @@ pub fn get_or_load_pdfium_doc(
     path: &str,
     cache: &PdfiumDocCache,
 ) -> Result<Arc<PdfiumDocumentHandle>, String> {
-    {
-        let map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
-        if let Some(h) = map.get(path) {
-            return Ok(h.clone());
-        }
-    }
-
-    let bytes = std::fs::read(path).map_err(|e| format!("Read {}: {}", path, e))?;
-    let arc_bytes = Arc::new(bytes);
-    let handle = Arc::new(PdfiumDocumentHandle::load_from_bytes(arc_bytes)?);
-
-    let mut map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
-    // Double-check after parse to avoid race-double-load.
-    if let Some(existing) = map.get(path) {
-        return Ok(existing.clone());
-    }
-    map.insert(path.to_string(), handle.clone());
-    Ok(handle)
+    get_or_load_pdfium_doc_with(path, cache, || {
+        std::fs::read(path).map(Arc::new).map_err(|e| format!("Read {}: {}", path, e))
+    })
 }
 
 /// Same as above but bytes are supplied directly. Used by Tauri commands
@@ -221,6 +210,15 @@ pub fn get_or_load_pdfium_doc_with_bytes(
     bytes: Arc<Vec<u8>>,
     cache: &PdfiumDocCache,
 ) -> Result<Arc<PdfiumDocumentHandle>, String> {
+    get_or_load_pdfium_doc_with(path, cache, || Ok(bytes))
+}
+
+/// Acquire the source bytes only if the parsed document is missing.
+pub fn get_or_load_pdfium_doc_with(
+    path: &str,
+    cache: &PdfiumDocCache,
+    load_bytes: impl FnOnce() -> Result<Arc<Vec<u8>>, String>,
+) -> Result<Arc<PdfiumDocumentHandle>, String> {
     {
         let map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
         if let Some(h) = map.get(path) {
@@ -228,7 +226,7 @@ pub fn get_or_load_pdfium_doc_with_bytes(
         }
     }
 
-    let handle = Arc::new(PdfiumDocumentHandle::load_from_bytes(bytes)?);
+    let handle = Arc::new(PdfiumDocumentHandle::load_from_bytes(load_bytes()?)?);
 
     let mut map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
     if let Some(existing) = map.get(path) {
@@ -252,6 +250,20 @@ pub fn page_size_pt(doc: &PdfDocument<'static>, page_index: u32) -> Result<(f32,
     Ok((page.width().value, page.height().value))
 }
 
+/// How many non-whitespace characters the page's text layer holds (also
+/// invisible OCR text). Batch OCR (#382) uses it to skip pages that already
+/// carry text.
+pub fn page_text_chars(doc: &PdfDocument<'static>, page_index: u32) -> Result<u32, String> {
+    let _guard = inproc_guard();
+    let pages = doc.pages();
+    let page = pages
+        .get(page_index as i32)
+        .map_err(|e| format!("Page {} not found: {}", page_index, e))?;
+    let text = page.text().map_err(|e| format!("Page {} text: {}", page_index, e))?;
+    let count = text.all().chars().filter(|c| !c.is_whitespace()).count();
+    Ok(u32::try_from(count).unwrap_or(u32::MAX))
+}
+
 /// Render a single page to RGBA pixel bytes at the requested scale and
 /// rotation. Returns (width, height, rgba) where rgba length is
 /// width * height * 4.
@@ -269,15 +281,16 @@ pub fn render_page_to_rgba(
     scale: f32,
     rotation: i32,
 ) -> Result<(u32, u32, Vec<u8>), String> {
-    render_page_to_rgba_opts(doc, page_index, scale, rotation, false, NO_RGBA_BUDGET)
+    render_page_with_form_data(doc, page_index, scale, rotation, false, NO_RGBA_BUDGET, true)
 }
 
 /// `render_page_to_rgba` for the screen: `thin_lines` draws every vector
 /// stroke as a hairline (Thin Lines view mode, #595). Printing, OCR and
 /// exports keep calling `render_page_to_rgba`, so they always get the true
-/// line widths. `max_rgba_bytes` is the caller's bitmap budget (#676): the
-/// screen fallback passes `INPROC_SCREEN_RGBA_BYTES`, the other paths
-/// `NO_RGBA_BUDGET`.
+/// line widths and stored form appearances. Editable fields are owned by the
+/// PDF.js form layer (#1101), so the bitmap must not contain them; signatures
+/// and push buttons, which that layer cannot draw, stay in.
+/// `max_rgba_bytes` is the caller's bitmap budget (#676).
 pub fn render_page_to_rgba_opts(
     doc: &PdfDocument<'static>,
     page_index: u32,
@@ -285,6 +298,34 @@ pub fn render_page_to_rgba_opts(
     rotation: i32,
     thin_lines: bool,
     max_rgba_bytes: u64,
+) -> Result<(u32, u32, Vec<u8>), String> {
+    render_page_with_form_data(doc, page_index, scale, rotation, thin_lines, max_rgba_bytes, false)
+}
+
+/// `render_page_to_rgba_opts` with every widget's stored appearance, for a
+/// picture of the page without the interactive form layer on top (the page
+/// thumbnails, #1101).
+pub fn render_page_to_rgba_with_forms(
+    doc: &PdfDocument<'static>,
+    page_index: u32,
+    scale: f32,
+    rotation: i32,
+    thin_lines: bool,
+    max_rgba_bytes: u64,
+) -> Result<(u32, u32, Vec<u8>), String> {
+    render_page_with_form_data(doc, page_index, scale, rotation, thin_lines, max_rgba_bytes, true)
+}
+
+/// `all_forms`: every widget (output). Otherwise the screen look: editable
+/// widgets left to the form layer, see `screen_widgets`.
+fn render_page_with_form_data(
+    doc: &PdfDocument<'static>,
+    page_index: u32,
+    scale: f32,
+    rotation: i32,
+    thin_lines: bool,
+    max_rgba_bytes: u64,
+    all_forms: bool,
 ) -> Result<(u32, u32, Vec<u8>), String> {
     // Serialise all in-proc PDFium work (see PDFIUM_INPROC_LOCK). Declared
     // first so the guard outlives `pages`/`page`, whose Drop also calls PDFium.
@@ -312,11 +353,27 @@ pub fn render_page_to_rgba_opts(
         other => return Err(format!("Unsupported rotation: {}", other)),
     };
 
-    let config = PdfRenderConfig::new()
-        .set_target_width(target_w)
-        .set_maximum_height(target_h)
-        .rotate(rot, true)
-        .render_form_data(true)
+    let widgets = (!all_forms).then(|| screen_widgets::ScreenWidgets::prepare(&page));
+    let form_pass = widgets.as_ref().is_none_or(|w| w.render_form_data());
+    // Without the form pass the binding renders through a matrix, and its
+    // own rotation puts a quarter-turned page outside the bitmap (a white
+    // page): the turn then goes into our matrix, see turned_page.
+    let config = if form_pass || rot == PdfPageRenderRotation::None {
+        PdfRenderConfig::new()
+            .set_target_width(target_w)
+            .set_maximum_height(target_h)
+            .rotate(rot, true)
+            .render_form_data(form_pass)
+    } else {
+        let ((w, h), m) = render_budget::turned_page(rotation, width_pt, height_pt, (target_w, target_h))
+            .ok_or_else(|| format!("Unsupported rotation: {}", rotation))?;
+        PdfRenderConfig::new()
+            .set_fixed_size(w, h)
+            .transform(m[0], m[1], m[2], m[3], m[4], m[5])
+            .map_err(|e| format!("invalid transform: {}", e))?
+            .render_form_data(false)
+    };
+    let config = config
         // ANNOTATION OWNERSHIP: PDFium does NOT render /Annot entries; our
         // own annotation-converter.js reads them into state.documents[]
         // and the annotation-canvas overlay draws them on top. This means
@@ -344,6 +401,7 @@ pub fn render_page_to_rgba_opts(
     let bitmap = page
         .render_with_config(&config)
         .map_err(|e| format!("PDFium render failed: {}", e))?;
+    drop(widgets);
 
     let actual_w = bitmap.width() as u32;
     let actual_h = bitmap.height() as u32;
@@ -374,11 +432,12 @@ pub struct CachedPixmap {
 /// for multi-doc workflows. 40 entries × ~15 MB ≈ 600 MB upper bound.
 const PIXMAP_CACHE_MAX_ENTRIES: usize = 40;
 
-pub type PixmapKey = (String, u32, u32, i32, bool);
+/// (path, page, scale x 10 000, rotation, Thin Lines, all form widgets).
+pub type PixmapKey = (String, u32, u32, i32, bool, bool);
 
 /// Cache key of one whole-page render.
-pub fn pixmap_key(path: &str, page_index: u32, scale: f32, rotation: i32, thin_lines: bool) -> PixmapKey {
-    (path.to_string(), page_index, (scale * 10_000.0).round() as u32, rotation, thin_lines)
+pub fn pixmap_key(path: &str, page_index: u32, scale: f32, rotation: i32, thin_lines: bool, forms: bool) -> PixmapKey {
+    (path.to_string(), page_index, (scale * 10_000.0).round() as u32, rotation, thin_lines, forms)
 }
 
 pub struct PixmapCache {
@@ -619,7 +678,12 @@ pub fn render_page_region_to_rgba(
 
     // as_rgba_bytes() handles the BGRA→RGBA conversion automatically (matches
     // the existing render_page_to_rgba output shape).
-    let rgba = bitmap.as_rgba_bytes();
+    let mut rgba = bitmap.as_rgba_bytes();
+    // No form pass with a matrix: signatures and push buttons are drawn in
+    // separately; editable fields stay with the form layer (#1101).
+    screen_widgets::ScreenWidgets::prepare(&page).draw_faces_into_tile(
+        &mut rgba, actual_w as usize, actual_h as usize, scale, region_x_pt * scale_x, region_y_pt * scale_y, true,
+    );
 
     Ok((actual_w, actual_h, rgba))
 }
@@ -761,5 +825,117 @@ mod budget_tests {
         assert!(render_budget::dimensions(3370.0, 2384.0, 300.0 / 72.0, NO_RGBA_BUDGET).is_ok());
         assert!(render_budget::dimensions(f32::NAN, 2384.0, 1.0, NO_RGBA_BUDGET).is_err());
         assert!(render_budget::dimensions(f32::MAX, 2.0, 2.0, NO_RGBA_BUDGET).is_err());
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../pdfium-worker/src/test_form.rs"]
+mod form_test_fixture;
+
+#[cfg(test)]
+mod form_display_tests {
+    use super::*;
+    use super::form_test_fixture as fixture;
+
+    fn init() {
+        let platform = if cfg!(windows) {
+            if cfg!(target_arch = "aarch64") { "win-arm64" } else { "win-x64" }
+        } else if cfg!(target_os = "macos") { "macos-universal" } else { "linux-x64" };
+        let dir = std::env::var_os("OPDS_TEST_PDFIUM_DIR").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries").join(platform));
+        init_pdfium(&dir).unwrap();
+    }
+
+    fn rgb_at(px: &[u8], w: u32, (x, y): (usize, usize)) -> (u8, u8, u8) {
+        let o = (y * w as usize + x) * 4;
+        (px[o], px[o + 1], px[o + 2])
+    }
+
+    #[test]
+    fn screen_omits_widgets_but_output_keeps_them() {
+        init();
+        let form = PdfiumDocumentHandle::load_from_bytes(Arc::new(fixture::form_page(true, 0))).unwrap();
+        let plain = PdfiumDocumentHandle::load_from_bytes(Arc::new(fixture::form_page(false, 0))).unwrap();
+        for rotation in [0, 90, 180, 270] {
+            for scale in [1.0, 2.0] {
+                let screen = render_page_to_rgba_opts(form.document(), 0, scale, rotation, false, INPROC_SCREEN_RGBA_BYTES).unwrap();
+                let content = render_page_to_rgba_opts(plain.document(), 0, scale, rotation, false, INPROC_SCREEN_RGBA_BYTES).unwrap();
+                assert_eq!((screen.0, screen.1), (content.0, content.1));
+                assert!(screen.2 == content.2, "screen bitmap must not retain old widget appearance");
+                let output = render_page_to_rgba(form.document(), 0, scale, rotation).unwrap();
+                assert!(output.2 != content.2, "print/export must still contain the stored form appearance");
+            }
+        }
+    }
+
+    /// A page without widget faces renders through a matrix; turned a quarter
+    /// it came out white. It must show what PDFium's own rotation shows on
+    /// the output route.
+    #[test]
+    fn screen_turns_a_page_without_form_pass() {
+        init();
+        let dark = |px: &[u8], i: usize| px[i * 4] < 100 && px[i * 4 + 1] < 100 && px[i * 4 + 2] < 100;
+        for rotate in [0, 90] {
+            let plain = PdfiumDocumentHandle::load_from_bytes(Arc::new(fixture::form_page(false, rotate))).unwrap();
+            for rotation in [0, 90, 180, 270] {
+                for scale in [1.0, 2.0] {
+                    let screen = render_page_to_rgba_opts(plain.document(), 0, scale, rotation, false, INPROC_SCREEN_RGBA_BYTES).unwrap();
+                    let output = render_page_to_rgba(plain.document(), 0, scale, rotation).unwrap();
+                    assert_eq!((screen.0, screen.1), (output.0, output.1), "/Rotate {rotate}, rotation {rotation}, scale {scale}");
+                    let n = (screen.0 * screen.1) as usize;
+                    let wanted = (0..n).filter(|&i| dark(&output.2, i)).count();
+                    let inked = (0..n).filter(|&i| dark(&screen.2, i)).count();
+                    let differing = (0..n).filter(|&i| dark(&screen.2, i) != dark(&output.2, i)).count();
+                    assert!(wanted > 200, "the reference shows the drawing ({wanted} dark px)");
+                    assert!(inked * 2 > wanted, "white page: /Rotate {rotate}, rotation {rotation}, scale {scale} ({inked} of {wanted} dark px)");
+                    assert!(differing * 4 < wanted, "drawing in another place: /Rotate {rotate}, rotation {rotation}, scale {scale} ({differing} of {wanted} px differ)");
+                }
+            }
+        }
+    }
+
+    /// Page thumbnails have no form layer on top: they get every widget, and
+    /// their cached bitmap never stands in for a screen one (#1101).
+    #[test]
+    fn thumbnails_with_forms_draw_every_widget() {
+        use fixture::{centre_px, page_with, Widget::*};
+        init();
+        let all = PdfiumDocumentHandle::load_from_bytes(Arc::new(page_with(&[Text, Signature], 0))).unwrap();
+        let thumb = render_page_to_rgba_with_forms(all.document(), 0, 1.0, 0, false, INPROC_SCREEN_RGBA_BYTES).unwrap();
+        assert_eq!(rgb_at(&thumb.2, thumb.0, centre_px(Text, 0, 1.0)), (0, 0, 0));
+        assert_eq!(rgb_at(&thumb.2, thumb.0, centre_px(Signature, 0, 1.0)), (0, 0, 255));
+        assert_ne!(pixmap_key("a.pdf", 0, 1.0, 0, false, true), pixmap_key("a.pdf", 0, 1.0, 0, false, false));
+    }
+
+    /// Signatures and push buttons have no HTML form element: the screen
+    /// bitmap keeps their stored appearance, also in high-zoom tiles (#1101).
+    #[test]
+    fn screen_keeps_signature_and_button_faces() {
+        use fixture::{centre_px, page_with, Widget::*};
+        init();
+        for rotate in [0, 90] {
+            let all = PdfiumDocumentHandle::load_from_bytes(Arc::new(page_with(&[Text, Signature, PushButton], rotate))).unwrap();
+            let faces = PdfiumDocumentHandle::load_from_bytes(Arc::new(page_with(&[Signature, PushButton], rotate))).unwrap();
+            for rotation in [0, 90, 180, 270] {
+                for scale in [1.0, 2.0] {
+                    let screen = render_page_to_rgba_opts(all.document(), 0, scale, rotation, false, INPROC_SCREEN_RGBA_BYTES).unwrap();
+                    let expected = render_page_to_rgba(faces.document(), 0, scale, rotation).unwrap();
+                    assert!(screen == expected, "screen = page + signature + button: /Rotate {rotate}, rotation {rotation}, scale {scale}");
+                }
+            }
+            let screen = render_page_to_rgba_opts(all.document(), 0, 1.0, 0, false, INPROC_SCREEN_RGBA_BYTES).unwrap();
+            assert_eq!(rgb_at(&screen.2, screen.0, centre_px(Signature, rotate, 1.0)), (0, 0, 255));
+            assert_eq!(rgb_at(&screen.2, screen.0, centre_px(Text, rotate, 1.0)), (255, 255, 255));
+            // The text field is hidden only during the screen render.
+            let output = render_page_to_rgba(all.document(), 0, 1.0, 0).unwrap();
+            assert_eq!(rgb_at(&output.2, output.0, centre_px(Text, rotate, 1.0)), (0, 0, 0));
+
+            let scale = 3.0;
+            let tile = render_page_region_to_rgba(all.document(), 0, scale, 0, 40.0, 50.0, 330.0, 290.0, false).unwrap();
+            let local = |(x, y): (usize, usize)| (x - (40.0 * scale) as usize, y - (50.0 * scale) as usize);
+            assert_eq!(rgb_at(&tile.2, tile.0, local(centre_px(Signature, rotate, scale))), (0, 0, 255), "signature in tile: /Rotate {rotate}");
+            assert_eq!(rgb_at(&tile.2, tile.0, local(centre_px(PushButton, rotate, scale))), (255, 0, 0), "button in tile: /Rotate {rotate}");
+            assert_eq!(rgb_at(&tile.2, tile.0, local(centre_px(Text, rotate, scale))), (255, 255, 255), "no stale text in tile: /Rotate {rotate}");
+        }
     }
 }

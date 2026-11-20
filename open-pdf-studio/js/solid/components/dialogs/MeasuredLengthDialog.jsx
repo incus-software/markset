@@ -1,4 +1,5 @@
 import { createSignal, createMemo, Show } from 'solid-js';
+import { formatMaat } from '../../../core/maat-notatie.js';
 import Dialog from '../Dialog.jsx';
 import PrefSelect from '../preferences/PrefSelect.jsx';
 import { closeDialog, openDialog } from '../../stores/dialogStore.js';
@@ -11,9 +12,8 @@ import { showProperties } from '../../../ui/panels/properties-panel.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { cloneAnnotation } from '../../../annotations/factory.js';
 import { recordBulkModify } from '../../../core/undo-manager.js';
-import { parseLengthAs } from '../../../../markset/us-units.js'; // Markset
-import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
-import { leesGetalBegin } from '../../../core/getal-invoer.js';
+import { leesLengte, isImperialeLengte, VOET_INCH_VOORBEELD } from '../../../core/voet-inch.js';
+import { standaardLengteEenheid } from '../../../annotations/eenhedenstelsel.js';
 
 function redraw() {
   const doc = getActiveDocument();
@@ -36,11 +36,12 @@ function redraw() {
 export default function MeasuredLengthDialog(props) {
   const { t } = useTranslation('properties');
   const { t: tCommon } = useTranslation('common');
+  const { t: tDialogs } = useTranslation('dialogs');
   const data = props.data || {};
   const target = data.target || {};
   const pixelDistance = Number(data.pixelDistance) || 0;
 
-  const defaultUnit = target.restore?.units || target.defaultUnit || unitDefaults().unit; // Markset
+  const defaultUnit = target.restore?.units || target.defaultUnit || standaardLengteEenheid();
   const [value, setValue] = createSignal('');
   const [unit, setUnit] = createSignal(defaultUnit);
 
@@ -53,7 +54,8 @@ export default function MeasuredLengthDialog(props) {
   const paperMm = pointsToPaperMm(pixelDistance, userUnit);
 
   const computedScale = createMemo(() => {
-    const v = parseLengthAs(value(), unit()); // Markset: also 12'-6 3/8"
+    // Een getal in de gekozen eenheid, of een voet-inchmaat (12'-6 3/8", #1145).
+    const v = leesLengte(value(), unit(), { begin: true });
     return scaleStringFromMeasurement(pixelDistance, v, unit(), userUnit);
   });
 
@@ -129,15 +131,17 @@ export default function MeasuredLengthDialog(props) {
       <div style="min-width:300px">
         <div class="ai-login-field">
           <label>{t('scaleRegion.measuredOnPaper') || 'Measured on paper'}</label>
-          <div style="padding:2px 0;opacity:0.85">{paperMm.toFixed(1)} mm</div>
+          <div style="padding:2px 0;opacity:0.85">{formatMaat(paperMm, 'mm', 1)}</div>
         </div>
 
         <div class="ai-login-field">
           <label>{t('scaleRegion.measureQuestion') || 'What is the real length of this distance?'}</label>
           <div style="display:flex;gap:6px">
-            <input type="text" inputmode="decimal" data-getal class="ribbon-input" min="0" step="any"
+            <input type="text" inputmode={isImperialeLengte(unit()) ? 'text' : 'decimal'} data-getal="lengte"
+              class="ribbon-input" min="0" step="any"
               value={value()} onInput={e => setValue(e.target.value)}
-              placeholder="1000"
+              placeholder={isImperialeLengte(unit()) ? VOET_INCH_VOORBEELD : '1000'}
+              title={isImperialeLengte(unit()) ? tDialogs('calibration.feetInchHint') : undefined}
               style="flex:1;box-sizing:border-box" autofocus />
             <PrefSelect
               value={unit}

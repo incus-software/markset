@@ -3,6 +3,7 @@
     "openPopUpNote": "Åbn pop op-note",
     "hidePopUpNote": "Skjul pop op-note",
     "resetPopUpLocation": "Nulstil pop op-noteplacering",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Rediger tekst...",
     "addReply": "Tilføj svar",
     "locked": "Låst",
@@ -12,11 +13,13 @@
     "printable": "Kan udskrives",
     "status": "Status",
     "showByStatus": "Vis efter status",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Ingen",
     "statusAccepted": "Accepteret",
     "statusCancelled": "Annulleret",
     "statusCompleted": "Fuldført",
     "statusRejected": "Afvist",
+    "statusReviewed": "Gennemgået",
     "reviewHistory": "Gennemgangshistorik...",
     "layer": "Lag:",
     "noLayersAvailable": "Ingen lag tilgængelige",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Tilføj punkter til målkæden",
     "dimChainRemove": "Fjern hjælpelinje fra kæden",
     "selectRoom": "Vælg rum",
+    "checkScale": "Kontrollér skala med denne linje...",
     "saveToToolSet": "Gem i værktøjssæt"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Centrer lodret",
     "distributeHorizontally": "Fordel vandret",
     "distributeVertically": "Fordel lodret",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Afkort vægges hjørner",
     "deleteAnnotations": "Slet {{count}} annotationer",
     "deleteConfirm": "Slet {{count}} annotationer?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Indlejr under nyt bogmærke...",
     "indent": "Indryk",
     "outdent": "Ryk ud",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Slet {{count}} bogmærker"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Indsæt fra fil...",
     "insertFromFileBefore": "Før denne side...",
     "insertFromFileAfter": "Efter denne side...",
-    "pageLabels": "Sideetiketter (navnegenerator)..."
+    "pageLabels": "Sideetiketter (navnegenerator)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Fremhæv markering",
     "strikethroughSelection": "Gennemstreg markering",
     "underlineSelection": "Understreg markering",
-    "curvedLeaderSelection": "Tilføj buet callout"
+    "curvedLeaderSelection": "Tilføj buet callout",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Slet denne annotation?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Slet knudepunkt",
     "insertVertex": "Indsæt knudepunkt her",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Konvertér til bue",
     "convertToLine": "Konvertér til linje"
   },

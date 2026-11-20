@@ -14,8 +14,9 @@ import { cloneAnnotation } from '../../../annotations/factory.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
 import { recalculateAllMeasurements } from '../../../annotations/measurement.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
-import { US_SCALES, usScaleLabel, pointsPerFoot } from '../../../../markset/us-units.js'; // Markset
-import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
+import { leesLengte, isImperialeLengte, VOET_INCH_VOORBEELD } from '../../../core/voet-inch.js';
+import { standaardLengteEenheid, standaardenVoorStelsel } from '../../../annotations/eenhedenstelsel.js';
+import { IMPERIAL_SCALE_PRESETS, isImperialScalePreset, filterScaleOptions } from '../../../annotations/scale-presets.js';
 
 const PRESET_SCALES = [
   { label: '1:10', ratio: 10 },
@@ -37,11 +38,11 @@ const PRESET_SCALES = [
   { label: '1:2000', ratio: 2000 },
   { label: '1:2500', ratio: 2500 },
   { label: '1:5000', ratio: 5000 },
+  // Imperial architectural/engineering scales (#972); they measure in feet.
+  ...IMPERIAL_SCALE_PRESETS.map(preset => ({
+    label: preset.label, ratio: Number(preset.ratio.slice(2)),
+  })),
 ];
-
-// Markset: US architectural/engineering presets ("us:48" is 1/4" = 1'-0").
-// They store the same "1:N" scaleRatio, calibrated in feet.
-const US_PRESET_OPTIONS = US_SCALES.map(s => ({ value: `us:${s.ratio}`, label: s.label }));
 
 function redraw() {
   const doc = getActiveDocument();
@@ -57,17 +58,16 @@ function findAnnotation(id) {
 
 export default function ViewportScaleDialog(props) {
   const { t } = useTranslation('ribbon');
+  const { t: tDialogs } = useTranslation('dialogs');
   const data = props.data || {};
   const initialAnnotation = findAnnotation(data.annotationId);
   const initialSnapshot = initialAnnotation ? cloneAnnotation(initialAnnotation) : null;
-  let initialRatio = String(initialAnnotation?.scaleRatio || '').match(/^1:(\d+)$/)?.[1] || unitDefaults().viewportPreset; // Markset
-  // Markset: reopen a feet-calibrated US scale on its US preset.
-  if (['ft', 'in'].includes(initialAnnotation?.unit) && usScaleLabel(Number(initialRatio))) initialRatio = `us:${initialRatio}`;
+  const initialRatio = String(initialAnnotation?.scaleRatio || '').match(/^1:(\d+)$/)?.[1] || standaardenVoorStelsel().schaal.slice(2); // Markset: 1:48 with US units
   const [mode, setMode] = createSignal(data.isNew || initialAnnotation?.scaleRatio ? 'preset' : 'custom');
   const [presetRatio, setPresetRatio] = createSignal(initialRatio);
   const hasCustomScale = !!initialAnnotation && !initialAnnotation.scaleRatio && initialAnnotation.pixelsPerUnit > 0;
   const [customValue, setCustomValue] = createSignal(hasCustomScale ? '1' : '');
-  const [customUnit, setCustomUnit] = createSignal(initialAnnotation?.unit || unitDefaults().unit); // Markset
+  const [customUnit, setCustomUnit] = createSignal(initialAnnotation?.unit || standaardLengteEenheid());
   const [refPixels, setRefPixels] = createSignal(hasCustomScale ? String(initialAnnotation.pixelsPerUnit) : '');
   const [viewportName, setViewportName] = createSignal(initialAnnotation?.name || '');
 
@@ -82,20 +82,16 @@ export default function ViewportScaleDialog(props) {
 
     let pixelsPerUnit, unit, scaleRatio = '';
 
-    const usRatio = String(presetRatio()).startsWith('us:') ? Number(presetRatio().slice(3)) : 0; // Markset
-    if (mode() === 'preset' && usRatio > 0) {
-      pixelsPerUnit = pointsPerFoot(usRatio);
-      unit = 'ft';
-      scaleRatio = `1:${usRatio}`;
-    } else if (mode() === 'preset') {
+    if (mode() === 'preset') {
       const ratio = parseInt(presetRatio());
       if (!ratio || ratio <= 0) return;
       // In pagina-eenheden, /UserUnit meegerekend (#884).
-      pixelsPerUnit = pixelsPerUnitFor(`1:${ratio}`, 'mm', userUnitVanPagina(doc, ann.page));
-      unit = 'mm';
+      unit = isImperialScalePreset(`1:${ratio}`) ? 'ft' : 'mm';
+      pixelsPerUnit = pixelsPerUnitFor(`1:${ratio}`, unit, userUnitVanPagina(doc, ann.page));
       scaleRatio = `1:${ratio}`;
     } else {
-      const realVal = parseFloat(customValue());
+      // Een getal in de gekozen eenheid, of een voet-inchmaat (#1145).
+      const realVal = leesLengte(customValue(), customUnit(), { begin: true });
       const pxVal = parseFloat(refPixels());
       if (!realVal || realVal <= 0 || !pxVal || pxVal <= 0) return;
       pixelsPerUnit = pxVal / realVal;
@@ -106,7 +102,7 @@ export default function ViewportScaleDialog(props) {
     ann.pixelsPerUnit = pixelsPerUnit;
     ann.unit = unit;
     ann.scaleRatio = scaleRatio;
-    ann.name = viewportName() || (mode() === 'preset' && usScaleLabel(usRatio)) || scaleRatio || 'Viewport'; // Markset: US label
+    ann.name = viewportName() || scaleRatio || 'Viewport';
     ann.modifiedAt = new Date().toISOString();
 
     recalculateAllMeasurements();
@@ -176,7 +172,11 @@ export default function ViewportScaleDialog(props) {
             <PrefSelect
               value={presetRatio}
               setValue={setPresetRatio}
-              options={[...PRESET_SCALES.map(s => ({ value: String(s.ratio), label: s.label })), ...US_PRESET_OPTIONS]}
+              options={filterScaleOptions(
+                // Metrisch, imperiaal of beide volgens de voorkeur (#996).
+                PRESET_SCALES.map(s => ({ value: `1:${s.ratio}`, label: s.label })),
+                { current: `1:${presetRatio()}` },
+              ).map(o => ({ value: o.value.slice(2), label: o.label }))}
               style={{ width: '100%' }}
             />
           </div>
@@ -192,8 +192,10 @@ export default function ViewportScaleDialog(props) {
           <div class="ai-login-field">
             <label>Real-world distance</label>
             <div style="display:flex;gap:4px;align-items:center">
-              <input type="text" inputmode="decimal" data-getal class="ribbon-input" value={customValue()} onInput={e => setCustomValue(e.target.value)}
-                placeholder="Distance"
+              <input type="text" inputmode={isImperialeLengte(customUnit()) ? 'text' : 'decimal'} data-getal="lengte"
+                class="ribbon-input" value={customValue()} onInput={e => setCustomValue(e.target.value)}
+                title={isImperialeLengte(customUnit()) ? tDialogs('calibration.feetInchHint') : undefined}
+                placeholder={isImperialeLengte(customUnit()) ? VOET_INCH_VOORBEELD : 'Distance'}
                 style="flex:1" />
               <PrefSelect
                 value={customUnit}

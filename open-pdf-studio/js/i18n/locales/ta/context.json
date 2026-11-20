@@ -3,6 +3,7 @@
     "openPopUpNote": "பாப்-அப் குறிப்பைத் திற",
     "hidePopUpNote": "பாப்-அப் குறிப்பை மறை",
     "resetPopUpLocation": "பாப்-அப் குறிப்பு இருப்பிடத்தை மீட்டமை",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "உரையைத் திருத்து...",
     "addReply": "பதிலைச் சேர்",
     "locked": "பூட்டப்பட்டது",
@@ -12,11 +13,13 @@
     "printable": "அச்சிடக்கூடியது",
     "status": "நிலை",
     "showByStatus": "நிலையின்படி காட்டு",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "எதுவுமில்லை",
     "statusAccepted": "ஏற்றுக்கொள்ளப்பட்டது",
     "statusCancelled": "ரத்துசெய்யப்பட்டது",
     "statusCompleted": "நிறைவடைந்தது",
     "statusRejected": "நிராகரிக்கப்பட்டது",
+    "statusReviewed": "மதிப்பாய்வு செய்யப்பட்டது",
     "reviewHistory": "மதிப்பாய்வு வரலாறு...",
     "layer": "அடுக்கு:",
     "noLayersAvailable": "அடுக்குகள் எதுவும் கிடைக்கவில்லை",
@@ -49,6 +52,7 @@
     "dimChainAdd": "பரிமாணச் சங்கிலியில் புள்ளிகளைச் சேர்",
     "dimChainRemove": "சங்கிலியிலிருந்து நீட்டிப்புக் கோட்டை அகற்று",
     "selectRoom": "அறையைத் தேர்ந்தெடு",
+    "checkScale": "இந்தக் கோட்டால் அளவுகோலைச் சரிபார்...",
     "saveToToolSet": "கருவித் தொகுப்பில் சேமி"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "நிலையாக நடுவில் வை",
     "distributeHorizontally": "கிடையாகப் பரவலாக்கு",
     "distributeVertically": "நிலையாகப் பரவலாக்கு",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "சுவர் மூலைகளை நறுக்கு",
     "deleteAnnotations": "{{count}} குறிப்புரைகளை நீக்கு",
     "deleteConfirm": "{{count}} குறிப்புரைகளை நீக்கவா?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "புதிய புத்தகக்குறியின் கீழ் வை...",
     "indent": "உள்தள்ளு",
     "outdent": "வெளித்தள்ளு",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "{{count}} புத்தகக்குறிகளை நீக்கு"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "கோப்பிலிருந்து செருகு...",
     "insertFromFileBefore": "இந்தப் பக்கத்திற்கு முன்...",
     "insertFromFileAfter": "இந்தப் பக்கத்திற்குப் பின்...",
-    "pageLabels": "பக்க லேபிள்கள் (பெயர் உருவாக்கி)..."
+    "pageLabels": "பக்க லேபிள்கள் (பெயர் உருவாக்கி)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "தேர்வை முன்னிலைப்படுத்து",
     "strikethroughSelection": "தேர்வுக்கு நடுக்கோடு இடு",
     "underlineSelection": "தேர்வுக்கு அடிக்கோடு இடு",
-    "curvedLeaderSelection": "வளைந்த அழைப்புக்குறிப்பைச் சேர்"
+    "curvedLeaderSelection": "வளைந்த அழைப்புக்குறிப்பைச் சேர்",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "இந்தக் குறிப்புரையை நீக்கவா?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "முனையை நீக்கு",
     "insertVertex": "இங்கே முனையைச் செருகு",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "வில்லாக மாற்று",
     "convertToLine": "கோடாக மாற்று"
   },

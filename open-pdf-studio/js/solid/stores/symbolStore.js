@@ -1,10 +1,11 @@
 import { createSignal, createMemo } from 'solid-js';
 import { BUILT_IN_CATEGORIES } from '../data/symbolLibrary.js';
-import { NEN1414_CATEGORIES } from '../data/nen1414Library.js';
+import { nen1414Categorieen, laadNen1414 } from '../data/nen1414-laden.js';
 import { NL_CATEGORIES } from '../data/nlSymbolLibrary.js';
 import { INB_CATEGORIES } from '../data/inbSymbolLibrary.js';
 import { MARKSET_CATEGORIES } from '../../../markset/library/index.js'; // Markset
 import { pluginCategories } from '../../../markset/smart/plugin-categories.js'; // Markset
+import { GDT_CATEGORIES } from '../data/gdtSymbolLibrary.js';
 import { matchesLocale, DEFAULT_INDUSTRY, DEFAULT_COUNTRY } from '../data/symbolLocales.js';
 import { state } from '../../core/state.js';
 import { savePreferences } from '../../core/preferences.js';
@@ -13,6 +14,7 @@ import { removeSteelCatalog } from '../../symbols/steel-catalog-store.js';
 import { removeLineworkCatalog } from '../../symbols/linework-catalog-store.js';
 import { searchTermsFor } from '../../symbols/registry.js';
 import { symboolPastBijZoekterm } from '../data/symbool-zoeken.js';
+import { saneerSvg, saneerSymbolen, saneerSymboolGroepen, saneerTypeOverrides } from '../../core/svg-veilig.js';
 
 // --- State ---
 const [searchQuery, setSearchQuery] = createSignal('');
@@ -88,6 +90,8 @@ function resolveSymbolSvg(originalSvg) {
 function setSymbolTypeOverride(baseSvg, svg, name) {
   const key = symbolTypeKey(baseSvg);
   if (!key) return null;
+  svg = saneerSvg(svg);
+  if (!svg) return null;
   const overrides = { ...getSymbolTypeOverrides() };
   overrides[key] = { svg, name: name || overrides[key]?.name || 'Symbol' };
   state.preferences.symbolTypeOverrides = overrides;
@@ -105,6 +109,13 @@ function setCustomGroups(groups) {
   savePreferences();
 }
 
+// De NEN 1414-groepen komen erbij zodra hun chunk geladen is (#454);
+// initSymbolPalette start die lading na het tekenen van het venster.
+const [nen1414Groepen, setNen1414Groepen] = createSignal(nen1414Categorieen() || []);
+function laadNen1414Groepen() {
+  return laadNen1414().then((cats) => { if (cats?.length) setNen1414Groepen(cats); });
+}
+
 // --- All categories (built-in + custom) ---
 const allCategories = createMemo(() => {
   const custom = getCustomGroups().map(g => ({
@@ -118,7 +129,8 @@ const allCategories = createMemo(() => {
     ...NL_CATEGORIES,
     ...INB_CATEGORIES,
     ...BUILT_IN_CATEGORIES,
-    ...NEN1414_CATEGORIES,
+    ...nen1414Groepen(),
+    ...GDT_CATEGORIES,
     ...custom
   ];
 });
@@ -184,13 +196,18 @@ function removeCustomGroup(id) {
   }
 }
 
+// Geeft false als de SVG niet bruikbaar is (dan komt er niets bij). Van de
+// SVG blijven alleen bekende tekenelementen en attributen over.
 function addSymbolToGroup(groupId, name, svg) {
+  svg = saneerSvg(svg);
+  if (!svg) return false;
   const groups = getCustomGroups().map(g => {
     if (g.id !== groupId) return g;
     const symId = groupId + '-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     return { ...g, symbols: [...g.symbols, { id: symId, name, svg }] };
   });
   setCustomGroups(groups);
+  return true;
 }
 
 // --- Online bibliotheek-groepen (gedownloade collecties) ---
@@ -199,6 +216,7 @@ function addSymbolToGroup(groupId, name, svg) {
 // Remove-knop ze gewoon verwijdert. Een bibliotheek-groep draagt
 // `collectionId` + `online: true` en industry/country als ARRAYS.
 function upsertCustomGroup(group) {
+  if (group && Array.isArray(group.symbols)) group = { ...group, symbols: saneerSymbolen(group.symbols).symbolen };
   const groups = getCustomGroups();
   const i = groups.findIndex(g => g.id === group.id);
   const next = i >= 0
@@ -255,7 +273,25 @@ function saveSymbolPaletteState() {
   savePreferences();
 }
 
+// Opgeslagen groepen (ook downloads en imports van voor deze controle) en
+// bewerkte symbooltypen opnieuw door de saneerder halen; alleen bij een
+// verschil terugschrijven.
+function saneerOpgeslagenSymbolen() {
+  const prefs = state.preferences;
+  let opslaan = false;
+  if (prefs.customSymbolGroups != null) {
+    const r = saneerSymboolGroepen(prefs.customSymbolGroups);
+    if (r.gewijzigd) { prefs.customSymbolGroups = r.groepen; opslaan = true; }
+  }
+  if (prefs.symbolTypeOverrides != null) {
+    const r = saneerTypeOverrides(prefs.symbolTypeOverrides);
+    if (r.gewijzigd) { prefs.symbolTypeOverrides = r.overrides; opslaan = true; }
+  }
+  if (opslaan) savePreferences();
+}
+
 function initSymbolPalette() {
+  saneerOpgeslagenSymbolen();
   const prefs = state.preferences;
   if (prefs.symbolPaletteVisible != null) setSymbolPaletteVisibleRaw(prefs.symbolPaletteVisible);
   if (prefs.disabledSymbolGroups) setDisabledGroupsRaw(new Set(prefs.disabledSymbolGroups));
@@ -270,6 +306,7 @@ function initSymbolPalette() {
   if (symbolPaletteVisible() && mode.startsWith('docked-')) {
     registerPaletteDock('symbols', mode.replace('docked-', ''));
   }
+  laadNen1414Groepen();
 }
 
 export {

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { splitRunnable } from '../markset/test-packages.mjs'; // Markset
+import { bouwBeveiligingshulp } from './bouw-beveiligingshulp.mjs';
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const app = path.resolve(hier, '..');
@@ -51,6 +52,14 @@ function draai() {
   const { run, skipped } = splitRunnable(bestanden, app);
   if (skipped.length) {
     console.log(`Skipped ${skipped.length} test files that need a package Markset does not install:\n  ${skipped.map((s) => `${s.file} (${s.missing.join(', ')})`).join('\n  ')}`);
+  }
+  // Rust-hulpprogramma's eerst, buiten de parallelle testfase: een compiler die
+  // daar alle kernen bezet, laat tijdgevoelige tests op een trage runner
+  // mislukken. De test zelf start daarna alleen het programma.
+  if (bestanden.some((b) => b.endsWith('document-beveiliging-interop.test.mjs')) && !process.env.OPDS_BEVEILIGING_BIN) {
+    const hulp = bouwBeveiligingshulp();
+    if (hulp.bin) process.env.OPDS_BEVEILIGING_BIN = hulp.bin;
+    else if (hulp.fout) console.error(`open-pdf-security example build failed:\n${hulp.fout}`);
   }
   let status = 0;
   for (const partij of inPartijen(run)) {

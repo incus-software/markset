@@ -15,8 +15,14 @@ test('print: every US sheet key and size matches print_instelling.rs', () => {
   const rows = [...rs.matchAll(/\(Papier::\w+, "([\w-]+)", ([\d.]+), ([\d.]+)\)/g)]
     .map(([, key, k, l]) => [key, Math.round(Number(k) * 254) / 10, Math.round(Number(l) * 254) / 10]);
   assert.equal(rows.length, 9);
-  assert.deepEqual(rows, Object.entries(US_PRINT_FORMATS).map(([key, f]) => [key, f.breedte, f.hoogte]));
-  for (const [key] of rows) assert.ok(PAPIERFORMATEN[key], `${key} missing in PAPIERFORMATEN`);
+  // Since the 2026.48.1 merge the print sheets are upstream's (#996); Markset's
+  // own list (US_PRINT_FORMATS, used by CAD import) must name the same sizes.
+  const byKey = (list) => [...list].sort((a, b) => a[0].localeCompare(b[0]));
+  assert.deepEqual(byKey(rows), byKey(Object.entries(US_PRINT_FORMATS).map(([key, f]) => [key, f.breedte, f.hoogte])));
+  for (const [key, k, l] of rows) {
+    assert.ok(PAPIERFORMATEN[key], `${key} missing in PAPIERFORMATEN`);
+    assert.deepEqual([PAPIERFORMATEN[key].breedte, PAPIERFORMATEN[key].hoogte], [k, l], key);
+  }
   assert.equal(formaatTekst('arch-d'), 'ARCH D (24 x 36 in)');
   assert.equal(formaatTekst('a3'), 'A3 (297 x 420 mm)');
 });

@@ -26,6 +26,11 @@ export const HANDLE_TYPES = {
   CALLOUT_MOVE: 'callout_move',
   POLYLINE_NODE: 'polyline_node',
   POLYLINE_EDGE: 'polyline_edge',
+  // Krommen op een polylijn of veelhoek (#1169): een stuurpunt
+  // (curve_handle_<segment>_<1|2>) en het buigen van een segment
+  // (curve_bend_<segment>_<t maal 10000>).
+  CURVE_HANDLE: 'curve_handle',
+  CURVE_BEND: 'curve_bend',
   LEADER_START: 'leader_start',
   LEADER_END: 'leader_end',
   LABEL_MOVE: 'label_move',
@@ -54,6 +59,17 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // (de kortstondige oude default, nergens instelbaar in de UI) wordt bij
   // het laden teruggezet (zie preferences.js).
   defaultViewMode: 'single',
+  // Voorkeurs-OCR-engine van een extensie (js/pdf/ocr-engines.js, #970);
+  // null = de ingebouwde Tesseract.
+  ocrEngine: null,
+  // Laatst gekozen OCR-taal van de ingebouwde Tesseract (#1083): 'auto' of
+  // een Tesseract-opgave als 'nld+eng' (js/pdf/ocr-talen.js).
+  ocrLanguage: 'auto',
+  // Extensiecatalogus (#969): eigen catalogus-links (de standaard van het
+  // project staat altijd vooraan, zie js/plugins/extension-catalog.js) en de
+  // bron per geïnstalleerde extensie.
+  extensionCatalogs: [],
+  extensionSources: {},
 
   // General — authorName defaults to '' (resolved to OS username at load time)
   authorName: '',
@@ -143,6 +159,14 @@ export const DEFAULT_PREFERENCES: Preferences = {
   textboxOpacity: 100,
   textboxFontSize: 8,
   textboxFontFamily: 'Arial',
+  textboxTextColor: '#000000',
+  // Teken- en alineastijl (#1150). Geen regelafstand: dan geldt die van het tekenen.
+  textboxFontBold: false,
+  textboxFontItalic: false,
+  textboxFontUnderline: false,
+  textboxFontStrikethrough: false,
+  textboxTextAlign: 'left',
+  textboxTextVAlign: 'top',
 
   // Markset: Text tool defaults (plain text, markset/plain-text.js)
   plainTextFontSize: 10,
@@ -158,6 +182,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
   calloutOpacity: 100,
   calloutFontSize: 14,
   calloutFontFamily: 'Arial',
+  calloutTextColor: '#000000',
+  calloutFontBold: false,
+  calloutFontItalic: false,
+  calloutFontUnderline: false,
+  calloutFontStrikethrough: false,
+  calloutTextAlign: 'left',
+  calloutTextVAlign: 'top',
 
   // Rectangle defaults
   rectFillColor: '#FFFBEB',
@@ -244,10 +275,24 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Measurement global
   measureRounding: 'none', // 'none', '1', '5', '10'
   measureCtrlSnap: 10,
-  // Markset: US units (markset/us-units.js)
-  measureImperialFormat: 'feet-inch',
-  measureFractionDenominator: 16,
-  unitSystem: 'us', // 'us' | 'metric': starting unit, scale and sheet in the dialogs
+  // Getalnotatie van maten (#629): 'auto' volgt de taal (nl: komma),
+  // 'comma' / 'point' overschrijven het decimaalteken.
+  measureDecimalNotation: 'auto',
+  measureDigitGrouping: false,
+  // Schaalcontrole (#629): drempels in procenten.
+  scaleCheckOkPercent: 0.5,
+  scaleCheckWarnPercent: 2,
+  // Imperiale lengtes (#996): 'decimal' (12.53 ft) of 'feetInch' (12'-6 3/8"),
+  // kleinste breuk 1/2 .. 1/64 inch. Oppervlaktes blijven in sq ft.
+  imperialLengthFormat: 'feetInch', // Markset: US units (markset/us-units.js)
+  imperialFractionPrecision: 16,
+  // Welke standaardschalen de schaallijsten tonen (#996): 'metric',
+  // 'imperial' of 'both'. Standaard metrisch: imperiale schalen en inches
+  // verschijnen pas als de gebruiker daarvoor kiest.
+  scaleUnitSystem: 'imperial', // Markset: US units first
+  // Eenmalige overgang van de oude standaard 'both' naar 'metric' is gedaan
+  // (eenhedenstelsel.js, migreerStelselStandaard).
+  unitsDefaultMetric: true,
 
   // Measure Distance defaults
   measureDistStrokeColor: '#FF0000',
@@ -273,6 +318,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   measureAreaDimPrecision: 2,
   // Lengte van elke rechte zijde tonen (#536); standaard uit.
   measureAreaShowEdgeLengths: false,
+  // Weergave-eenheid van de oppervlakte (#1129): '' volgt de schaal (het
+  // kwadraat van de lengte-eenheid), anders 'm²', 'ha', 'ft²' of 'ac'.
+  measureAreaDisplayUnit: '',
 
   // Filled Area defaults (user-drawn contour with arcs + holes, solid + hatch fill)
   filledAreaStrokeColor: '#000000',
@@ -302,12 +350,24 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autoSelectAfterCreate: true,
   confirmBeforeDelete: true,
   wheelZoomWithoutCtrl: false,
+  reverseWheelZoom: false,
   // Dubbelklik met de middelste muisknop = huidige pagina passend (#767).
   middleDoubleClickFit: true,
+  // Klikken met het hand-gereedschap zoomt in (#1161). Standaard uit: een
+  // klik met de hand deed tot nu toe niets dan deselecteren. Ctrl + klik en
+  // Ctrl + slepen zoomen altijd.
+  handClickZoom: false,
   // Muiswiel boven het lint wisselt van tabblad (#852).
   ribbonWheelSwitchesTabs: true,
+  // Vloeiend (geanimeerd) scrollen, standaard uit (#1007, core/vloeiend-scrollen.js).
+  smoothScrolling: false,
+
+  // Stempelkiezer: ingebouwde stempels verbergen zodra er eigen stempels zijn
+  // (annotations/stamp-picker-filter.js, #998).
+  hideBuiltInStamps: false,
 
   // Startup
+  startupTool: 'select',
   restoreLastSession: false,
   dontAskDefaultPdf: false,
 
@@ -351,6 +411,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // multi-proces worker-pool: parallelle eerste render (sneller), geen
   // zwart scherm, hoofdthread blijft vrij. Uitzetbaar in Voorkeuren.
   progressiveRender: true,
+  // Incrementeel opslaan (#679): annotatie- en formulierwijzigingen achter de
+  // bestaande bytes toevoegen in plaats van het hele bestand te herschrijven.
+  // Experimenteel en standaard uit (docs/incrementeel-opslaan.md); wat niet
+  // zeker past, wordt altijd volledig herschreven.
+  incrementalSave: false,
   // Schermkalibratie voor Werkelijke grootte (#520): CSS-pixels per inch per
   // schermschaal ({ "1.25": 120.5 }). Gekalibreerd scherm: 100% is de echte
   // papiermaat. Leeg = niet gekalibreerd, dan bepaalt zoomDpi wat 100% is.
@@ -363,13 +428,22 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Unit for paper sizes in the properties panel (image width/height, scale
   // bar height): 'mm' | 'cm' | 'in' | 'pt' (#598). Display only — the model
   // stays in page points.
-  paperSizeUnit: 'pt',
+  paperSizeUnit: 'in', // Markset: US units
   // Keyboard shortcuts changed by the user (#714): only the commands whose
   // shortcuts differ from the defaults, { 'view.fitPage': ['Ctrl+K'] }.
   // See core/keybindings/registry.js.
   keyboardShortcuts: {},
 
   // Panels
+  // Indeling van de werkruimte (#932, core/werkruimte.js): blijft over een
+  // herstart bewaard. leftPanelWidth null = de breedte uit het stijlblad.
+  leftPanelCollapsed: false,
+  leftPanelTab: 'thumbnails',
+  leftPanelWidth: null,
+  propertiesPanelCollapsed: false,
+  // Werkruimten met een naam: [{ naam, layout }], en de laatst gekozen.
+  workspaces: [],
+  activeWorkspace: '',
   propertiesPanelVisible: true,
   toolPaletteVisible: true,
   toolPaletteMode: 'docked-left',
@@ -385,6 +459,16 @@ export const DEFAULT_PREFERENCES: Preferences = {
   symbolPaletteFloatX: 300,
   symbolPaletteFloatY: 150,
   customSymbolGroups: [],
+  // Niet-opgeslagen werk dat al eens is aangeboden en uitgesteld (herstel/beleid.js).
+  recoveryPostponed: [],
+  // Eigen reviewstatussen van markeringen (#1076, review/status-sets.js).
+  markupStatuses: [],
+  // Statussets met een naam, waarvan één actief (#1076); de platte lijst
+  // hierboven is de oude vorm en telt als één set.
+  markupStatusSets: [],
+  activeMarkupStatusSet: '',
+  // Statusbadge op de markering op de pagina (#1076, review/status-badge.js).
+  showStatusBadges: false,
   disabledSymbolGroups: [],
   parametricSymbolDefaults: {},
 

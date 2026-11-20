@@ -15,6 +15,27 @@ const MIGRATIONS = [
       return prefs.theme === 'default' ? { theme: 'light' } : {};
     },
   },
+  {
+    // The 2026.48.1 upstream merge: Markset's unit preferences move to
+    // upstream's (#996, #1158), which now drive the same features. Carries the
+    // user's choices over (US by default) and marks upstream's own one-time
+    // switch to metric (unitsDefaultMetric) as done, so it never runs.
+    id: 'units-upstream-2026-11',
+    apply(prefs) {
+      const metric = prefs.unitSystem === 'metric';
+      const out = {
+        scaleUnitSystem: metric ? 'metric' : 'imperial',
+        imperialLengthFormat: prefs.measureImperialFormat === 'decimal' ? 'decimal' : 'feetInch',
+        unitsDefaultMetric: true,
+      };
+      const den = Number(prefs.measureFractionDenominator);
+      if ([2, 4, 8, 16, 32, 64].includes(den)) out.imperialFractionPrecision = den;
+      if (!metric && (prefs.paperSizeUnit === undefined || prefs.paperSizeUnit === 'pt' || prefs.paperSizeUnit === 'mm')) {
+        out.paperSizeUnit = 'in';
+      }
+      return out;
+    },
+  },
 ];
 
 /** The changes to apply to `prefs` (including the record of what ran). */

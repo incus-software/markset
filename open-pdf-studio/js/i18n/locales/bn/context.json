@@ -3,6 +3,7 @@
     "openPopUpNote": "পপ-আপ নোট খুলুন",
     "hidePopUpNote": "পপ-আপ নোট লুকান",
     "resetPopUpLocation": "পপ-আপ নোটের অবস্থান পুনরায় সেট করুন",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "পাঠ্য সম্পাদনা...",
     "addReply": "উত্তর যোগ করুন",
     "locked": "লক করা",
@@ -12,11 +13,13 @@
     "printable": "মুদ্রণযোগ্য",
     "status": "স্থিতি",
     "showByStatus": "অবস্থা অনুযায়ী দেখান",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "কোনোটি নয়",
     "statusAccepted": "গৃহীত",
     "statusCancelled": "বাতিল করা হয়েছে",
     "statusCompleted": "সম্পন্ন",
     "statusRejected": "প্রত্যাখ্যাত",
+    "statusReviewed": "পর্যালোচিত",
     "reviewHistory": "পর্যালোচনা ইতিহাস...",
     "layer": "স্তর:",
     "noLayersAvailable": "কোনো স্তর উপলব্ধ নেই",
@@ -49,6 +52,7 @@
     "dimChainAdd": "ডাইমেনশন চেইনে বিন্দু যোগ করুন",
     "dimChainRemove": "চেইন থেকে এক্সটেনশন লাইন সরান",
     "selectRoom": "কক্ষ নির্বাচন করুন",
+    "checkScale": "এই রেখা দিয়ে স্কেল যাচাই করুন...",
     "saveToToolSet": "টুল সেটে সংরক্ষণ করুন"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "উল্লম্বভাবে কেন্দ্রীকরণ",
     "distributeHorizontally": "অনুভূমিকভাবে বিতরণ",
     "distributeVertically": "উল্লম্বভাবে বিতরণ",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "দেয়ালের কোণ ট্রিম করুন",
     "deleteAnnotations": "{{count}} টীকা মুছুন",
     "deleteConfirm": "{{count}} টীকা মুছে ফেলবেন?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "নতুন বুকমার্কের অধীনে রাখুন...",
     "indent": "ইনডেন্ট বাড়ান",
     "outdent": "ইনডেন্ট কমান",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "{{count}}টি বুকমার্ক মুছুন"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "ফাইল থেকে সন্নিবেশ করুন...",
     "insertFromFileBefore": "এই পৃষ্ঠার আগে...",
     "insertFromFileAfter": "এই পৃষ্ঠার পরে...",
-    "pageLabels": "পৃষ্ঠা লেবেল (নাম নির্মাতা)..."
+    "pageLabels": "পৃষ্ঠা লেবেল (নাম নির্মাতা)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "নির্বাচন হাইলাইট করুন",
     "strikethroughSelection": "নির্বাচন স্ট্রাইকথ্রু করুন",
     "underlineSelection": "নির্বাচন আন্ডারলাইন করুন",
-    "curvedLeaderSelection": "বাঁকা কলআউট যোগ করুন"
+    "curvedLeaderSelection": "বাঁকা কলআউট যোগ করুন",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "এই টীকাটি মুছে ফেলবেন?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "শীর্ষবিন্দু মুছুন",
     "insertVertex": "এখানে শীর্ষবিন্দু সন্নিবেশ করুন",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "চাপে রূপান্তর করুন",
     "convertToLine": "রেখায় রূপান্তর করুন"
   },

@@ -9,7 +9,9 @@
     "measureTitle": "Lunghezza reale",
     "measureQuestion": "Qual è la lunghezza reale di questa distanza?",
     "measuredOnPaper": "Misurata su carta",
-    "computedScale": "Scala calcolata"
+    "computedScale": "Scala calcolata",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Scala",
@@ -17,7 +19,9 @@
     "viewports": "Finestre",
     "noViewports": "Nessuna finestra definita",
     "measurements": "Misurazioni",
-    "noMeasurements": "Ancora nessuna misurazione"
+    "noMeasurements": "Ancora nessuna misurazione",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Proprietà",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Impostato da {{author}} il {{date}}",
     "layer": "Livello",
     "layerMarkupGroup": "Livelli di annotazione",
-    "layerDocumentGroup": "Livelli del documento"
+    "layerDocumentGroup": "Livelli del documento",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Nessuno",
   "moreColors": "Altri colori...",
@@ -248,6 +254,7 @@
     "title": "Titolo",
     "author": "Autore",
     "subject": "Oggetto",
+    "keywords": "Parole chiave",
     "creator": "Creatore",
     "producer": "Produttore",
     "pdfVersion": "Versione PDF",
@@ -316,7 +323,8 @@
     "redaction": "Redazione",
     "scaleBar": "Barra di scala",
     "parametricSymbol": "Simbolo parametrico",
-    "fileAttachment": "Allegato file"
+    "fileAttachment": "Allegato file",
+    "link": "Collegamento"
   },
   "leftPanel": {
     "togglePanel": "Attiva/disattiva pannello",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Elimina segnalibro",
     "findBookmark": "Trova...",
     "findBookmarkTip": "Digita per passare a un segnalibro. Invio lo apre, Invio di nuovo passa alla corrispondenza successiva.",
+    "findPage": "Trova...",
+    "findPageTip": "Digita per passare a una pagina tramite nome della tavola o numero. Invio la apre, di nuovo Invio passa alla corrispondenza successiva.",
     "addAttachment": "Aggiungi allegato",
     "openAttachment": "Apri allegato",
     "saveAttachment": "Salva allegato",
@@ -452,6 +462,9 @@
     "scaleAuto": "Scala del documento",
     "scaleTooltip": "Sovrascrivi la scala per questa annotazione (unità per punto). Lascia vuoto per usare la scala del documento o della regione.",
     "unit": "Unità",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Precisione (decimali)",
     "dimType": "Tipo",
     "dimTypeCustom": "Personalizzato",
@@ -473,7 +486,9 @@
     "depthNone": "Nessuna",
     "depthTooltip": "Altezza del muro, spessore del solaio, ecc., nell'unità della misura. Lunghezza × profondità dà una superficie, area × profondità un volume.",
     "surface": "Superficie",
-    "volume": "Volume"
+    "volume": "Volume",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Abachi",
@@ -496,7 +511,18 @@
     },
     "preview": "Anteprima",
     "exportCsv": "Esporta CSV",
-    "workbookBindings": "Collegamenti a fogli di calcolo"
+    "workbookBindings": "Collegamenti a fogli di calcolo",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Procedura guidata abaco",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Unisci all'inizio",
     "joinAtEnd": "Unisci alla fine",
-    "joinHint": "Disattivato: questa estremità del muro non viene mai unita a quartabuono, collegata a T o tagliata contro un altro muro; mantiene un'estremità dritta dove è disegnata."
+    "joinHint": "Disattivato: questa estremità del muro non viene mai unita a quartabuono, collegata a T o tagliata contro un altro muro; mantiene un'estremità dritta dove è disegnata.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Impostazioni di disegno",
@@ -682,6 +804,7 @@
       "height": "Altezza",
       "location": "Ubicazione",
       "locationSource": "Origine dell'ubicazione",
+      "layer": "Livello",
       "rebarMark": "Posizione",
       "rebarDiameter": "Ø",
       "rebarShape": "Forma di piegatura",
@@ -807,6 +930,24 @@
     "rules": "L'assegnazione usa il centro del riquadro di delimitazione dell'annotazione, bordi inclusi. Prevale la zona più profonda, poi l'area più piccola, poi l'ID della zona. Usa poligoni rettilinei senza fori o rettangoli non ruotati. Le identità di zona non valide o duplicate vengono escluse.",
     "loading": "Caricamento delle annotazioni: le ubicazioni possono ancora cambiare."
   },
+  "dynamicStamp": {
+    "title": "Campi del timbro",
+    "template": "Modello",
+    "refresh": "Aggiorna data, utente e pagina",
+    "lock": "Blocca timbro",
+    "lockConfirm": "Bloccare questo timbro? I suoi campi non potranno più essere modificati.",
+    "locked": "Questo timbro è bloccato: i suoi campi non possono più essere modificati.",
+    "field": {
+      "date": "Data",
+      "time": "Ora",
+      "datetime": "Data e ora",
+      "user": "Utente",
+      "page": "Pagina",
+      "pages": "Numero di pagine",
+      "filename": "Nome file",
+      "title": "Titolo del documento"
+    }
+  },
   "toolSets": {
     "title": "Set di strumenti",
     "typeWall": "Muro",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "Il file è troppo grande per un set di strumenti.",
     "errorFileInvalid": "Questo file non è un set di strumenti valido.",
     "errorFileNewer": "Questo set di strumenti è stato creato con una versione più recente di Open PDF Studio. Aggiorna l'app per importarlo.",
-    "damagedStatus": "Impossibile leggere i set di strumenti salvati. Il file danneggiato è stato conservato come \"{{name}}\"."
+    "damagedStatus": "Impossibile leggere i set di strumenti salvati. Il file danneggiato è stato conservato come \"{{name}}\".",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Apri",
     "saveAs": "Salva con nome...",
     "noContent": "Il contenuto di questo file non è incorporato nel PDF."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Ripristina l'ordine delle sezioni",
+    "dragHint": "Fai clic per comprimere o espandere. Trascina per spostare la sezione (o Alt+Su/Giù)."
   }
 }

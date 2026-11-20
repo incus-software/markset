@@ -4,6 +4,7 @@ import { deflateSync, inflateSync } from 'node:zlib';
 import { PDFDocument, PDFName, PDFRawStream, StandardFonts, rgb, PDFHexString, setTextRenderingMode, TextRenderingMode } from 'pdf-lib';
 import * as mupdf from 'mupdf';
 import { optimizeMonochromeImage, MONOCHROME_LIMITS } from './monochrome-image.js';
+import { scanBitmap, imageSamples, withoutPadding } from './monochrome.testhulp.mjs';
 
 async function image({ width = 128, height = 128, bits = 1, values = {}, data = null, flate = false } = {}) {
   const doc = await PDFDocument.create();
@@ -180,4 +181,107 @@ test('shared images retain page pixels, search text, vectors, forms, annotations
   assert.equal(reopened.getForm().getTextField('field0').getText(), 'Preserved');
   assert.deepEqual(reopened.getPage(0).getCropBox(), { x: 10, y: 10, width: 300, height: 220 });
   t.diagnostic(`PDF ${original.length} -> ${optimized.length} bytes; ${Math.round(performance.now() - start)} ms including independent rendering; modeled buffers ${result.workingBufferBytes} bytes; process maxRSS ${process.resourceUsage().maxRSS} KiB`);
+});
+
+test('with allowRgb, eight-bit RGB with r=g=b black/white packs to one gray bit; colour stays', async () => {
+  const width = 64, height = 64;
+  const rgbData = new Uint8Array(width * height * 3);
+  for (let i = 0; i < width * height; i++) rgbData.fill(i % 5 ? 255 : 0, i * 3, i * 3 + 3);
+  const { stream } = await image({ width, height, bits: 8, data: rgbData, values: { ColorSpace: 'DeviceRGB', Decode: [1, 0, 1, 0, 1, 0] } });
+  assert.equal((await optimizeMonochromeImage(stream)).reason, 'color-profile-or-space', 'off by default');
+  const { replacement } = await optimizeMonochromeImage(stream, { allowRgb: true });
+  assert.ok(replacement);
+  assert.equal(replacement.dict.get(PDFName.of('ColorSpace')).toString(), '/DeviceGray');
+  assert.equal(replacement.dict.get(PDFName.of('Decode')).toString(), '[ 1 0 ]');
+  const packed = contents(replacement);
+  for (let i = 0; i < width * height; i++) assert.equal((packed[(i / width | 0) * 8 + ((i % width) >> 3)] >> (7 - (i & 7))) & 1, i % 5 ? 1 : 0);
+  const tinted = Uint8Array.from(rgbData); tinted[3] = 254;
+  assert.equal((await optimizeMonochromeImage((await image({ width, height, bits: 8, data: tinted, values: { ColorSpace: 'DeviceRGB' } })).stream, { allowRgb: true })).reason, 'not-black-and-white');
+});
+
+test('eight-bit packing keeps a /SMask or stencil /Mask reference; a colour-key mask or RGB /Matte declines', async () => {
+  const { doc, stream } = await image({ bits: 8 });
+  const smask = doc.context.register(doc.context.stream(new Uint8Array(128 * 128).fill(255), { Type: 'XObject', Subtype: 'Image', Width: 128, Height: 128, BitsPerComponent: 8, ColorSpace: 'DeviceGray' }));
+  stream.dict.set(PDFName.of('SMask'), smask);
+  const { replacement } = await optimizeMonochromeImage(stream);
+  assert.ok(replacement);
+  assert.equal(replacement.dict.get(PDFName.of('SMask')), smask);
+  const stencil = await image({ bits: 8 });
+  const maskRef = stencil.doc.context.register(stencil.doc.context.stream(new Uint8Array(16 * 128), { Type: 'XObject', Subtype: 'Image', Width: 128, Height: 128, ImageMask: true }));
+  stencil.stream.dict.set(PDFName.of('Mask'), maskRef);
+  assert.equal((await optimizeMonochromeImage(stencil.stream)).replacement.dict.get(PDFName.of('Mask')), maskRef);
+  const matte = await image({ bits: 8, data: new Uint8Array(128 * 128 * 3).fill(255), values: { ColorSpace: 'DeviceRGB' } });
+  matte.stream.dict.set(PDFName.of('SMask'), matte.doc.context.register(matte.doc.context.stream(new Uint8Array(128 * 128), { Subtype: 'Image', Width: 128, Height: 128, BitsPerComponent: 8, ColorSpace: 'DeviceGray', Matte: [0, 0, 0] })));
+  assert.equal((await optimizeMonochromeImage(matte.stream, { allowRgb: true })).reason, 'masked-eight-bit');
+});
+
+// CCITT G4 (#902): beide coderingen worden geprobeerd, de kleinste wint.
+const params = stream => Object.fromEntries(stream.dict.get(PDFName.of('DecodeParms')).entries()
+  .map(([k, v]) => [k.decodeText(), v.toString()]));
+
+async function renderedWith(width, height, values, data) {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([width / 2, height / 2]);
+  const dictionary = doc.context.obj({ Type: 'XObject', Subtype: 'Image', Width: width, Height: height, Filter: 'FlateDecode', ...values });
+  const stream = PDFRawStream.of(dictionary, deflateSync(data));
+  const ref = doc.context.register(stream);
+  page.node.setXObject(PDFName.of('Scan'), ref);
+  page.node.addContentStream(doc.context.register(doc.context.flateStream(`0 0 1 rg q ${width / 2} 0 0 ${height / 2} 0 0 cm /Scan Do Q`)));
+  return { doc, ref, stream };
+}
+
+test('a scan-like one-bit image becomes CCITT G4 with matching parameters, identical samples and pixels', async t => {
+  const scan = await scanBitmap({ dpi: 200 });
+  const ink = scan.samples.map(v => v ^ 0xff); // bit 1 = zwart
+  const gray8 = new Uint8Array(scan.width * scan.height);
+  for (let i = 0; i < gray8.length; i++) {
+    const x = i % scan.width, y = (i / scan.width) | 0;
+    gray8[i] = (scan.samples[y * Math.ceil(scan.width / 8) + (x >> 3)] >> (7 - (x & 7))) & 1 ? 255 : 0;
+  }
+  for (const [label, values, data, blackIs1, samples] of [
+    ['gray, bit 0 is black', { BitsPerComponent: 1, ColorSpace: 'DeviceGray' }, scan.samples, 'false', scan.samples],
+    ['gray, Decode [1 0]', { BitsPerComponent: 1, ColorSpace: 'DeviceGray', Decode: [1, 0] }, ink, 'true', ink],
+    ['stencil mask', { ImageMask: true }, ink.map(v => v ^ 0xff), 'false', scan.samples],
+    ['stencil mask, Decode [1 0]', { ImageMask: true, Decode: [1, 0] }, ink, 'true', ink],
+    ['eight-bit gray packed', { BitsPerComponent: 8, ColorSpace: 'DeviceGray' }, gray8, 'false', scan.samples],
+  ]) {
+    const { doc, ref, stream } = await renderedWith(scan.width, scan.height, values, data);
+    const original = await doc.save({ useObjectStreams: false });
+    const result = await optimizeMonochromeImage(stream);
+    assert.ok(result.replacement, label);
+    assert.equal(result.filter, 'CCITTFaxDecode', label);
+    assert.deepEqual(params(result.replacement), { K: '-1', Columns: String(scan.width), Rows: String(scan.height), BlackIs1: blackIs1, EncodedByteAlign: 'false' }, label);
+    assert.deepEqual(withoutPadding(imageSamples(result.replacement), scan.width, scan.height), withoutPadding(samples, scan.width, scan.height), label);
+    doc.context.assign(ref, result.replacement);
+    const optimized = await doc.save({ useObjectStreams: false });
+    const [a, b] = [rendering(original)[0].pixels, rendering(optimized)[0].pixels];
+    assert.equal(b.length, a.length);
+    assert.equal(b.reduce((sum, v, i) => sum + (v !== a[i]), 0), 0, `${label}: pixel-identical`);
+    t.diagnostic(`${label}: ${result.before} -> ${result.after} bytes`);
+  }
+});
+
+test('Flate stays when it is smaller than CCITT G4 (dictionary included)', async () => {
+  const { stream } = await image({ width: 127 });
+  const result = await optimizeMonochromeImage(stream);
+  assert.equal(result.filter, 'FlateDecode');
+  assert.equal(result.replacement.dict.get(PDFName.of('DecodeParms')), undefined);
+  // Een grove, ruisige scan op 72 dpi: daar is Flate kleiner dan G4.
+  const scan = await scanBitmap({ dpi: 72 });
+  const raw = await renderedWith(scan.width, scan.height, { BitsPerComponent: 1, ColorSpace: 'DeviceGray' }, scan.samples);
+  const stored = PDFRawStream.of(raw.stream.dict.clone(raw.doc.context), scan.samples);
+  stored.dict.delete(PDFName.of('Filter'));
+  const coarse = await optimizeMonochromeImage(stored);
+  assert.equal(coarse.filter, 'FlateDecode');
+});
+
+test('without room in the working budget for CCITT, Flate alone decides', async () => {
+  const scan = await scanBitmap({ dpi: 200 });
+  const { stream } = await image({ width: scan.width, height: scan.height, data: scan.samples });
+  const full = await optimizeMonochromeImage(stream);
+  assert.equal(full.filter, 'CCITTFaxDecode');
+  const input = scan.samples.length, cap = input + 1024;
+  const tight = await optimizeMonochromeImage(stream, { limits: { ...MONOCHROME_LIMITS, workingBytes: input * 2 + cap * 2 } });
+  assert.equal(tight.filter, 'FlateDecode');
+  assert.ok(tight.after > full.after);
 });

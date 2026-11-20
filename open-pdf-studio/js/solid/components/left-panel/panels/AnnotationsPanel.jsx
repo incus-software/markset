@@ -2,11 +2,13 @@ import { For, Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import { activeTab, collapsed } from '../../../stores/leftPanelStore.js';
 import {
   items, countText, emptyMessage, sortMode, setSortMode, filterMode, setFilterMode, hiddenStatuses, toggleHiddenStatus,
+  setHiddenStatusSet, isHiddenStatusSet,
   collapsedGroups, toggleGroup, expandAllGroups, collapseAllGroups,
   listFilter, updateListFilter, clearListFilter, anyListFilterActive, filterOptions, filterBarOpen, setFilterBarOpen,
 } from '../../../stores/panels/annotationsStore.js';
 import { useTranslation } from '../../../../i18n/useTranslation.js';
 import { state, clearSelection, getActiveDocument, getAnnotationBounds } from '../../../../core/state.js';
+import { kiesbareStatussen, filterStatussen, afgerondeStatussen, statusNaam, statusLijst, statusSleutelVan } from '../../../../review/status-sets.js';
 import { commitAnnotationMutation, deleteAnnotationsWithUndo } from '../../../../annotations/mutations.js';
 import { expandCorrectionGroups } from '../../../../annotations/corrections/model.js';
 import {
@@ -35,16 +37,12 @@ const groupOptions = [
   { key: 'lastStatusAuthor', label: 'groupByLastStatusAuthor' },
 ];
 
-// Review-statussen voor het Tonen > Status-filter (#236). Sleutels in
-// kleine letters — de filtering in annotations-list.js vergelijkt
-// hoofdletter-ongevoelig. Labels komen uit de bestaande context-namespace.
-const statusFilterOptions = [
-  { key: 'none', label: 'annotation.statusNone' },
-  { key: 'accepted', label: 'annotation.statusAccepted' },
-  { key: 'cancelled', label: 'annotation.statusCancelled' },
-  { key: 'completed', label: 'annotation.statusCompleted' },
-  { key: 'rejected', label: 'annotation.statusRejected' },
-];
+// Review-statussen voor het Tonen > Status-filter (#236) en het zetten van
+// een status: de vaste plus de eigen statussen uit de voorkeuren (#1076,
+// review/status-sets.js). Sleutels in kleine letters — de filtering in
+// annotations-list.js vergelijkt hoofdletter-ongevoelig. Bij elk openen van
+// het menu opnieuw opgebouwd, zodat een gewijzigde eigen lijst meteen geldt.
+const eigenStatusLijst = () => statusLijst(state.preferences);
 
 export default function AnnotationsPanel() {
   const { t } = useTranslation('properties');
@@ -91,6 +89,26 @@ export default function AnnotationsPanel() {
     toggleHiddenStatus(statusKey);
     import('../../../../ui/panels/annotations-list.js').then(m => m.updateAnnotationsList());
   };
+  // Zetten: de vaste statussen plus die van de actieve set. Filteren: ook wat
+  // er verder in het document staat (een andere set, een verwijderde status,
+  // een status uit een ander programma), met de naam uit het bestand.
+  const statusSetOptions = () => kiesbareStatussen(eigenStatusLijst())
+    .map((s) => ({ key: s.key, naam: statusNaam(s.key, eigenStatusLijst(), tContext) }));
+  const statusFilterOptions = () => {
+    const anns = getActiveDocument()?.annotations || [];
+    const labels = new Map();
+    for (const a of anns) {
+      if (a?.statusLabel && !labels.has(statusSleutelVan(a.status))) labels.set(statusSleutelVan(a.status), a.statusLabel);
+    }
+    return filterStatussen(eigenStatusLijst(), anns.map((a) => a?.status))
+      .map((key) => ({ key, naam: statusNaam(key, eigenStatusLijst(), tContext, labels.get(key)) }));
+  };
+  // Alleen open punten (#1076): alle afgeronde statussen verbergen, of weer tonen.
+  const afgerond = () => [...afgerondeStatussen(eigenStatusLijst())];
+  const toggleAlleenOpen = () => {
+    setHiddenStatusSet(isHiddenStatusSet(afgerond()) ? [] : afgerond());
+    import('../../../../ui/panels/annotations-list.js').then(m => m.updateAnnotationsList());
+  };
 
   const applySort = (value) => {
     setSortMode(value);
@@ -109,6 +127,8 @@ export default function AnnotationsPanel() {
   const hasDocument = () => !!state.documents[state.activeDocumentIndex];
   const hasAnnotations = () => (state.documents[state.activeDocumentIndex]?.annotations?.length || 0) > 0;
   const hasListRows = () => items().some(i => !i.isHeader);
+  // De statuskolom (#1076) staat er alleen als een getoonde markering een status heeft.
+  const heeftStatusKolom = () => items().some(i => !i.isHeader && i.statusColor);
 
   // Opmerkingen importeren/exporteren vanuit het paneel (#383): dezelfde
   // XFDF-routines als het app-menu.
@@ -154,10 +174,7 @@ export default function AnnotationsPanel() {
     const standaardLaag = i18next.t('annotationLayers.defaultName', { ns: 'ribbon' });
     const namen = {
       typeNaam: (a) => helpers.getAnnotationDisplayName(a, byId),
-      statusNaam: (s) => {
-        const hoofd = s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-        return i18next.t(`annotation.status${hoofd}`, { ns: 'context', defaultValue: hoofd });
-      },
+      statusNaam: (s) => statusNaam(s, eigenStatusLijst(), (sleutel) => i18next.t(sleutel, { ns: 'context' })),
       laagNaam: (a) => lagen.layerDisplayName(lagen.layerOf(doc, a), standaardLaag),
       omhullende: (a) => getAnnotationBounds(a),
     };
@@ -429,10 +446,10 @@ export default function AnnotationsPanel() {
                 </svg>
                 <Show when={hasSelection()}>
                   <div class="annotations-submenu">
-                    {statusFilterOptions.map(opt => (
+                    {statusSetOptions().map(opt => (
                       <div class="annotations-menu-item" onClick={() => closeAndRun(() => setStatusBulk('selection', opt.key))}>
                         <span class="annotations-menu-check"></span>
-                        <span class="annotations-menu-label">{tContext(opt.label)}</span>
+                        <span class="annotations-menu-label">{opt.naam}</span>
                       </div>
                     ))}
                   </div>
@@ -446,10 +463,10 @@ export default function AnnotationsPanel() {
                 </svg>
                 <Show when={hasListRows()}>
                   <div class="annotations-submenu">
-                    {statusFilterOptions.map(opt => (
+                    {statusSetOptions().map(opt => (
                       <div class="annotations-menu-item" onClick={() => closeAndRun(() => setStatusBulk('listed', opt.key))}>
                         <span class="annotations-menu-check"></span>
-                        <span class="annotations-menu-label">{tContext(opt.label)}</span>
+                        <span class="annotations-menu-label">{opt.naam}</span>
                       </div>
                     ))}
                   </div>
@@ -504,13 +521,20 @@ export default function AnnotationsPanel() {
                   {/* Filter op review-status (#236) \u2014 vinkje = zichtbaar */}
                   <div class="annotations-menu-separator"></div>
                   <div class="annotations-menu-section">{tContext('annotation.status')}</div>
-                  {statusFilterOptions.map(opt => (
+                  <div
+                    class={`annotations-menu-item${isHiddenStatusSet(afgerond()) ? ' checked' : ''}`}
+                    onClick={toggleAlleenOpen}
+                  >
+                    <span class="annotations-menu-check">{isHiddenStatusSet(afgerond()) ? '✓' : ''}</span>
+                    <span class="annotations-menu-label">{tContext('annotation.showOnlyOpen')}</span>
+                  </div>
+                  {statusFilterOptions().map(opt => (
                     <div
                       class={`annotations-menu-item${!hiddenStatuses().has(opt.key) ? ' checked' : ''}`}
                       onClick={() => toggleStatusFilter(opt.key)}
                     >
                       <span class="annotations-menu-check">{!hiddenStatuses().has(opt.key) ? '\u2713' : ''}</span>
-                      <span class="annotations-menu-label">{tContext(opt.label)}</span>
+                      <span class="annotations-menu-label">{opt.naam}</span>
                     </div>
                   ))}
                   <div class="annotations-menu-separator"></div>
@@ -556,6 +580,19 @@ export default function AnnotationsPanel() {
           </Show>
         </div>
         <div class="annotations-toolbar-spacer"></div>
+        {/* Alleen open punten (#1076): afgeronde statussen in één klik verbergen. */}
+        <button
+          class={`annotations-toolbar-btn${isHiddenStatusSet(afgerond()) ? ' active' : ''}`}
+          id="annotations-open-items-btn"
+          title={tContext('annotation.showOnlyOpen')}
+          aria-pressed={isHiddenStatusSet(afgerond())}
+          onClick={toggleAlleenOpen}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+            <circle cx="8" cy="8" r="5.5"/>
+            <path d="M8 5v3.2l2 1.3" stroke-linecap="round"/>
+          </svg>
+        </button>
         <button
           class={`annotations-toolbar-btn${filterBarOpen() || anyListFilterActive() ? ' active' : ''}`}
           title={t('leftPanel.filterBar')}
@@ -591,19 +628,19 @@ export default function AnnotationsPanel() {
         <div class="annotations-filter-bar">
           <label>{t('leftPanel.csvAuthor')}</label>
           <select value={listFilter().auteur} onChange={(e) => setListFilter({ auteur: e.target.value })}>
-            <option value="">{t('leftPanel.filterAll')}</option>
+            <option value="" selected={!listFilter().auteur}>{t('leftPanel.filterAll')}</option>
             <Show when={listFilter().auteur && !filterOptions().authors.includes(listFilter().auteur)}>
-              <option value={listFilter().auteur}>{listFilter().auteur}</option>
+              <option value={listFilter().auteur} selected>{listFilter().auteur}</option>
             </Show>
-            <For each={filterOptions().authors}>{(a) => <option value={a}>{a}</option>}</For>
+            <For each={filterOptions().authors}>{(a) => <option value={a} selected={a === listFilter().auteur}>{a}</option>}</For>
           </select>
           <label>{t('leftPanel.csvType')}</label>
           <select value={listFilter().type} onChange={(e) => setListFilter({ type: e.target.value })}>
-            <option value="">{t('leftPanel.filterAll')}</option>
+            <option value="" selected={!listFilter().type}>{t('leftPanel.filterAll')}</option>
             <Show when={listFilter().type && !filterOptions().types.some(o => o.type === listFilter().type)}>
-              <option value={listFilter().type}>{listFilter().type}</option>
+              <option value={listFilter().type} selected>{listFilter().type}</option>
             </Show>
-            <For each={filterOptions().types}>{(o) => <option value={o.type}>{o.naam}</option>}</For>
+            <For each={filterOptions().types}>{(o) => <option value={o.type} selected={o.type === listFilter().type}>{o.naam}</option>}</For>
           </select>
           <label>{t('leftPanel.filterPages')}</label>
           <div class="annotations-filter-range">
@@ -648,11 +685,6 @@ export default function AnnotationsPanel() {
                     <div class="annotation-list-info">
                       <div class="annotation-list-type">
                         {item.typeLabel}
-                        <Show when={item.statusColor}>
-                          <span style={{ color: item.statusColor, 'margin-left': '6px', 'font-size': '10px' }} title={item.statusTitle}>
-                            {'\u25CF'}
-                          </span>
-                        </Show>
                         <Show when={item.replyCount > 0}>
                           <span style={{ 'margin-left': '6px', 'font-size': '10px', color: 'var(--theme-panel-tab-text)' }}>
                             ({item.replyCount})
@@ -664,6 +696,15 @@ export default function AnnotationsPanel() {
                       </Show>
                       <div class="annotation-list-meta">{item.meta}</div>
                     </div>
+                    {/* Statuskolom (#1076): kleur en naam van de status. */}
+                    <Show when={heeftStatusKolom()}>
+                      <div class="annotation-list-status" title={item.statusTitle || ''}>
+                        <Show when={item.statusColor}>
+                          <span class="annotation-list-status-dot" style={{ 'background-color': item.statusColor }}></span>
+                          <span class="annotation-list-status-name">{item.statusTitle}</span>
+                        </Show>
+                      </div>
+                    </Show>
                   </div>
                 </Show>
               }>

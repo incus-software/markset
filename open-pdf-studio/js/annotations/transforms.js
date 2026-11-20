@@ -1,7 +1,7 @@
 import { HANDLE_TYPES } from '../core/constants.js';
 import { state } from '../core/state.js';
 import { snapAngle } from '../utils/helpers.js';
-import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement, formatDimensionText, snapDistanceTo10, herberekenVlakMaat, syncSpotCoord } from './measurement.js';
+import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement, maatlijnTekst, snapDistanceTo10, herberekenVlakMaat, syncSpotCoord } from './measurement.js';
 import { isSpotCoord } from './spot-coord.js';
 import { handleAnchors, lineEndForDotTarget, resolveParams } from './stavenreeks.js';
 import { getTemplate } from '../symbols/registry.js';
@@ -13,8 +13,11 @@ import {
   syncTwoPointLengthParam,
   twoPointEndpoints,
 } from '../symbols/two-point.js';
+import { isQuad, markeringUitQuads } from './markering-quads.js';
 import { isPointPolygon, rotatePointPolygon } from './polygon-transform.js';
-import { isBewerkbareVeelhoek, verplaatsVeelhoekHoekpunt } from './veelhoek-punten.js';
+import { isBewerkbareVeelhoek, verplaatsVeelhoekHoekpunt, pasVeelhoekToe } from './veelhoek-punten.js';
+import { hasCurves, rotateCurves } from './curve-path.js';
+import { kanKrommen, stuurpunten, isVloeiendeKnoop, verzetStuurpunt, buigZijde, pasPadToe } from './curve-shape.js';
 import {
   MIN_GEBIED_PX, schaalRechthoekMetGreep, schermPxNaarPt, veiligeVerhouding,
   tekstvakMinimum, nietNul,
@@ -27,15 +30,11 @@ function computeDimensionText(ann) {
     const dy = ann.endY - ann.startY;
     const pixelDist = Math.sqrt(dx * dx + dy * dy);
     const scaledVal = pixelDist * ann.measureScale;
-    const unit = ann.measureUnit || 'mm';
-    // mm shows whole numbers (no decimals); other units use annotation.measurePrecision.
-    const prec = (unit === 'mm') ? 0
-      : (ann.measurePrecision !== undefined ? ann.measurePrecision : 2);
-    // mm is the implied drawing unit on dimensions — no suffix.
-    const v = scaledVal.toFixed(prec);
-    return unit === 'mm' ? v : `${v} ${unit}`;
+    // Opmaak van de maat zelf (core/maat-opmaak.js): mm hele getallen zonder
+    // eenheid, voet-inch met de eigen breuk, anders measurePrecision.
+    return maatlijnTekst(ann, { value: scaledVal, unit: ann.measureUnit || 'mm' });
   }
-  return formatDimensionText(calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page));
+  return maatlijnTekst(ann, calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page, ann));
 }
 
 // Keep the stored measurement fields of a dimension in sync with its geometry.
@@ -52,7 +51,7 @@ function syncDimensionMeasurement(ann) {
   if (ann.measureScale) {
     ann.measureValue = pixelDist * ann.measureScale;
   } else {
-    ann.measureValue = calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page).value;
+    ann.measureValue = calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page, ann).value;
   }
   ann.measureText = computeDimensionText(ann);
 }
@@ -81,7 +80,7 @@ export function syncMeasurementAfterEdit(ann) {
 // Picks the best box edge based on arrow position:
 //   - Arrow to the side → horizontal arm from left/right edge at vertical center
 //   - Arrow above/below → vertical arm from top/bottom edge at horizontal center
-function recalcCalloutLeader(annotation) {
+export function recalcCalloutLeader(annotation) {
   const boxW = annotation.width || 150;
   const boxH = annotation.height || 50;
   const arrowX = annotation.arrowX !== undefined ? annotation.arrowX : annotation.x - 60;
@@ -181,6 +180,39 @@ const _MAATGREPEN = new Set([
 // ondergrenzen die in schermpixels staan (schaalgebied, viewport, schaalbalk).
 export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn, shiftKey = false, ctrlKey = false, opties = {}) {
   if (annotation.locked) return;
+
+  // Krommen op een polylijn of veelhoek (#1169).
+  if (typeof handleType === 'string' && handleType.startsWith('curve_')) {
+    // Een stuurpunt verslepen. De knoop blijft vloeiend als hij dat was (het
+    // stuurpunt aan de overkant draait mee) en een hoek als hij dat was; Alt
+    // wisselt dat om. Shift: de richting in stappen van 45 graden.
+    const greep = handleType.match(/^curve_handle_(\d+)_([12])$/);
+    if (greep && kanKrommen(originalAnn)) {
+      const segment = parseInt(greep[1], 10), welke = parseInt(greep[2], 10);
+      const oud = stuurpunten(originalAnn).find((s) => s.segment === segment && s.which === welke);
+      if (oud) {
+        const vloeiend = isVloeiendeKnoop(originalAnn, oud.node) !== !!opties?.alt;
+        const nieuw = verzetStuurpunt(originalAnn, segment, welke, oud.x + deltaX, oud.y + deltaY,
+          { vloeiend, shift: shiftKey });
+        if (nieuw) {
+          pasPadToe(annotation, nieuw);
+          annotation.modifiedAt = new Date().toISOString();
+        }
+      }
+      return;
+    }
+    // Een segment buigen: het gegrepen punt volgt de muis. Een recht segment
+    // wordt daarbij een kromme.
+    const buig = handleType.match(/^curve_bend_(\d+)_(\d+)$/);
+    if (buig && kanKrommen(originalAnn)) {
+      const nieuw = buigZijde(originalAnn, parseInt(buig[1], 10), parseInt(buig[2], 10) / 10000, deltaX, deltaY);
+      if (nieuw) {
+        pasPadToe(annotation, nieuw);
+        annotation.modifiedAt = new Date().toISOString();
+      }
+    }
+    return;
+  }
   // Ondergrens in schermpixels -> paginapunten bij de huidige zoom. Zonder
   // bekende zoom geldt alleen de technische ondergrens.
   const gebiedMinPt = (Number.isFinite(opties?.schaal) && opties.schaal > 0)
@@ -303,6 +335,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
     case 'polygon':
     case 'cloud':
     case 'redaction':
+    case 'link':
     case 'textbox':
       // Hoekpunt van een veelhoek (#622): alleen dat hoekpunt verschuift, op
       // het scherm (ook bij een gedraaide veelhoek); het vak volgt de punten.
@@ -316,7 +349,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
         const nieuw = verplaatsVeelhoekHoekpunt(originalAnn, hoekIdx, deltaX, deltaY,
           { shift: shiftKey, uitlijnTol: 3 / zoom });
         if (nieuw) {
-          Object.assign(annotation, nieuw);
+          pasVeelhoekToe(annotation, nieuw);
           annotation.modifiedAt = new Date().toISOString();
         }
         return;
@@ -1108,41 +1141,52 @@ function _movePoint(p, dx, dy) {
   };
 }
 
-export function applyMoveGeneric(annotation, dx, dy) {
+export function applyMoveGeneric(annotation, dx, dy, source = annotation) {
   for (const [kx, ky] of _MOVE_SCALAR_PAIRS) {
-    if (typeof annotation[kx] === 'number') annotation[kx] += dx;
-    if (typeof annotation[ky] === 'number') annotation[ky] += dy;
+    if (typeof source[kx] === 'number') annotation[kx] = source[kx] + dx;
+    if (typeof source[ky] === 'number') annotation[ky] = source[ky] + dy;
   }
+  // Het middelpunt van een boog (centerX/centerY, #629): zonder dit bleef
+  // een boog bij verplaatsen staan. Niet in de tabel hierboven: de
+  // draaiwandeling draait een boog (nog) niet.
+  if (typeof source.centerX === 'number') annotation.centerX = source.centerX + dx;
+  if (typeof source.centerY === 'number') annotation.centerY = source.centerY + dy;
   for (const k of _MOVE_POINT_OBJECTS) {
-    const o = annotation[k];
+    const o = source[k];
     if (o && typeof o === 'object') {
-      if (typeof o.x === 'number') o.x += dx;
-      if (typeof o.y === 'number') o.y += dy;
+      const point = annotation === source ? o : { ...o };
+      if (typeof o.x === 'number') point.x = o.x + dx;
+      if (typeof o.y === 'number') point.y = o.y + dy;
+      if (annotation !== source) annotation[k] = point;
     }
   }
   for (const k of _MOVE_POINT_ARRAYS) {
-    if (Array.isArray(annotation[k])) {
-      annotation[k] = annotation[k].map(p => _movePoint(p, dx, dy));
+    if (Array.isArray(source[k])) {
+      annotation[k] = source[k].map(p => _movePoint(p, dx, dy));
     }
   }
   // Hole contours move rigidly with the outer polygon (donuts).
-  if (Array.isArray(annotation.holes)) {
-    annotation.holes = annotation.holes.map(h =>
+  if (Array.isArray(source.holes)) {
+    annotation.holes = source.holes.map(h =>
       Array.isArray(h) ? h.map(p => _movePoint(p, dx, dy)) : h
     );
   }
   // Text-markup rects + PDF quadPoints ([x1,y1,...,x4,y4] flat arrays).
-  if (Array.isArray(annotation.rects)) {
-    annotation.rects = annotation.rects.map(r => ({ ...r, x: r.x + dx, y: r.y + dy }));
+  // Gedraaide quads van een markering op schuine tekst (#927) schuiven mee.
+  if (Array.isArray(source.quads)) {
+    annotation.quads = source.quads.map(q => Array.isArray(q) ? q.map(p => _movePoint(p, dx, dy)) : q);
   }
-  if (Array.isArray(annotation.quadPoints)) {
-    annotation.quadPoints = annotation.quadPoints.map(quad =>
+  if (Array.isArray(source.rects)) {
+    annotation.rects = source.rects.map(r => ({ ...r, x: r.x + dx, y: r.y + dy }));
+  }
+  if (Array.isArray(source.quadPoints)) {
+    annotation.quadPoints = source.quadPoints.map(quad =>
       Array.isArray(quad) ? quad.map((v, i) => v + (i % 2 === 0 ? dx : dy)) : quad
     );
   }
   // Textbox leader arrows (tip/knee) move rigidly with the box.
-  if (Array.isArray(annotation.leaders)) {
-    annotation.leaders = annotation.leaders.map(l => ({
+  if (Array.isArray(source.leaders)) {
+    annotation.leaders = source.leaders.map(l => ({
       ...l,
       tipX: typeof l.tipX === 'number' ? l.tipX + dx : l.tipX,
       tipY: typeof l.tipY === 'number' ? l.tipY + dy : l.tipY,
@@ -1153,20 +1197,34 @@ export function applyMoveGeneric(annotation, dx, dy) {
 }
 
 // Apply move to annotation
-export function applyMove(annotation, deltaX, deltaY) {
+export function applyMove(annotation, deltaX, deltaY, source = annotation) {
   if (annotation.locked) return;
 
   if (annotation.type === 'callout') {
     // Special semantics: moving a callout moves only the TEXT BOX — the
     // arrow tip stays anchored and the leader is recomputed.
-    annotation.x += deltaX;
-    annotation.y += deltaY;
+    annotation.x = source.x + deltaX;
+    annotation.y = source.y + deltaY;
     recalcCalloutLeader(annotation);
   } else {
-    applyMoveGeneric(annotation, deltaX, deltaY);
+    applyMoveGeneric(annotation, deltaX, deltaY, source);
   }
 
   annotation.modifiedAt = new Date().toISOString();
+}
+
+// Star verplaatsen: als applyMoveGeneric, maar een aanhaalvak (callout)
+// neemt ook zijn pijlpunt, knik en armoorsprong mee. Voor plakken bij de muis
+// (#928) en uitlijnen op de pagina (#968): daar verhuist de hele markering,
+// niet alleen het tekstvak.
+const _MOVE_CALLOUT_PAIRS = [['arrowX', 'arrowY'], ['kneeX', 'kneeY'], ['armOriginX', 'armOriginY']];
+export function applyMoveRigid(annotation, dx, dy) {
+  if (!annotation || (dx === 0 && dy === 0)) return;
+  applyMoveGeneric(annotation, dx, dy);
+  for (const [kx, ky] of _MOVE_CALLOUT_PAIRS) {
+    if (typeof annotation[kx] === 'number') annotation[kx] += dx;
+    if (typeof annotation[ky] === 'number') annotation[ky] += dy;
+  }
 }
 
 // ── Generic rotate walker ────────────────────────────────────────────────
@@ -1258,14 +1316,26 @@ export function applyRotateGeneric(annotation, original, pivotX, pivotY, deg) {
       annotation[k] = annotation[k].map(rotPoint);
     }
   }
+  // Krommen van een polylijn (#1169): de stuurpunten staan relatief aan hun
+  // knoop en draaien dus mee over dezelfde hoek. (Een veelhoek draait via
+  // zijn hoek; zijn ongedraaide krommen blijven staan.)
+  if (annotation.type === 'polyline' && hasCurves(annotation.curves)) {
+    annotation.curves = rotateCurves(annotation.curves, deg);
+  }
   if (Array.isArray(annotation.holes)) {
     annotation.holes = annotation.holes.map(h => (Array.isArray(h) ? h.map(rotPoint) : h));
   }
-  // Axis-aligned markup rects can't tilt — orbit their anchor rigidly.
-  if (Array.isArray(annotation.rects)) {
-    annotation.rects = annotation.rects.map(r => ({ ...r, x: rotX(r.x, r.y), y: rotY(r.x, r.y) }));
+  // Gedraaide quads (#927) draaien echt mee; vakken, quadPoints en het
+  // omhullende vak volgen er weer uit.
+  if (Array.isArray(annotation.quads) && annotation.quads.length > 0 && annotation.quads.every(isQuad)) {
+    Object.assign(annotation, markeringUitQuads(annotation.quads.map(q => q.map(rotPoint))));
+  } else {
+    // Axis-aligned markup rects can't tilt — orbit their anchor rigidly.
+    if (Array.isArray(annotation.rects)) {
+      annotation.rects = annotation.rects.map(r => ({ ...r, x: rotX(r.x, r.y), y: rotY(r.x, r.y) }));
+    }
   }
-  if (Array.isArray(annotation.quadPoints)) {
+  if (Array.isArray(annotation.quadPoints) && !Array.isArray(annotation.quads)) {
     annotation.quadPoints = annotation.quadPoints.map(quad => {
       if (!Array.isArray(quad)) return quad;
       const out = quad.slice();

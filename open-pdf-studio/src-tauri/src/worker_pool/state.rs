@@ -24,6 +24,7 @@ pub struct WorkerState {
     pub stdout: Arc<Mutex<Option<BufReader<ChildStdout>>>>,
     pub shm: Arc<Mutex<Option<Mmap>>>,
     pub crashes: AtomicUsize,
+    pub recovering: AtomicBool,
     pub last_crash_at: Arc<Mutex<Option<std::time::Instant>>>,
     /// Serializes the FULL request round-trip (write request → read response →
     /// read SHM) per worker. The wire protocol has no request-id demux: with two
@@ -40,6 +41,10 @@ pub struct WorkerState {
     /// Set once the pool shuts down (app exit): no respawn after that, so a
     /// late crash report cannot start a new worker (and a new SHM file).
     pub shutting_down: AtomicBool,
+    /// Aanvragen die deze worker naast render/render_region kent (veld `caps`
+    /// van zijn Ready-regel). Een oudere sidecar zonder `caps` krijgt nooit
+    /// een aanvraag die hij niet kent (hij zou er niet op antwoorden).
+    pub caps: std::sync::RwLock<Vec<String>>,
 }
 
 impl WorkerState {
@@ -53,11 +58,24 @@ impl WorkerState {
             stdout: Arc::new(Mutex::new(None)),
             shm: Arc::new(Mutex::new(None)),
             crashes: AtomicUsize::new(0),
+            recovering: AtomicBool::new(false),
             last_crash_at: Arc::new(Mutex::new(None)),
             request_lock: Arc::new(Mutex::new(())),
             last_used_ms: AtomicU64::new(0),
             trimmed: AtomicBool::new(true),
             shutting_down: AtomicBool::new(false),
+            caps: std::sync::RwLock::new(Vec::new()),
+        }
+    }
+
+    pub fn has_cap(&self, cap: &str) -> bool {
+        self.caps.read().map(|c| c.iter().any(|v| v == cap)).unwrap_or(false)
+    }
+
+    /// Lees `caps` uit de Ready-regel van de worker.
+    pub fn set_caps_from_ready(&self, ready_line: &str) {
+        if let Ok(mut c) = self.caps.write() {
+            *c = super::spawn::ready_caps(ready_line);
         }
     }
 
@@ -96,6 +114,15 @@ mod tests {
         assert_eq!(w.status(), Status::Ready);
         w.set_status(Status::Dead);
         assert_eq!(w.status(), Status::Dead);
+    }
+
+    #[test]
+    fn caps_come_from_the_ready_line() {
+        let w = WorkerState::new(0);
+        w.set_caps_from_ready(r#"{"op":"ready","shm_name":"x","shm_size":1,"caps":["compare"]}"#);
+        assert!(w.has_cap("compare"));
+        w.set_caps_from_ready(r#"{"op":"ready","shm_name":"x","shm_size":1}"#);
+        assert!(!w.has_cap("compare"));
     }
 
     #[test]

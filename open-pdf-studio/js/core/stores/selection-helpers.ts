@@ -7,6 +7,10 @@ import { betonbalkHalfWidthPx } from '../../annotations/betonbalk-scale.js';
 import { systeemrasterFlatContour } from '../../annotations/systeemraster.js';
 // @ts-ignore — pure JS-module zonder typedeclaraties
 import { isAnnotationPickableInView } from '../../annotations/view-filters.js';
+// @ts-ignore — pure JS-module zonder typedeclaraties
+import { tellingKader } from '../../annotations/telling.js';
+// @ts-ignore — pure JS-module zonder typedeclaraties
+import { hasCurves, pathBounds } from '../../annotations/curve-path.js';
 
 export function clearSelection(): void {
   const doc = getActiveDocument();
@@ -83,6 +87,12 @@ export function getAnnotationBounds(ann: Annotation): AnnotationBounds | null {
       const ly = Math.min(ann.startY!, ann.endY!);
       return { x: lx, y: ly, width: Math.abs(ann.endX! - ann.startX!), height: Math.abs(ann.endY! - ann.startY!) };
     case 'polyline':
+      // Met krommen (#1169): de omhullende van het echte pad.
+      if (hasCurves((ann as any).curves) && ann.points && ann.points.length >= 2) {
+        const kg = pathBounds(ann.points, (ann as any).curves);
+        return { x: kg.minX, y: kg.minY, width: kg.maxX - kg.minX, height: kg.maxY - kg.minY };
+      }
+    // eslint-disable-next-line no-fallthrough
     case 'cloudPolyline':
     case 'measureArea':
     case 'measurePerimeter':
@@ -152,6 +162,9 @@ export function getAnnotationBounds(ann: Annotation): AnnotationBounds | null {
     case 'comment':
     case 'fileAttachment':
       return { x: ann.x!, y: ann.y!, width: ann.width || 24, height: ann.height || 24 };
+    case 'count':
+      // Telmarkering: alleen een middelpunt, geen breedte (#934).
+      return tellingKader(ann);
     case 'box':
     case 'mask':
     case 'circle':
@@ -164,6 +177,7 @@ export function getAnnotationBounds(ann: Annotation): AnnotationBounds | null {
     case 'stamp':
     case 'signature':
     case 'redaction':
+    case 'link':
     case 'viewport':
     case 'scaleRegion':
     case 'scaleBar':

@@ -1,7 +1,7 @@
 import { state, getActiveDocument, getPageRotation } from '../core/state.js';
 import { isTauri, invoke } from '../core/platform.js';
 import * as pdfjsLib from 'pdfjs-dist';
-import { resolveTextEditPageGeometry } from './text-edit-appearance.js';
+import { resolveTextEditPageGeometry, textEditLineAnchor } from './text-edit-appearance.js';
 import { meetViewportVoorTekstlaag } from './tekstlaag-meetschaal.js';
 import { tekenafstandPerItem, lijktGespatieerd } from './tekenafstand.js';
 import { markeerWoordafstanden } from './tekstselectie-woordafstand.js';
@@ -151,36 +151,6 @@ export async function resolveTextLayerCharSpacing(page, textLayerDiv) {
   } catch (_) {
     return false;
   }
-}
-
-/**
- * Map a PDF font name to a CSS font-family string
- * Uses actual font name from commonObjs to detect serif/sans-serif/monospace
- */
-export function mapPdfFontToCss(actualFontName, fallbackFamily) {
-  const name = (actualFontName || '').toLowerCase();
-
-  if (name.includes('courier') || name.includes('consolas') || name.includes('mono')
-      || fallbackFamily === 'monospace') {
-    return '"Courier New", Courier, monospace';
-  }
-
-  if (name.includes('times') || name.includes('garamond') || name.includes('georgia')
-      || name.includes('palatino') || name.includes('cambria') || name.includes('bookman')
-      || (fallbackFamily === 'serif')) {
-    return '"Times New Roman", Times, serif';
-  }
-
-  if (name.includes('arial') || name.includes('helvetica') || name.includes('calibri')
-      || name.includes('verdana') || name.includes('tahoma') || name.includes('trebuchet')
-      || name.includes('segoe') || fallbackFamily === 'sans-serif') {
-    return 'Helvetica, Arial, sans-serif';
-  }
-
-  if (fallbackFamily && fallbackFamily !== 'sans-serif') {
-    return fallbackFamily;
-  }
-  return 'Helvetica, Arial, sans-serif';
 }
 
 /**
@@ -460,15 +430,17 @@ export function injectSyntheticTextSpans(textLayerDiv, pageNum, pageWidth, pageH
       if (!lineText) continue;
 
       // PDF coordinates for this line
-      const linePdfX = edit.pdfX;
-      const linePdfY = edit.pdfY - i * ls;
+      const angle = Number(edit.textAngle) || 0;
+      const rad = angle * Math.PI / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      const { x: linePdfX, y: linePdfY } = textEditLineAnchor(edit.pdfX, edit.pdfY, i, ls, angle);
 
       // Box-oorsprong meenemen (CAD-plots met MediaBox rond de oorsprong):
       // de span-percentages gelden in app-ruimte 0..breedte/hoogte.
       const offX = Number(geometry.offsetXPt) || 0;
       const offY = Number(geometry.offsetYPt) || 0;
-      const unrotatedTop = ((offY + geometry.pageHeight) - linePdfY) - fontSize * ascentRatio;
-      const leftPct = (100 * (linePdfX - offX) / geometry.pageWidth).toFixed(2);
+      const unrotatedTop = ((offY + geometry.pageHeight) - linePdfY) - cos * fontSize * ascentRatio;
+      const leftPct = (100 * (linePdfX - offX - sin * fontSize * ascentRatio) / geometry.pageWidth).toFixed(2);
       const topPct = (100 * unrotatedTop / geometry.pageHeight).toFixed(2);
 
       // Create span
@@ -480,6 +452,7 @@ export function injectSyntheticTextSpans(textLayerDiv, pageNum, pageWidth, pageH
       // Inline styles
       span.style.left = `${leftPct}%`;
       span.style.top = `${topPct}%`;
+      span.style.setProperty('--rotate', `${-angle}deg`);
       span.style.fontFamily = cssFontFamily;
       const decorations = [];
       if (edit.fontUnderline) decorations.push('underline');
@@ -500,7 +473,7 @@ export function injectSyntheticTextSpans(textLayerDiv, pageNum, pageWidth, pageH
       }
 
       // Data attributes for the edit text tool
-      const transform = [fontSize, 0, 0, fontSize, linePdfX, linePdfY];
+      const transform = [cos * fontSize, sin * fontSize, -sin * fontSize, cos * fontSize, linePdfX, linePdfY];
       span.dataset.pdfTransform = JSON.stringify(transform);
       span.dataset.pdfWidth = String(fontSize * 0.6 * lineText.length);
       span.dataset.pdfFontFamily = cssFontFamily;

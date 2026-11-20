@@ -7,7 +7,8 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 import { showMessage, openDialog } from '../../stores/dialogStore.js';
 import { isTauri, invoke, openFileDialog, isNietInBrowser } from '../../../core/platform.js';
 import { knopUitInBrowser, meldingTekst } from '../../../core/webfuncties.js';
-import { opslaanGeweigerd } from '../../../pdf/wachtwoord-pdf.js';
+import { heeftBeveiligdeInhoud } from '../../../pdf/wachtwoord-pdf.js';
+import { opslaanAlsIfcx } from '../../../pdf/ifcx-opslaan.js';
 import { savePreferences } from '../../../core/preferences.js';
 import {
   herstelPdfxInstellingen, listCmykProfiles, inspectCmykProfile, profileErrorMessage, INTENTS,
@@ -86,19 +87,8 @@ export default function ExportPanel() {
   };
 
   // IFCX (#876, beta): own dialog with pages and content options.
-  const handleExportIfcx = () => {
-    const doc = getActiveDocument();
-    if (!doc?.pdfDoc) {
-      showMessage(tCommon('noDocumentOpen'));
-      return;
-    }
-    // Opened with a password: its content is not copied out (wachtwoord-pdf.js).
-    if (opslaanGeweigerd(doc)) {
-      showMessage(tCommon('protectedPdfReadOnly'));
-      return;
-    }
-    closeAppMenu();
-    openDialog('ifcx-export');
+  const handleExportIfcx = async () => {
+    if (await opslaanAlsIfcx()) closeAppMenu();
   };
 
   const loadProfiles = async () => {
@@ -149,21 +139,10 @@ export default function ExportPanel() {
     if (!r.ok && r.reden === 'doel-is-geopend') showMessage(i18next.t('dialogs:print.targetIsOpenFile'));
   };
 
-  // Beveiligde kopie met een wachtwoord (js/pdf/protect-pdf.js); alleen op het bureaublad.
+  // Documentbeveiliging (#378): wachtwoorden en rechten; geldt bij opslaan.
   const handleProtect = () => {
-    const doc = getActiveDocument();
-    if (!doc?.pdfDoc) {
-      showMessage(tCommon('noDocumentOpen'));
-      return;
-    }
-    // Met een wachtwoord geopend: alleen-lezen, ook geen beveiligde kopie
-    // (wachtwoord-pdf.js). Meteen melden, vóór de gebruiker wachtwoorden typt.
-    if (opslaanGeweigerd(doc)) {
-      showMessage(tCommon('protectedPdfReadOnly'));
-      return;
-    }
     closeAppMenu();
-    openDialog('protect-pdf');
+    import('../../../ui/chrome/dialogs.js').then((m) => m.showSecurityDialog());
   };
 
   const handleCardClick = (type) => {

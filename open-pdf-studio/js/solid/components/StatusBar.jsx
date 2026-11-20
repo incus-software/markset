@@ -1,7 +1,9 @@
 import { readRenderDiagnostics, subscribeRenderDiagnostics } from '../../pdf/render-diagnostics.js';
 import { Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { watchState, onWatchState } from '../../workflows/watch-status.js';
+import { reviewStatus, onReviewStatus } from '../../review/shared-review-status.js';
 import { state, getActiveDocument } from '../../core/state.js';
+import { rotateLeftIcon, rotateRightIcon } from '../data/ribbonIcons.js';
 import { labelVan, heeftEigenLabel } from '../../pdf/pagina-labels.js';
 import { useTranslation, localizeNumber, language } from '../../i18n/useTranslation.js';
 import { isTauri } from '../../core/platform.js';
@@ -10,6 +12,7 @@ import { mcpTooltip } from '../../core/mcp-signaal.js';
 // Markset
 import { titleWithShortcut } from '../../core/keybindings/labels.js';
 import { sneltoetsVoor } from '../stores/keybindingStore.js';
+import { activeCountCategory } from '../stores/countStore.js';
 
 // All page navigation goes through goToPage() so the side effects
 // (active thumbnail update, hide properties, fire events) happen in one
@@ -143,6 +146,11 @@ import { engineFor } from '../stores/engineStatusStore.js';
 import { scaleToPercent, percentToScale, leesZoomInvoer } from '../../core/zoom-display.js';
 import { toonGetal } from '../../core/getal-invoer.js';
 
+async function openSharedReview() {
+  const { openDialog } = await import('../stores/dialogStore.js');
+  openDialog('shared-review');
+}
+
 // Stops the document-workflow folder watch (it keeps running after its dialog closes).
 async function stopFolderWatch() {
   const { stopWorkflow } = await import('../../workflows/workflow-service.js');
@@ -182,6 +190,15 @@ function McpSignaal(props) {
 
 export default function StatusBar() {
   const { t } = useTranslation('statusbar');
+  const { t: tRibbon } = useTranslation('ribbon');
+  // Pagina draaien: dezelfde actie als de knoppen op het lint (Start).
+  const draai = async (graden) => {
+    // PDF/A opent alleen-lezen: dan blijft de pagina zoals hij is.
+    const { isPdfAReadOnly } = await import('../../pdf/loader.js');
+    if (isPdfAReadOnly()) return;
+    const { draaiVanafKnop } = await import('../../pdf/pagina-draaien.js');
+    draaiVanafKnop(graden);
+  };
   const [diagnosticTick, setDiagnosticTick] = createSignal(0);
   onCleanup(subscribeRenderDiagnostics(() => setDiagnosticTick(n => n + 1)));
   const findings = () => {
@@ -204,12 +221,19 @@ export default function StatusBar() {
   const [watching, setWatching] = createSignal(watchState());
   onCleanup(onWatchState(setWatching));
   const watchFolder = () => String(watching()?.input || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+  // Gedeelde beoordeling (#237): zichtbaar zolang ze voor dit document loopt.
+  const [reviewTick, setReviewTick] = createSignal(0);
+  onCleanup(onReviewStatus(() => setReviewTick((n) => n + 1)));
+  const review = () => { reviewTick(); return reviewStatus(state.documents[state.activeDocumentIndex]?.filePath); };
 
   const toolName = () => {
     const key = `tools.${state.currentTool}`;
     const translated = t(key);
     return translated !== key ? translated : state.currentTool;
   };
+  // Met het telgereedschap: de actieve telgroep, met haar kleur (#1004), zodat
+  // je ziet in welke telling de volgende markering komt.
+  const telGroep = () => (state.currentTool === 'count' ? activeCountCategory() : null);
   const currentPage = () => {
     const doc = state.documents[state.activeDocumentIndex];
     return doc ? doc.currentPage : 1;
@@ -257,6 +281,12 @@ export default function StatusBar() {
         <div class="status-item">
           <span class="status-item-label">{t('toolLabel')}</span>
           <span class="status-item-value">{toolName()}</span>
+          <Show when={telGroep()}>
+            <span class="status-count-group" id="status-count-group" title={t('countGroupTip')}>
+              <span class="status-count-swatch" style={{ background: telGroep().color }}></span>
+              <span class="status-item-value">{telGroep().name}</span>
+            </span>
+          </Show>
         </div>
         <div class="status-separator"></div>
         <div class="status-item">
@@ -335,6 +365,13 @@ export default function StatusBar() {
             </button>
           </div>
 
+          {/* Pagina linksom/rechtsom draaien, naast de weergavekeuze: wordt
+              vaak gebruikt en hoort binnen handbereik. */}
+          <div class="status-viewmode-controls status-rotate-controls">
+            <button class="status-nav-btn" id="status-rotate-left" tabIndex={-1} title={tRibbon('home.rotateLeft')} aria-label={tRibbon('home.rotateLeft')} onClick={() => draai(-90)} innerHTML={rotateLeftIcon} />
+            <button class="status-nav-btn" id="status-rotate-right" tabIndex={-1} title={tRibbon('home.rotateRight')} aria-label={tRibbon('home.rotateRight')} onClick={() => draai(90)} innerHTML={rotateRightIcon} />
+          </div>
+
           <div class="status-zoom-controls">
             <button class="status-nav-btn" tabIndex={-1} title={t('zoomOut')} onClick={handleZoomOut}>
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -383,6 +420,16 @@ export default function StatusBar() {
         <Show when={findings().length > 0}>
           <button class="status-nav-btn status-item status-render-findings" tabIndex={-1} onClick={showFinding} title={t('renderDiagnostics.title')}>
             {t('renderDiagnostics.count', { count: findings().length })}
+          </button>
+        </Show>
+        <Show when={review()}>
+          <button class="status-view-rotation status-watch status-review" classList={{ 'status-watch-error': !!review()?.error, 'status-review-new': review()?.unseen > 0 }} tabIndex={-1}
+            title={t('sharedReviewTitle', { folder: review()?.folder })}
+            onClick={openSharedReview}>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="8" cy="12" r="3" stroke-width="2"/><circle cx="16" cy="12" r="3" stroke-width="2"/>
+            </svg>
+            <span>{review()?.error ? t('sharedReviewError') : review()?.unseen > 0 ? t('sharedReviewUpdates', { n: localizeNumber(review().unseen) }) : t('sharedReviewActive')}</span>
           </button>
         </Show>
         <Show when={watching()}>

@@ -3,6 +3,8 @@ import RibbonGroup from './RibbonGroup.jsx';
 import AdaptiveGroups from './AdaptiveGroups.jsx';
 import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
+import SplitButton from './SplitButton.jsx';
+import { highlightMode, highlightActive, kiesMarkering, markeringKnop } from '../../../tools/highlight-mode.js';
 import { colorPickerValue, lineWidthValue } from '../../stores/ribbonStore.js';
 import { strokeColor, fmtLineWidth, isLocked, opmaakDoel, opmaakOndersteunt, zetOpmaak } from '../../stores/formatStore.js';
 import { zetRanddikte } from '../../../annotations/rendering/textbox-layout.js';
@@ -13,11 +15,12 @@ import { recordClearPage, recordClearAll, recordAdd } from '../../../core/undo-m
 import { hideProperties } from '../../../ui/panels/properties-panel.js';
 import { clearSelection } from '../../../core/stores/selection-helpers.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
+import { showCalibrationDialog } from '../../../annotations/measurement.js';
 import {
-  highlightIcon, freehandIcon, lineIcon, arrowIcon, polylineIcon,
+  highlightIcon, textHighlightIcon, freehandIcon, lineIcon, arrowIcon, polylineIcon,
   rectIcon, ellipseIcon, polygonIcon, cloudIcon, cloudPolylineIcon,
-  textAnnotIcon, textboxIcon, noteIcon, fileAttachmentIcon, calloutIcon,
-  stampIcon, signatureIcon,
+  textAnnotIcon, textboxIcon, noteIcon, fileAttachmentIcon, calloutIcon, linkIcon,
+  stampIcon, signatureIcon, digitalSignIcon,
   redactionIcon, applyRedactionsIcon,
   clearPageIcon, clearAllIcon, flattenAllIcon, unflattenAllIcon,
   measureDistanceIcon, measureAreaIcon, measurePerimeterIcon, measureAngleIcon, calibrateIcon
@@ -39,6 +42,7 @@ registerTextHighlighter(); // Markset: the Text Highlighter
 const highlightTextIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="15.5" width="20" height="6" fill="#FFE600" stroke="none" opacity=".75"/><path stroke-width="1.5" stroke-linejoin="round" d="M14.5 3.5l4 4-7 7H7.5v-4z"/><path stroke-width="1.5" d="M7.5 14.5L5 17h4"/><line x1="3" y1="19.5" x2="21" y2="19.5" stroke-width="1.2"/></svg>`;
 const setScaleIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="8" rx="1" stroke-width="1.5"/><path stroke-width="1.2" d="M6 8v3m3-3v4.5M12 8v3m3-3v4.5M18 8v3"/></svg>`; // Markset
 import { toggleProofreading, PROOFREAD_TOOL } from '../../../tools/proofreading-mode.js';
+import { startLink, LINK_TOOL } from '../../../annotations/link/link-maken.js';
 
 // Proofreading (#508): lines of text, a struck word (red) and an insert caret (blue).
 const proofreadIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="3" y1="5" x2="21" y2="5" stroke-width="1.5"/><line x1="3" y1="11" x2="8" y2="11" stroke-width="1.5"/><line x1="10" y1="11" x2="21" y2="11" stroke-width="1.5"/><line x1="10" y1="11" x2="16" y2="11" stroke="#FF0000" stroke-width="2"/><line x1="3" y1="17" x2="21" y2="17" stroke-width="1.5"/><path d="M6 21.5 L8.5 17.5 L11 21.5" stroke="#0066FF" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
@@ -62,8 +66,37 @@ export function CommentGroups() {
             were moved to the dedicated Drawing tab. Comment tab keeps only
             comment-style annotations (highlight, callout, note, stamp, etc.). */}
         <RibbonGroup label={t('comment.drawing')}>
-          <RibbonButton id="tool-highlight" title={t('comment.highlight')} icon={highlightIcon} label={t('comment.highlight')}
-            disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'highlight'} onClick={() => setTool('highlight')} />
+          {/* Markeren (#927): gebied (vak trekken) of tekst (over tekst
+              slepen). De hoofdknop gebruikt de laatst gekozen modus en
+              wisselt als hij al aan staat; het menu kiest een modus. */}
+          <SplitButton
+            id="tool-highlight-split"
+            dropdownTitle={t('comment.highlightMode')}
+            disabled={noPdf() || isPdfAReadOnly()}
+            main={
+              <RibbonButton id="tool-highlight"
+                title={highlightMode() === 'text'
+                  ? `${t('comment.textHighlight')}: ${t('comment.textHighlightTitle')}`
+                  : t('comment.areaHighlightTitle')}
+                icon={highlightMode() === 'text' ? textHighlightIcon : highlightIcon} label={t('comment.highlight')}
+                disabled={noPdf() || isPdfAReadOnly()} active={highlightActive()} onClick={markeringKnop} />
+            }
+          >
+            <button class="ribbon-split-btn-menu-item" id="highlight-menu-area"
+              title={t('comment.areaHighlightTitle')}
+              classList={{ active: highlightMode() === 'area' }}
+              onClick={() => kiesMarkering('area')}>
+              <span class="ribbon-split-btn-menu-icon" innerHTML={highlightIcon}></span>
+              {t('comment.areaHighlight')}
+            </button>
+            <button class="ribbon-split-btn-menu-item" id="highlight-menu-text"
+              title={t('comment.textHighlightTitle')}
+              classList={{ active: highlightMode() === 'text' }}
+              onClick={() => kiesMarkering('text')}>
+              <span class="ribbon-split-btn-menu-icon" innerHTML={textHighlightIcon}></span>
+              {t('comment.textHighlight')}
+            </button>
+          </SplitButton>
           {/* Markset: highlight text and add a note to it (markset/text-highlighter.js) */}
           <RibbonButton id="tool-highlight-text" title="Highlight Text: drag across text or double-click a word, then type a note and press Enter, or press Esc to skip it."
             icon={highlightTextIcon} label="Highlight Text"
@@ -85,6 +118,9 @@ export function CommentGroups() {
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'comment'} onClick={() => setTool('comment')} />
           <RibbonButton id="tool-file-attachment" title={t('comment.fileAttachmentTitle')} icon={fileAttachmentIcon} label={t('comment.fileAttachment')}
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'fileAttachment'} onClick={() => setTool('fileAttachment')} />
+          {/* Hyperlink (#953): uit de tekstselectie, anders een vak slepen. */}
+          <RibbonButton id="tool-link" title={t('comment.linkTitle')} icon={linkIcon} label={t('comment.link')}
+            disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === LINK_TOOL} onClick={() => startLink()} />
         </RibbonGroup>
 
         <RibbonGroup label={t('proofread.group')}>
@@ -97,6 +133,14 @@ export function CommentGroups() {
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'stamp'} onClick={() => setTool('stamp')} />
           <RibbonButton id="tool-signature" title={t('comment.signature')} icon={signatureIcon} label={t('comment.signature')}
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'signature'} onClick={() => setTool('signature')} />
+          {/* Cryptografisch ondertekenen met een certificaat (#374). Ook bij een
+              PDF/A: de handtekening komt in een incrementele toevoeging. */}
+          <RibbonButton id="btn-digital-sign" title={t('comment.digitalSignTooltip')} icon={digitalSignIcon} label={t('comment.digitalSign')}
+            disabled={noPdf()}
+            onClick={async () => {
+              const { startDigitaalOndertekenen } = await import('../../../pdf/handtekeningen/ondertekenen.js');
+              await startDigitaalOndertekenen();
+            }} />
           <RibbonButton id="tool-parametric-symbol" title={t('comment.parametricSymbol')}
             icon={stampIcon} label={t('comment.parametricSymbol')}
             disabled={noPdf() || isPdfAReadOnly()}
@@ -208,6 +252,12 @@ export function CommentGroups() {
               disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'measurePerimeter'} onClick={() => setTool('measurePerimeter')} />
             <RibbonButton size="small" id="tool-measure-angle" title={t('measure.measureAngle') || 'Hoek meten'} icon={measureAngleIcon} label={t('measure.angle') || 'Hoek'}
               disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'measureAngle'} onClick={() => setTool('measureAngle')} />
+          </RibbonButtonStack>
+          {/* Schaal instellen bij de meetgereedschappen (#972): referentielijn
+              of standaardschaal, metrisch en imperiaal. */}
+          <RibbonButtonStack>
+            <RibbonButton size="small" id="tool-measure-calibrate" title={t('comment.calibrateTitle') || 'Scale Calibration'} icon={calibrateIcon} label={t('comment.calibrate') || 'Calibrate'}
+              disabled={noPdf() || isPdfAReadOnly()} onClick={() => showCalibrationDialog()} />
           </RibbonButtonStack>
         </RibbonGroup>
 

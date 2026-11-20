@@ -3,6 +3,7 @@
     "openPopUpNote": "Buka Nota Timbul",
     "hidePopUpNote": "Sembunyikan Nota Timbul",
     "resetPopUpLocation": "Tetapkan Semula Lokasi Nota Timbul",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Sunting Teks...",
     "addReply": "Tambah Balasan",
     "locked": "Dikunci",
@@ -12,11 +13,13 @@
     "printable": "Boleh Dicetak",
     "status": "Status",
     "showByStatus": "Tunjukkan mengikut Status",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Tiada",
     "statusAccepted": "Diterima",
     "statusCancelled": "Dibatalkan",
     "statusCompleted": "Selesai",
     "statusRejected": "Ditolak",
+    "statusReviewed": "Disemak",
     "reviewHistory": "Sejarah Semakan...",
     "layer": "Lapisan:",
     "noLayersAvailable": "Tiada lapisan tersedia",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Tambah Titik ke Rantai Dimensi",
     "dimChainRemove": "Buang Garis Unjuran daripada Rantai",
     "selectRoom": "Pilih Bilik",
+    "checkScale": "Semak skala dengan garisan ini...",
     "saveToToolSet": "Simpan ke Set Alat"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Tengah Menegak",
     "distributeHorizontally": "Agih Mendatar",
     "distributeVertically": "Agih Menegak",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Pangkas Sudut Dinding",
     "deleteAnnotations": "Padam {{count}} Anotasi",
     "deleteConfirm": "Padam {{count}} anotasi?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Sarangkan di bawah penanda buku baharu...",
     "indent": "Inden",
     "outdent": "Nyahinden",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Padam {{count}} penanda buku"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Sisipkan daripada Fail...",
     "insertFromFileBefore": "Sebelum Halaman Ini...",
     "insertFromFileAfter": "Selepas Halaman Ini...",
-    "pageLabels": "Label Halaman (Pembina Nama)..."
+    "pageLabels": "Label Halaman (Pembina Nama)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Sorot Pilihan",
     "strikethroughSelection": "Garis Potong Pilihan",
     "underlineSelection": "Garis Bawah Pilihan",
-    "curvedLeaderSelection": "Tambah Panggilan Melengkung"
+    "curvedLeaderSelection": "Tambah Panggilan Melengkung",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Padam anotasi ini?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Padam bucu",
     "insertVertex": "Sisipkan bucu di sini",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Tukar kepada lengkok",
     "convertToLine": "Tukar kepada garisan"
   },

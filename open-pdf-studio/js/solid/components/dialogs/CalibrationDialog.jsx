@@ -1,33 +1,34 @@
 import { createSignal, onMount, Show } from 'solid-js';
-import { leesGetal } from '../../../core/getal-invoer.js';
 import Dialog from '../Dialog.jsx';
-import { closeDialog } from '../../stores/dialogStore.js';
+import { closeDialog, openDialog } from '../../stores/dialogStore.js';
+import { startScaleMeasureFlow } from '../../../tools/tools/scale-measure-tool.js';
 import { state, getActiveDocument } from '../../../core/state.js';
+import { formatPageSize } from '../../stores/doc-info-format.js';
 import { savePreferences } from '../../../core/preferences.js';
 import { recalculateAllMeasurements, saveDocumentScale } from '../../../annotations/measurement.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { cloneAnnotation } from '../../../annotations/factory.js';
 import { schaalUitKalibratie } from '../../../annotations/kalibratie-schaal.js';
+import { findScaleInText } from '../../../annotations/document-scale.js';
+import { leesLengte, isImperialeLengte, VOET_INCH_VOORBEELD } from '../../../core/voet-inch.js';
 import { geldigeUserUnit, userUnitVanPagina } from '../../../annotations/scale-region-scale.js';
-import { SCALE_PRESETS, METRIC_SCALE_PRESETS, IMPERIAL_SCALE_PRESETS } from '../../../annotations/scale-presets.js';
+import { IMPERIAL_SCALE_PRESETS, isImperialScalePreset, scaleSelectOptions, scaleDisplayLabel } from '../../../annotations/scale-presets.js';
+import { schaalTekstVoorPpu } from '../../../annotations/schaalcontrole.js';
+import { standaardenVoorStelsel } from '../../../annotations/eenhedenstelsel.js';
 import {
   recordBulkModify,
   recordMeasureScale,
   beginUndoTransaction,
   endUndoTransaction,
 } from '../../../core/undo-manager.js';
-import { ARCHITECTURAL_SCALES, ENGINEERING_SCALES, US_SCALES, findUsScale, parseLengthAs } from '../../../../markset/us-units.js'; // Markset
-import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
 import { withPageScale, withoutPageScale, pageScaleAt, sheetInches } from '../../../../markset/page-scale.js'; // Markset
-import { formatPageSizeIn } from '../../../../markset/us-units.js'; // Markset
-
-// Markset: US scales as "1:N" presets; picking one switches the unit to ft.
-const US_SCALE_PRESETS = US_SCALES.map(s => `1:${s.ratio}`);
-const isPreset = (r) => SCALE_PRESETS.includes(r) || US_SCALE_PRESETS.includes(r);
 
 /**
  * Auto-detect scale from the PDF title block (onderhoek).
- * Scans text content in the bottom-right area of the page for patterns like "1:100".
+ * Reads the text in the bottom-right area of the page first, then the whole
+ * page, with the same rules as the detection on load (findScaleInText):
+ * "1:100", "SCHAAL 1:50" and imperial `1/8" = 1'-0"` (#999).
+ * @returns {Promise<{ratio:number, unit?:string, scaleText:string}|null>}
  */
 async function detectScaleFromTitleBlock() {
   const doc = getActiveDocument();
@@ -41,62 +42,19 @@ async function detectScaleFromTitleBlock() {
   // We search the right 50% and bottom 40% of the page.
   const regionLeft = vp.width * 0.5;
   const regionTop = vp.height * 0.6;
-
-  // Scale pattern: matches "1:N" where N is a number (with optional spaces)
-  const scalePattern = /\b1\s*:\s*(\d+(?:[.,]\d+)?)\b/;
-
-  // Collect text items in the title block region
-  const candidates = [];
-
-  for (const item of textContent.items) {
-    if (!item.str || item.str.trim().length === 0) continue;
+  const t = vp.transform;
+  const inTitleBlock = textContent.items.filter((item) => {
+    if (!item.str || item.str.trim().length === 0 || !item.transform) return false;
     // item.transform = [scaleX, skewY, skewX, scaleY, translateX, translateY]
     const tx = item.transform[4];
     const ty = item.transform[5];
-
-    // Transform from PDF space to viewport space
-    const t = vp.transform;
     const vx = t[0] * tx + t[2] * ty + t[4];
     const vy = t[1] * tx + t[3] * ty + t[5];
-
-    if (vx >= regionLeft && vy >= regionTop) {
-      const us = findUsScale(item.str); // Markset
-      if (us) { candidates.push({ denominator: us.ratio, unit: 'ft', text: item.str, x: vx, y: vy }); continue; }
-      const match = item.str.match(scalePattern);
-      if (match) {
-        const denominator = leesGetal(match[1]);
-        if (denominator >= 1 && denominator <= 10000) {
-          candidates.push({ denominator, text: item.str, x: vx, y: vy });
-        }
-      }
-    }
-  }
+    return vx >= regionLeft && vy >= regionTop;
+  });
 
   // If no results in title block region, try the entire page as fallback
-  if (candidates.length === 0) {
-    for (const item of textContent.items) {
-      if (!item.str || item.str.trim().length === 0) continue;
-      const us = findUsScale(item.str); // Markset: specific enough without a label
-      if (us) { candidates.push({ denominator: us.ratio, unit: 'ft', text: item.str, x: 0, y: 0 }); continue; }
-      // Look for explicit "schaal" / "scale" / "maßstab" / "échelle" labels
-      const lowerStr = item.str.toLowerCase();
-      const hasLabel = /(?:schaal|scale|ma[ßs]stab|[eé]chelle|escala)\s*/i.test(lowerStr);
-      if (!hasLabel) continue;
-
-      const match = item.str.match(scalePattern);
-      if (match) {
-        const denominator = leesGetal(match[1]);
-        if (denominator >= 1 && denominator <= 10000) {
-          candidates.push({ denominator, text: item.str, x: 0, y: 0 });
-        }
-      }
-    }
-  }
-
-  if (candidates.length === 0) return null;
-
-  // Return the first match (closest to bottom-right typically)
-  return candidates[0]; // Markset: { denominator, unit? } instead of the bare denominator
+  return findScaleInText(inTitleBlock) || findScaleInText(textContent.items);
 }
 
 export default function CalibrationDialog(props) {
@@ -105,24 +63,62 @@ export default function CalibrationDialog(props) {
 
   // Method tab: 'reference' or 'ratio'
   const [method, setMethod] = createSignal('reference');
-  const usFirst = ['ft', 'in'].includes(unitDefaults().unit); // Markset: US scales first in the list
   const calPage = () => props.data?.page || getActiveDocument()?.currentPage || 1; // Markset: the sheet being calibrated
+  const [overridePdfScale, setOverridePdfScale] = createSignal(getActiveDocument()?.measureScale?.overridePdfScale === true);
+
+  // Zonder schaal op het document volgen de eenheid en de standaardschaal de
+  // voorkeur Eenheden (#1158): imperiaal opent in voet met 1/4" = 1'-0".
+  const standaard = standaardenVoorStelsel();
 
   // Method 1: Reference line
   const [distance, setDistance] = createSignal(1);
-  const [unit, setUnit] = createSignal(unitDefaults().unit); // Markset
+  const [unit, setUnit] = createSignal(standaard.lengteEenheid);
   const [pixels, setPixels] = createSignal(72);
 
+  // Standaardschalen van het gekozen stelsel (#996); de schaal van het
+  // document blijft erin staan, ook als die uit het andere stelsel komt.
+  const ratioOptions = scaleSelectOptions(undefined, { current: getActiveDocument()?.measureScale?.scaleRatio });
+  const inLijst = (ratio) => ratioOptions.some(o => o.value === ratio);
+
   // Method 2: Scale ratio
-  const [scalePreset, setScalePreset] = createSignal(unitDefaults().scaleString); // Markset
+  const beginSchaal = inLijst(standaard.schaal) ? standaard.schaal
+    : (inLijst('1:100') ? '1:100' : (ratioOptions[0]?.value || 'custom'));
+  const [scalePreset, setScalePreset] = createSignal(beginSchaal);
   const [customScale, setCustomScale] = createSignal(100);
-  const [ratioUnit, setRatioUnit] = createSignal(unitDefaults().unit); // Markset
+  const [ratioUnit, setRatioUnit] = createSignal(isImperialScalePreset(beginSchaal) ? 'ft' : standaard.lengteEenheid);
   const [pageSizeText, setPageSizeText] = createSignal('');
   const [detecting, setDetecting] = createSignal(false);
   const [detectResult, setDetectResult] = createSignal(null); // null | 'found' | 'notfound'
   // /UserUnit van de pagina: 1:N wordt daarmee pagina-eenheden (#884).
   const [userUnit, setUserUnit] = createSignal(
     userUnitVanPagina(getActiveDocument(), getActiveDocument()?.currentPage));
+
+  // De schaal die nu geldt, zoals de gebruiker hem leest: imperiaal als
+  // 1/8" = 1'-0" (1:96), metrisch als 1:100 (#1000).
+  const currentScale = (() => {
+    const ms = getActiveDocument()?.measureScale;
+    if (!(ms?.pixelsPerUnit > 0)) return '';
+    const ratio = typeof ms.scaleRatio === 'string' && ms.scaleRatio
+      ? ms.scaleRatio
+      : schaalTekstVoorPpu(ms.pixelsPerUnit, ms.unit || 'mm');
+    return ratio ? scaleDisplayLabel(ratio, ms.unit) : '';
+  })();
+  // Een eigen verhouding in voet/inch ook in inch-notatie: 1:300 is 1" = 25'-0".
+  const customNotation = () => {
+    const ratio = `1:${customScale()}`;
+    const label = scaleDisplayLabel(ratio, ratioUnit(), { withRatio: false });
+    return label && label !== ratio ? label : '';
+  };
+
+  function tekenReferentielijn() {
+    const restore = { unit: unit(), distance: distance(), overridePdfScale: overridePdfScale() };
+    const huidig = Number(pixels()) || null;
+    closeDialog('calibration');
+    startScaleMeasureFlow({
+      onDone: (afstand) => openDialog('calibration', { referencePixelLength: afstand, restore }),
+      onCancel: () => openDialog('calibration', { referencePixelLength: huidig, restore }),
+    });
+  }
 
   onMount(async () => {
     // Pre-fill pixels from reference line if provided
@@ -131,6 +127,8 @@ export default function CalibrationDialog(props) {
       setPixels(Math.round(refPx * 100) / 100);
       setMethod('reference');
     }
+    // Terug van "Lijn tekenen" (#1090): de keuzes van voor het tekenen.
+    const terug = props.data?.restore;
 
     // Load existing scale from document
     const doc = getActiveDocument();
@@ -138,10 +136,10 @@ export default function CalibrationDialog(props) {
     if (ms) {
       setUnit(ms.unit || 'mm');
       setRatioUnit(ms.unit || 'mm');
-      if (ms.method === 'ratio' && ms.scaleRatio) {
+      if ((ms.method === 'ratio' || ms.method === 'auto-detect') && typeof ms.scaleRatio === 'string' && ms.scaleRatio) {
         setMethod('ratio');
-        setScalePreset(isPreset(ms.scaleRatio) ? ms.scaleRatio : 'custom');
-        if (!isPreset(ms.scaleRatio)) {
+        setScalePreset(inLijst(ms.scaleRatio) ? ms.scaleRatio : 'custom');
+        if (!inLijst(ms.scaleRatio)) {
           const parts = ms.scaleRatio.split(':');
           setCustomScale(parseInt(parts[1]) || 100);
         }
@@ -152,6 +150,13 @@ export default function CalibrationDialog(props) {
     if (refPx && refPx > 0) setMethod('reference');
     else if (props.data?.method === 'ratio' || props.data?.method === 'reference') setMethod(props.data.method);
 
+    if (terug) {
+      setOverridePdfScale(terug.overridePdfScale === true);
+      if (terug.unit) setUnit(terug.unit);
+      if (terug.distance != null) setDistance(terug.distance);
+      setMethod('reference');
+    }
+
     // Detect PDF page size
     try {
       const calDoc = getActiveDocument();
@@ -160,10 +165,8 @@ export default function CalibrationDialog(props) {
         setUserUnit(geldigeUserUnit(page.userUnit));
         // De viewport van PDF.js rekent /UserUnit mee: de echte papiermaat.
         const vp = page.getViewport({ scale: 1 });
-        // PDF points to mm: 1 pt = 25.4/72 mm
-        const wMm = (vp.width * 25.4 / 72).toFixed(0);
-        const hMm = (vp.height * 25.4 / 72).toFixed(0);
-        setPageSizeText((!usFirst ? null : formatPageSizeIn(vp.width, vp.height)) || `${wMm} \u00d7 ${hMm} mm`); // Markset: inches with US units
+        // In het gekozen eenhedenstelsel, net als in het eigenschappenpaneel (#1121).
+        setPageSizeText(formatPageSize(vp.width, vp.height, state.preferences?.scaleUnitSystem));
       }
     } catch { /* ignore */ }
   });
@@ -182,11 +185,13 @@ export default function CalibrationDialog(props) {
     setDetectResult(null);
     try {
       const found = await detectScaleFromTitleBlock();
-      const denominator = found?.denominator; // Markset
-      if (denominator) {
-        if (found.unit) setRatioUnit(found.unit); // Markset: US scales are in feet
+      if (found) {
+        const denominator = found.ratio;
         const ratio = `1:${denominator}`;
-        if (isPreset(ratio)) {
+        // Imperiaal in voet/inch (#999); een metrische schaal in mm.
+        if (found.unit) setRatioUnit(found.unit);
+        else if (ratioUnit() === 'ft' || ratioUnit() === 'in') setRatioUnit('mm');
+        if (inLijst(ratio)) {
           setScalePreset(ratio);
         } else {
           setScalePreset('custom');
@@ -208,10 +213,12 @@ export default function CalibrationDialog(props) {
     // schaalverhouding gaat daar via pixelsPerUnitFor, net als het
     // schaalgebied (#553).
     const scaleData = method() === 'reference'
-      ? schaalUitKalibratie({ method: 'reference', distance: parseLengthAs(distance(), unit()), pixels: pixels(), unit: unit() })
+      // Een voet-inchmaat (12'-6 3/8") mag ook (#996).
+      ? schaalUitKalibratie({ method: 'reference', distance: leesLengte(String(distance()), unit()), pixels: pixels(), unit: unit() })
       : schaalUitKalibratie({ method: 'ratio', denominator: getScaleDenominator(), unit: ratioUnit(), userUnit: userUnit() });
 
     if (scaleData) {
+      if (overridePdfScale()) scaleData.overridePdfScale = true;
       const doc = getActiveDocument();
       if (doc) {
         const oldMeasureScale = doc.measureScale == null
@@ -278,6 +285,12 @@ export default function CalibrationDialog(props) {
       onClose={cancel}
       footer={footer}
     >
+      <Show when={overridePdfScale() || Object.values(getActiveDocument()?.pdfViewports || {}).some(list => list?.length)}>
+        <label class="pref-checkbox-label">
+          <input type="checkbox" checked={overridePdfScale()} onChange={e => setOverridePdfScale(e.currentTarget.checked)} />
+          {t('calibration.overridePdfScale')}
+        </label>
+      </Show>
       {/* Method tabs */}
       <div class="calibration-tabs">
         <button
@@ -294,11 +307,23 @@ export default function CalibrationDialog(props) {
         </button>
       </div>
 
+      <Show when={currentScale}>
+        <div class="calibration-page-size">{t('calibration.currentScale', { scale: currentScale })}</div>
+      </Show>
+
       {/* Method 1: Reference Line */}
       <Show when={method() === 'reference'}>
         <p class="calibration-help">
           {t('calibration.referenceHelp')}
         </p>
+        {/* Een lijn op de tekening tekenen (#1090): twee klikken, Shift houdt
+            hem horizontaal of verticaal. Het venster komt daarna terug met de
+            gemeten lengte ingevuld. */}
+        <div class="calibration-row">
+          <button type="button" class="pref-btn calibration-draw" disabled={!getActiveDocument()?.pdfDoc}
+            onClick={tekenReferentielijn}>{t('calibration.drawLine')}</button>
+          <span class="calibration-hint">{t('calibration.drawLineHint')}</span>
+        </div>
         <div class="calibration-row">
           <label class="calibration-label">{t('calibration.measuredPixels')}</label>
           <input
@@ -313,11 +338,16 @@ export default function CalibrationDialog(props) {
         </div>
         <div class="calibration-row">
           <label class="calibration-label">{t('calibration.knownDistance')}</label>
+          {/* Een lengteveld: een getal in de gekozen eenheid, of een
+              voet-inchmaat (12'-6 3/8"), ook bij een metrische eenheid
+              (#996, #1145). De hint staat erbij als de eenheid imperiaal is. */}
           <input
-            type="text" inputmode="decimal" data-getal
+            type="text" inputmode={isImperialeLengte(unit()) ? 'text' : 'decimal'} data-getal="lengte"
             class="calibration-input"
-            placeholder={unit() === 'ft' || unit() === 'in' ? `e.g. 7'-3"` : ''}
-            title={`Feet and inches work too: 7'-3", 12'-6 1/2"`}
+            min="0.001"
+            step="0.01"
+            placeholder={isImperialeLengte(unit()) ? VOET_INCH_VOORBEELD : undefined}
+            title={isImperialeLengte(unit()) ? t('calibration.feetInchHint') : undefined}
             value={distance()}
             onInput={(e) => setDistance(e.target.value)}
           />
@@ -346,19 +376,13 @@ export default function CalibrationDialog(props) {
             class="calibration-select calibration-select-wide"
             value={scalePreset()}
             onChange={(e) => {
-              setScalePreset(e.target.value);
-              if (US_SCALE_PRESETS.includes(e.target.value)) setRatioUnit('ft'); // Markset
+              const ratio = e.target.value;
+              setScalePreset(ratio);
+              if (IMPERIAL_SCALE_PRESETS.some(preset => preset.ratio === ratio)) setRatioUnit('ft');
             }}
           >
-            {/* Markset: US scales, listed first with US units; metric after them */}
-            {!usFirst && METRIC_SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}
-            <optgroup label={t('calibration.architecturalScales')}>
-              {ARCHITECTURAL_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
-            </optgroup>
-            <optgroup label={t('calibration.engineeringScales')}>
-              {ENGINEERING_SCALES.map(s => <option value={`1:${s.ratio}`}>{s.label}</option>)}
-            </optgroup>
-            {usFirst && <optgroup label="Metric">{METRIC_SCALE_PRESETS.map(s => <option value={s}>{s}</option>)}</optgroup>}
+            {/* Metrisch, imperiaal of beide volgens de voorkeur (#996). */}
+            {ratioOptions.map(o => <option value={o.value}>{o.label}</option>)}
             <option value="custom">{t('calibration.customRatio')}</option>
           </select>
           <Show when={scalePreset() === 'custom'}>
@@ -370,6 +394,9 @@ export default function CalibrationDialog(props) {
               value={customScale()}
               onInput={(e) => { const n = parseFloat(e.target.value); setCustomScale(n > 0 ? n : 1); }}
             />
+            <Show when={customNotation()}>
+              <span class="calibration-unit">{customNotation()}</span>
+            </Show>
           </Show>
         </div>
         <div class="calibration-row">

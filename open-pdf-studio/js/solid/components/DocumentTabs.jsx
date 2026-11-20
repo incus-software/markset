@@ -5,6 +5,8 @@ import i18next from '../../i18n/config.js';
 import { invoke } from '../../core/platform.js';
 import { laadDesktopDragPlugin } from '../../core/desktop-drag-plugin.js';
 import { hostVersieLabel } from '../../pdf/host-versies.js';
+import { tabItems, isActiefTabItem, heeftMeerWeergaven } from '../../ui/chrome/weergave-tabs-model.js';
+import { kanAllesSluiten, kanAndereSluiten } from '../../ui/chrome/tabs-sluiten-model.js';
 import {
   revealInFileManager,
   revealInFileManagerLabelKey,
@@ -111,21 +113,38 @@ const [draggingIndex, setDraggingIndex] = createSignal(-1);
 // Mouse-based drag state (module-level so handlers can access it)
 let dragState = null;
 
-function handleTabClick(index) {
+// Een document kan in meer tabbladen open staan (#919): `weergave` is dan
+// het tabblad (de weergave) van dat document; null bij één tabblad.
+function handleTabClick(index, weergave = null) {
   if (editingIndex() === index) return;
   blurCompareTab(); // switching to a PDF tab leaves the compare view
-  import('../../ui/chrome/tabs.js').then(m => m.switchToTab(index));
+  import('../../ui/chrome/weergave-tabs.js').then(m => m.toonTabItem(index, weergave));
 }
 
-function handleCloseTab(e, index) {
+function sluitTab(index, weergave = null) {
+  import('../../ui/chrome/weergave-tabs.js').then(m => m.sluitTabItem(index, weergave));
+}
+
+// Andere / alle tabbladen sluiten (#1156): per document het gewone sluiten.
+function sluitAndere(index, weergave = null) {
+  import('../../ui/chrome/tabs-sluiten.js').then(m => m.sluitAndereTabs(index, weergave))
+    .catch(e => console.warn('[tabs] andere tabbladen sluiten mislukt:', e));
+}
+
+function sluitAlle() {
+  import('../../ui/chrome/tabs-sluiten.js').then(m => m.sluitAlleTabs())
+    .catch(e => console.warn('[tabs] alle tabbladen sluiten mislukt:', e));
+}
+
+function handleCloseTab(e, index, weergave = null) {
   e.stopPropagation();
-  import('../../ui/chrome/tabs.js').then(m => m.closeTab(index));
+  sluitTab(index, weergave);
 }
 
-function handleMiddleClick(e, index) {
+function handleMiddleClick(e, index, weergave = null) {
   if (e.button === 1) {
     e.preventDefault();
-    import('../../ui/chrome/tabs.js').then(m => m.closeTab(index));
+    sluitTab(index, weergave);
   }
 }
 
@@ -223,7 +242,10 @@ function onDocMouseMove(e) {
   // keeps delivering mouse events outside the window, so no OS drag loop is
   // needed for it.
   const tabBarRect = tabsContainer.getBoundingClientRect();
-  dragState.losGewapend = buitenTabbalk(e.clientY, tabBarRect);
+  // Een document in meer tabbladen (#919) gaat niet los naar een ander
+  // venster: dat zou de andere tabbladen ervan meenemen.
+  dragState.losGewapend = buitenTabbalk(e.clientY, tabBarRect)
+    && !heeftMeerWeergaven(state.documents[dragState.fromIndex]);
 
   // Find which tab the mouse is over (reorder)
   let targetIndex = -1;
@@ -232,7 +254,11 @@ function onDocMouseMove(e) {
     for (let i = 0; i < tabElements.length; i++) {
       const rect = tabElements[i].getBoundingClientRect();
       if (e.clientX >= rect.left && e.clientX < rect.right) {
-        targetIndex = i;
+        // Het document van dat tabblad; een document kan meer tabbladen
+        // hebben (#919). Het vergelijkingstabblad: achteraan.
+        const ruw = tabElements[i].dataset.index;
+        const idx = Number(ruw);
+        targetIndex = ruw !== undefined && ruw !== '' && Number.isInteger(idx) ? idx : state.documents.length;
         break;
       }
     }
@@ -439,10 +465,10 @@ async function startNativeTabDrag(index) {
 // Hide the context menu when clicking anywhere else / pressing Escape.
 function hideCtxMenu() { setCtxMenu(null); }
 
-function handleTabContextMenu(e, index) {
+function handleTabContextMenu(e, index, weergave = null) {
   e.preventDefault();
   e.stopPropagation();
-  setCtxMenu({ x: e.clientX, y: e.clientY, index });
+  setCtxMenu({ x: e.clientX, y: e.clientY, index, weergave });
 }
 
 function onDocMouseUp() {
@@ -493,6 +519,11 @@ export default function DocumentTabs() {
   const { t: tCommon } = useTranslation('common');
   const { t: tDialogs } = useTranslation('dialogs');
 
+  // Aan/uit van "Andere tabbladen sluiten" en "Alle tabbladen sluiten" (#1156).
+  const tabToestand = () => ({ aantalTabItems: tabItems(state.documents).length, vergelijkActief: compareActive() });
+  const andereSluitenAan = () => kanAndereSluiten(tabToestand());
+  const allesSluitenAan = () => kanAllesSluiten(tabToestand());
+
   const baseName = (p) => ((p || '').split(/[\\/]/).pop() || '').replace(/\.pdf$/i, '');
   const compareTabTip = () => {
     const a = baseName(compareOldPath());
@@ -523,26 +554,31 @@ export default function DocumentTabs() {
         <div class="document-tabs-empty">{t('noDocumentsOpen')}</div>
       </Show>
 
-      <For each={state.documents}>
-        {(doc, i) => (
+      {/* Eén tabblad per document, of per weergave als het document in meer
+          tabbladen open staat (#919, weergave-tabs-model.js). */}
+      <For each={tabItems(state.documents)}>
+        {(item) => {
+        const doc = state.documents[item.index];
+        const i = () => item.index;
+        return (
           <div
             class={'document-tab'
-              + (i() === state.activeDocumentIndex && !compareFocused() ? ' active' : '')
+              + (isActiefTabItem(item, state.documents, state.activeDocumentIndex) && !compareFocused() ? ' active' : '')
               + (draggingIndex() === i() ? ' dragging' : '')
               + (dropTargetIndex() === i() ? ' drop-target' : '')}
             data-index={i()}
-            onClick={() => handleTabClick(i())}
-            onAuxClick={(e) => handleMiddleClick(e, i())}
+            onClick={() => handleTabClick(i(), item.weergave)}
+            onAuxClick={(e) => handleMiddleClick(e, i(), item.weergave)}
             onDblClick={(e) => handleDoubleClick(e, i())}
             onMouseDown={(e) => handleMouseDown(e, i())}
-            onContextMenu={(e) => handleTabContextMenu(e, i())}
+            onContextMenu={(e) => handleTabContextMenu(e, i(), item.weergave)}
           >
             <span class="document-tab-modified">{doc.modified ? '*' : ''}</span>
             <Show when={doc.hersteld}>
               <span class="document-tab-recovered" title={tDialogs('recovery.tabTip')}>{tDialogs('recovery.tabLabel')}</span>
             </Show>
-            <Show when={editingIndex() === i()} fallback={
-              <span class="document-tab-title" title={doc.filePath || doc.fileName}>{doc.fileName}</span>
+            <Show when={editingIndex() === i() && (!item.weergave || isActiefTabItem(item, state.documents, state.activeDocumentIndex))} fallback={
+              <span class="document-tab-title" title={doc.filePath || doc.fileName}>{doc.fileName}<Show when={item.aantal > 1}><span class="document-tab-view">:{item.nummer}</span></Show></span>
             }>
               <input
                 class="document-tab-rename-input"
@@ -556,9 +592,10 @@ export default function DocumentTabs() {
             <Show when={hostVersieLabel(doc, tCommon)}>
               <span class="document-tab-version">{hostVersieLabel(doc, tCommon)}</span>
             </Show>
-            <span class="document-tab-close" title={t('closeTab')} onClick={(e) => handleCloseTab(e, i())}>&times;</span>
+            <span class="document-tab-close" title={t('closeTab')} onClick={(e) => handleCloseTab(e, i(), item.weergave)}>&times;</span>
           </div>
-        )}
+        );
+        }}
       </For>
 
       {/* Compare session lives as its OWN tab (not a real document) so you can
@@ -602,18 +639,29 @@ export default function DocumentTabs() {
           }}
           onMouseLeave={hideCtxMenu}
         >
+          <Show when={state.documents[ctxMenu().index]?.pdfDoc}>
+            <div
+              style={{ padding: '6px 14px', cursor: 'default' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#cce4f7'}
+              onMouseLeave={(e) => e.currentTarget.style.background = ''}
+              onClick={() => { const idx = ctxMenu().index; hideCtxMenu(); import('../../ui/chrome/weergave-tabs.js').then(m => m.openNieuweWeergave(idx)).catch(e => console.warn('[tabs] nieuw tabblad voor dit document mislukt:', e)); }}
+            >{tCommon('tabs.newTabForDocument')}</div>
+          </Show>
           <div
             style={{ padding: '6px 14px', cursor: 'default' }}
             onMouseEnter={(e) => e.currentTarget.style.background = '#cce4f7'}
             onMouseLeave={(e) => e.currentTarget.style.background = ''}
             onClick={() => { const idx = ctxMenu().index; hideCtxMenu(); import('../../pdf/split-view/split-view.js').then(m => m.openDocumentInSplit(idx)).catch(e => console.warn('[tabs] openen in gesplitste weergave mislukt:', e)); }}
           >{tCommon('tabs.openInSplitView')}</div>
-          <div
-            style={{ padding: '6px 14px', cursor: 'pointer' }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#cce4f7'}
-            onMouseLeave={(e) => e.currentTarget.style.background = ''}
-            onClick={() => { const idx = ctxMenu().index; hideCtxMenu(); detachTabToNewWindow(idx); }}
-          >{tCommon('tabs.openInNewWindow')}</div>
+          {/* Losmaken neemt het hele document mee: niet bij meer tabbladen (#919). */}
+          <Show when={!heeftMeerWeergaven(state.documents[ctxMenu().index])}>
+            <div
+              style={{ padding: '6px 14px', cursor: 'pointer' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#cce4f7'}
+              onMouseLeave={(e) => e.currentTarget.style.background = ''}
+              onClick={() => { const idx = ctxMenu().index; hideCtxMenu(); detachTabToNewWindow(idx); }}
+            >{tCommon('tabs.openInNewWindow')}</div>
+          </Show>
           {/* Alleen tonen voor documenten met een echt bestandspad — naamloze/
               nieuwe documenten leven in een temp-bestand dat je de gebruiker
               niet wilt laten zien. Label is platform-specifiek (Verkenner/
@@ -634,8 +682,25 @@ export default function DocumentTabs() {
             style={{ padding: '6px 14px', cursor: 'pointer', 'border-top': '1px solid #d4d4d4' }}
             onMouseEnter={(e) => e.currentTarget.style.background = '#cce4f7'}
             onMouseLeave={(e) => e.currentTarget.style.background = ''}
-            onClick={() => { const idx = ctxMenu().index; hideCtxMenu(); import('../../ui/chrome/tabs.js').then(m => m.closeTab(idx)); }}
+            onClick={() => { const { index: idx, weergave } = ctxMenu(); hideCtxMenu(); sluitTab(idx, weergave); }}
           >{tCommon('tabs.closeTab')}</div>
+          {/* Andere / alle tabbladen sluiten (#1156); uit als het niets zou doen. */}
+          <div
+            class="document-tab-ctxmenu-close-others"
+            aria-disabled={!andereSluitenAan()}
+            style={{ padding: '6px 14px', cursor: 'default', color: andereSluitenAan() ? '' : '#a0a0a0' }}
+            onMouseEnter={(e) => { if (andereSluitenAan()) e.currentTarget.style.background = '#cce4f7'; }}
+            onMouseLeave={(e) => e.currentTarget.style.background = ''}
+            onClick={() => { if (!andereSluitenAan()) return; const { index: idx, weergave } = ctxMenu(); hideCtxMenu(); sluitAndere(idx, weergave); }}
+          >{tCommon('tabs.closeOtherTabs')}</div>
+          <div
+            class="document-tab-ctxmenu-close-all"
+            aria-disabled={!allesSluitenAan()}
+            style={{ padding: '6px 14px', cursor: 'default', color: allesSluitenAan() ? '' : '#a0a0a0' }}
+            onMouseEnter={(e) => { if (allesSluitenAan()) e.currentTarget.style.background = '#cce4f7'; }}
+            onMouseLeave={(e) => e.currentTarget.style.background = ''}
+            onClick={() => { if (!allesSluitenAan()) return; hideCtxMenu(); sluitAlle(); }}
+          >{tCommon('tabs.closeAllTabs')}</div>
         </div>
       </Show>
     </div>

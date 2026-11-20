@@ -3,7 +3,6 @@
 // The ONLY render path for PDF pages. No fallback, no CSS-scale, no debounce.
 
 import { nextScaleStep } from '../core/zoom-display.js';
-import { renderVectorPage } from './vector-renderer.js';
 import { state, getActiveDocument } from '../core/state.js';
 import { findAnnotationAt as _findAnnotationAt } from '../annotations/geometry.js';
 import { getTextLayerCssMatrix, resolveTextEditPageGeometry } from '../text/text-edit-appearance.js';
@@ -11,15 +10,16 @@ import {
   computeZoomBucket,
   getBestAvailableBitmap,
   ensureBitmap,
-  getCachedBitmap,
   registreerGetoondeBitmaps,
   ruimUitgesteldOp,
 } from './page-bitmap-cache.js';
 import { tileCoversViewport } from './tile-coverage.js';
 import { bepaalOverlayMaat, pasOverlayMaatToe } from './overlay-canvas-size.js';
 import { maakWielScroller } from './wiel-scroll.js';
+import { vloeiendScrollenAan } from '../core/vloeiend-scrollen.js';
 import { zoomNaDprWissel } from './schermkalibratie.js';
 import { maakFramePlanner, bewaakSchrijven } from './frame-planner.js';
+import { geenPanKnopMeer, installeerPanVangnet } from '../tools/pan-vangnet.js';
 import {
   normaliseerRotatie,
   vermenigvuldig,
@@ -380,9 +380,11 @@ async function _herschaalNaarNieuweDpr() {
 // direct door. Vroeger kreeg elke klik snelheid mee die per FRAME met 0,88
 // afnam: altijd 41 frames uitloop (0,7 s bij 60 fps, ruim 2 s op een zware
 // vectorpagina die het tempo naar 20 fps drukt) over ~2x de wieldelta.
+// Met vloeiend scrollen uit (standaard, #1007) schuift een klik direct op.
 const _wielScroll = maakWielScroller({
   nu: () => performance.now(),
   verschuif: (dx, dy) => _verschuifDoorWiel(dx, dy),
+  vloeiend: vloeiendScrollenAan,
 });
 
 function _verschuifDoorWiel(dx, dy) {
@@ -651,96 +653,6 @@ export function paginaRuimteMaat() {
 export function clampAndCenter() {
   // NO-OP — preserved as a function reference; all clamping/centering removed.
   return;
-}
-
-// Internal variant retained for the rare callers that genuinely want a
-// minimal "snap into viewport if completely lost" behavior (e.g. setPage on
-// a fresh document). Not called per-frame.
-export function clampAndCenterUnused_keptForReference() {
-  if (!_canvas || !viewport.pageW || !viewport.pageH) return;
-  // Use CSS-pixel viewport size (backing is dpr * css)
-  const dpr = _getDpr();
-  const vpW = _canvas.width / dpr;
-  const vpH = _canvas.height / dpr;
-  const pageScreenW = viewport.pageW * viewport.zoom;
-  const pageScreenH = viewport.pageH * viewport.zoom;
-
-  // When the user has explicitly anchored the view (zoom-to-cursor, pan),
-  // do NOT auto-center even if the page now fits the axis — otherwise the
-  // anchor point drifts back to the viewport center on the very next frame.
-  // For wheel zoom (cursor anchor) we also skip the on-screen clamp via
-  // _strictAnchor: an [0, vpW - pageScreenW] clamp would drag a page the
-  // cursor pulled off-center back toward 0, destroying the cursor anchor
-  // (user complaint: "zoom moet ook altijd naar positie muiscursor").
-  // For other anchored sources (setZoomAtPoint with center, pan) the on-
-  // screen clamp is still desirable and keeps the page fully visible on a
-  // fit-axis.
-  const anchored = _anchorActive;
-  const strict = _strictAnchor;
-
-  // Over-pan slack: how far the page can be positioned past the viewport
-  // edge on an overflow axis. Half-viewport means the user can scroll/pan
-  // until at most 50% of the viewport is gray (page-left at viewport-middle,
-  // or page-right at viewport-middle). Matches gangbaar viewer-gedrag
-  // where you can scroll past page edges to see surrounding gray space.
-  const OVERPAN_FRACTION = 0.5;
-
-  if (pageScreenW <= vpW) {
-    if (strict) {
-      // Wheel zoom-to-cursor: leave offsetX exactly where _anchorAt placed it
-    } else if (anchored) {
-      const minX = 0;                  // page left can't go past viewport left
-      const maxX = vpW - pageScreenW;  // page right can't go past viewport right
-      if (viewport.offsetX < minX) viewport.offsetX = minX;
-      if (viewport.offsetX > maxX) viewport.offsetX = maxX;
-    } else {
-      // Fits horizontally → center
-      viewport.offsetX = (vpW - pageScreenW) / 2;
-    }
-  } else {
-    // Page is bigger than viewport on this axis.
-    if (strict) {
-      // Wheel zoom-to-cursor: NO clamp. The cursor anchor math
-      // (offsetX = screenX − wx * newZoom) guarantees the world point under
-      // the cursor stays under the cursor — and thus on-screen — so the user
-      // cannot lose the page by zooming. Clamping here was the cause of the
-      // "geen fixatie rondom mijn muis" complaint at >200% zoom: the clamp
-      // dragged the page back toward viewport edges, breaking the anchor.
-    } else {
-      // Pan / non-strict anchor / default: allow over-pan past page edges
-      // with half-viewport slack. Previous behavior ("neither edge crosses
-      // the viewport edge") made the page feel pinned and prevented the user
-      // from panning past the page to see the surrounding gray area.
-      const SLACK_X = vpW * OVERPAN_FRACTION;
-      const minX = vpW - pageScreenW - SLACK_X;
-      const maxX = SLACK_X;
-      if (viewport.offsetX < minX) viewport.offsetX = minX;
-      if (viewport.offsetX > maxX) viewport.offsetX = maxX;
-    }
-  }
-
-  if (pageScreenH <= vpH) {
-    if (strict) {
-      // Wheel zoom-to-cursor: leave offsetY exactly where _anchorAt placed it
-    } else if (anchored) {
-      const minY = 0;
-      const maxY = vpH - pageScreenH;
-      if (viewport.offsetY < minY) viewport.offsetY = minY;
-      if (viewport.offsetY > maxY) viewport.offsetY = maxY;
-    } else {
-      viewport.offsetY = (vpH - pageScreenH) / 2;
-    }
-  } else {
-    if (strict) {
-      // Same reasoning as X axis above — cursor anchor must be honored.
-    } else {
-      const SLACK_Y = vpH * OVERPAN_FRACTION;
-      const minY = vpH - pageScreenH - SLACK_Y;
-      const maxY = SLACK_Y;
-      if (viewport.offsetY < minY) viewport.offsetY = minY;
-      if (viewport.offsetY > maxY) viewport.offsetY = maxY;
-    }
-  }
 }
 
 // Sticky flag set by zoom-to-cursor / pan / setZoomAtPoint. Once the user
@@ -1021,23 +933,6 @@ function _tekenViewport() {
     const destH = m.regionHpt * pxPerPt;
     const _tileSnap = _snapDrawSize(destW, destH, viewport.currentTile);
     _ctx.drawImage(viewport.currentTile, destX, destY, _tileSnap.w, _tileSnap.h);
-    _ctx.restore();
-  }
-
-  // VECTOR CONTENT — only run when this is NOT a raster-only page. Hybrid
-  // (mixed-content) pages can have both: raster background + vector overlay.
-  // Until pageType='hybrid' exists we treat pageType==='raster' as
-  // raster-only and skip the vector pass.
-  if (viewport.pageType !== 'raster') {
-    _ctx.save();
-    renderVectorPage(_ctx, viewport.filePath, viewport.pageNum, {
-      a: paginaNaarDevice[0],
-      b: paginaNaarDevice[1],
-      c: paginaNaarDevice[2],
-      d: paginaNaarDevice[3],
-      e: paginaNaarDevice[4],
-      f: paginaNaarDevice[5],
-    }, viewport.rotation);
     _ctx.restore();
   }
 
@@ -1691,16 +1586,16 @@ let _wiredCanvas = null;
 let _wiredMainView = null;
 
 /**
- * Start een middelmuis-pan in de viewport-weergave (enkele pagina).
+ * Start een tijdelijke pan in de viewport (middelknop, of spatie + links).
  * @returns {boolean} false als de viewport niet actief of niet bedraad is
  */
-export function startViewportMiddelmuisPan(e) {
+export function startViewportMiddelmuisPan(e, isMiddleButton = true) {
   if (!viewport.active || !_wiredCanvas || !_wiredMainView) return false;
   const rect = _wiredCanvas.getBoundingClientRect();
   startPan(e.clientX - rect.left, e.clientY - rect.top);
   try { _wiredMainView.setPointerCapture(e.pointerId); } catch (_) {}
   state.isPanning = true;
-  state.isMiddleButtonPanning = true;
+  state.isMiddleButtonPanning = isMiddleButton;
   return true;
 }
 
@@ -1749,7 +1644,7 @@ export function wireEvents(canvas) {
         e.stopPropagation();
         const rect = canvas.getBoundingClientRect();
         startPan(e.clientX - rect.left, e.clientY - rect.top);
-        mainView.setPointerCapture(e.pointerId);
+        try { mainView.setPointerCapture(e.pointerId); } catch (_) {}
         state.isPanning = true;
       }
       // else: let the event propagate so hand-tool.onPointerDown can handle it
@@ -1758,18 +1653,41 @@ export function wireEvents(canvas) {
 
   mainView.addEventListener('pointermove', (e) => {
     if (!_isPanning) return;
+    // Beweging zonder ingedrukte knop: het loslaten is gemist (#1013).
+    if (geenPanKnopMeer(e)) { breekViewportPanAf(); return; }
     const rect = canvas.getBoundingClientRect();
     updatePan(e.clientX - rect.left, e.clientY - rect.top);
   });
 
-  function _endPanAndCursor() {
-    if (_isPanning) {
-      state.isPanning = false;
-      state.isMiddleButtonPanning = false;
-    }
-    endPan();
-  }
+  mainView.addEventListener('pointerup', breekViewportPanAf);
+  mainView.addEventListener('pointercancel', breekViewportPanAf);
+  // De pan houdt de aanwijzer vast op .main-view; raakt die hem kwijt (ook
+  // zonder pointerup, bv. bij een vensterwissel), dan is de pan voorbij.
+  // Alleen voor de eigen vangst: lostpointercapture borrelt op vanuit het
+  // annotatiecanvas en hoort daar bij een ander gebaar.
+  mainView.addEventListener('lostpointercapture', (e) => {
+    if (e.target === mainView) breekViewportPanAf();
+  });
+  // Venster kwijt of pagina verborgen: de pan afbreken, het gereedschap
+  // blijft staan. Op window bewaard zodat een tweede bedrading (HMR, nieuw
+  // canvas) de vorige luisteraars vervangt in plaats van stapelt.
+  window.__pdfViewportPanVangnet?.();
+  window.__pdfViewportPanVangnet = installeerPanVangnet({
+    win: window,
+    doc: document,
+    breekAf: () => { if (_isPanning) breekViewportPanAf(); },
+  });
+}
 
-  mainView.addEventListener('pointerup', _endPanAndCursor);
-  mainView.addEventListener('pointercancel', _endPanAndCursor);
+/**
+ * Beëindig een viewport-pan (loslaten, afbreken of gemist loslaten). Ook de
+ * gedeelde pan-status gaat weg, zodat de cursor niet op 'grabbing' blijft.
+ * Idempotent.
+ */
+export function breekViewportPanAf() {
+  if (_isPanning) {
+    state.isPanning = false;
+    state.isMiddleButtonPanning = false;
+  }
+  endPan();
 }

@@ -1,4 +1,5 @@
 import { state, getActiveDocument, selectAllOnPage, clearSelection } from '../core/state.js';
+import { isVerwijderToets } from './verwijder-toets.js';
 import { undo, redo, recordAdd, recordModify, recordBulkModify, recordClearPage } from '../core/undo-manager.js';
 import { setTool } from './manager.js';
 import { heeftGekozenAfbeelding, wisAfbeeldingSelectie, deleteSelectedEmbeddedImage } from './tools/remove-image-tool.js';
@@ -16,10 +17,11 @@ import { actualSize, fitWidth, fitPage, goToPage } from '../pdf/renderer.js';
 import { draaiVanafKnop } from '../pdf/pagina-draaien.js';
 import { weergaveVectorNaarPagina } from '../pdf/weergave-ruimte.js';
 import { activeTab } from '../solid/stores/leftPanelStore.js';
+import { startNewCount } from '../solid/stores/countStore.js';
 import { savePDF, savePDFAs } from '../pdf/saver.js';
 import { toggleAnnotationsListPanel } from '../ui/panels/annotations-list.js';
 import { toggleLeftPanel } from '../ui/panels/left-panel.js';
-import { switchRibbonTab as switchToTab } from '../bridge.js';
+import { switchRibbonTab as switchToTab, copyStyleFromSelection, pasteStyleToSelection } from '../bridge.js';
 import { openFindBar, closeFindBar, onFindNext } from '../search/find-bar.js';
 import { closeActiveTab, wisselTabMetSneltoets } from '../ui/chrome/tabs.js';
 import { isTextEntryTarget, tabSneltoetsRichting, maakTabSneltoetsHandler, maakTabWisselaar } from '../ui/chrome/tab-sneltoets.js';
@@ -43,8 +45,9 @@ import { paginaSneltoetsRichting, paginaToetsVoorInvoer, paginaSprongDoel, maakP
 import { splitToetsOpdracht, splitToetsGeblokkeerd, isSplitOpdracht } from '../pdf/split-view/split-sneltoets.js';
 import {
   sneltoetsActief, eigenSneltoetsVoor, voerSneltoetsUit, sneltoetsInInvoer,
-  maakStandaardToets, zetIngebouwdeUitvoerder, isSneltoetsOpname,
+  maakStandaardToets, zetIngebouwdeUitvoerder, isSneltoetsOpname, sneltoetsReeksen, eigenLetter,
 } from '../core/keybindings/app-shortcuts.js';
+import { createSequenceMatcher } from '../core/keybindings/sequences.js';
 
 function redraw() {
   if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
@@ -78,6 +81,20 @@ function wisselObjectSnap() {
 
 // Een ingebouwde opdracht uitvoeren voor een zelf gekozen toets.
 async function voerIngebouwdeOpdrachtUit(id, e) {
+  if (['edit.copyStyle', 'edit.pasteStyle', 'edit.setDefaultStyle'].includes(id)) {
+    const doc = getActiveDocument();
+    if (!doc?.pdfDoc || modaalOpen() || isTextEntryTarget(e?.target)
+        || state.isEditingText || state.pdfTextEditState) return;
+    const selected = doc.selectedAnnotations?.[0] || doc.selectedAnnotation;
+    if (id === 'edit.copyStyle') {
+      if (selected) copyStyleFromSelection();
+    } else if (id === 'edit.pasteStyle') {
+      if (!isPdfAReadOnly()) pasteStyleToSelection();
+    } else if (selected && !selected.locked) {
+      setAsDefaultStyle(selected);
+    }
+    return;
+  }
   if (id === 'search.find') { openFindBar(); return; }
   if (id === 'search.findNext') {
     if (state.search.isOpen) onFindNext();
@@ -87,6 +104,11 @@ async function voerIngebouwdeOpdrachtUit(id, e) {
   if (id === 'drafting.objectSnap') { wisselObjectSnap(); return; }
   // Ctrl+P staat in main.js (vóór de afdrukdialoog van de WebView), F2 in proofreading-mode.js.
   if (id === 'file.print') { showPrintDialog(); return; }
+  // Alle tabbladen sluiten (#1156): geen standaardtoets; niet achter een open venster.
+  if (id === 'file.closeAll') {
+    if (!modaalOpen()) import('../ui/chrome/tabs-sluiten.js').then(m => m.sluitAlleTabs()).catch((err) => console.warn('[tabs] alles sluiten mislukt:', err));
+    return;
+  }
   if (id === 'review.proofreading') { toggleProofreading(); return; }
   // Gesplitste weergave (#858); Groter/Kleiner hebben geen standaardtoets.
   if (isSplitOpdracht(id)) {
@@ -181,7 +203,7 @@ function _buildEscapeToolContext() {
 
 // ── CAD-style two-letter command chords (AutoCAD-style command line) ──
 // Map of command → action. Two-letter codes win over one-letter codes; if a
-// one-letter prefix is also a valid command, the timeout fires it after CHORD_MS.
+// one-letter prefix is also a valid command, the timeout fires it (sequences.js).
 const CAD_CHORDS = {
   // 't' alleen = tekstvak (bestaande enkel-toets-sneltoets). Moet als
   // chord-commando geregistreerd staan: de buffer consumeert 't' als prefix
@@ -247,52 +269,41 @@ function createSimilarFromSelection() {
     setTool(toolName);
   }
 }
-const CHORD_MS = 1200;
-let _chordBuffer = '';
-let _chordTimer = null;
+// De letters worden herkend door sequences.js, samen met de toetsreeksen uit
+// de sneltoetsen ("D L" = Lijn, aanpasbaar onder Voorkeuren). Een reeks uit de
+// sneltoetsen gaat voor een ingebouwd commando met dezelfde letters.
+// De wachttijd (ongeveer een seconde) staat in sequences.js.
+let _reeksHerkenner = null;
+function reeksHerkenner() {
+  if (!_reeksHerkenner) _reeksHerkenner = createSequenceMatcher() || null;
+  return _reeksHerkenner;
+}
 
-function _resetChord() {
-  _chordBuffer = '';
-  if (_chordTimer) { clearTimeout(_chordTimer); _chordTimer = null; }
+// De tabel van dit moment: letters -> actie.
+function reeksTabel(e) {
+  const tabel = new Map();
+  // Een letter die de gebruiker zelf aan een opdracht gaf (#714), gaat voor
+  // de ingebouwde commando's die ermee beginnen.
+  for (const [letters, actie] of Object.entries(CAD_CHORDS)) {
+    if (!eigenLetter(letters[0])) tabel.set(letters, actie);
+  }
+  // Toetsreeksen alleen zonder Shift (Caps Lock geeft geen shiftKey).
+  if (!e.shiftKey) {
+    const reeksen = sneltoetsReeksen();
+    if (reeksen instanceof Map) {
+      for (const [letters, id] of reeksen) tabel.set(letters, () => { voerSneltoetsUit(id); });
+    }
+  }
+  return tabel;
 }
 
 // Returns true if the keystroke was consumed by the chord system.
-function _cadChordTry(letter) {
-  // Skip if a single-key tool shortcut would handle this letter alone (G is
-  // already returned-on earlier; A toggles arc-mode; Esc/Tab handled separately).
-  if (letter === 'g' || letter === 'a') return false;
-
-  const next = _chordBuffer + letter;
-
-  // Langere chords winnen van korte: een exacte match vuurt alleen direct
-  // als hij GEEN prefix van een langere chord is ('t' wacht dus op de
-  // time-out zodat 'tr'/'tx'/'tl' bereikbaar blijven).
-  const isPrefix = Object.keys(CAD_CHORDS).some(k => k.startsWith(next) && k !== next);
-
-  // Exact match zonder langere kandidaat: fire and clear.
-  if (CAD_CHORDS[next] && !isPrefix) {
-    _resetChord();
-    try { CAD_CHORDS[next](); } catch (_) {}
-    return true;
-  }
-
-  // Prefix of some longer chord? Buffer and wait.
-  if (isPrefix) {
-    _chordBuffer = next;
-    if (_chordTimer) clearTimeout(_chordTimer);
-    _chordTimer = setTimeout(() => {
-      // Timeout: if the buffer itself is a valid (single-letter) command, fire it.
-      if (CAD_CHORDS[_chordBuffer]) {
-        try { CAD_CHORDS[_chordBuffer](); } catch (_) {}
-      }
-      _resetChord();
-    }, CHORD_MS);
-    return true;
-  }
-
-  // No match and not a prefix → reset and let the keystroke fall through.
-  _resetChord();
-  return false;
+function _cadChordTry(letter, e) {
+  // G (verplaatsen) is hierboven al afgehandeld en hoort nooit bij een reeks.
+  if (letter === 'g') return false;
+  const herkenner = reeksHerkenner();
+  if (!herkenner) return false;
+  return herkenner.key(letter, reeksTabel(e));
 }
 
 // ── Tabblad wisselen: Ctrl+Tab / Ctrl+PageDown en terug (#539) ─────────────
@@ -586,10 +597,14 @@ export async function handleKeydown(e) {
   // "L"=Line, "C"=Circle, "M"=Move, "CO"=Copy, "TR"=Trim, "EX"=Extend, ...).
   // Buffer alphabetic keys for ~1.2s; on each keystroke check for a match.
   // No modifier keys (ctrl/alt) and not while a tool is mid-operation.
-  // Een letter die de gebruiker zelf aan een opdracht gaf (#714), gaat voor.
-  if (!ctrl && !e.altKey && /^[a-zA-Z]$/.test(e.key) && !isGMoveModeActive() && !isGRotateModeActive() && !typeLengthActive()
-      && !eigenSneltoetsVoor(e, { modalOpen: dialoogOpen })) {
-    if (_cadChordTry(e.key.toLowerCase())) {
+  // Ook de toetsreeksen uit de sneltoetsen ("D L" = Lijn), zie sequences.js.
+  // Een letter die de gebruiker zelf aan een opdracht gaf (#714), gaat voor de
+  // ingebouwde commando's (reeksTabel); met Shift gaat zo'n eigen toets
+  // helemaal voor. Niet in een modaal venster. Escape vergeet de reeks.
+  if (e.key === 'Escape') reeksHerkenner()?.cancel?.();
+  if (!ctrl && !e.altKey && !dialoogOpen && /^[a-zA-Z]$/.test(e.key) && !isGMoveModeActive() && !isGRotateModeActive() && !typeLengthActive()
+      && !(shift && eigenSneltoetsVoor(e, { modalOpen: dialoogOpen }))) {
+    if (_cadChordTry(e.key.toLowerCase(), e)) {
       e.preventDefault();
       return;
     }
@@ -626,6 +641,16 @@ export async function handleKeydown(e) {
     }
     state.measurePoints = null;
     redraw();
+    return;
+  }
+
+  // Enter met het telgereedschap: een nieuwe telling (#1004) - een nieuwe
+  // groep met eigen naam en kleur, de nummering begint weer bij 1. Zelfde als
+  // de knop Nieuwe telling in het lint.
+  if (e.key === 'Enter' && state.currentTool === 'count' && !ctrl && !shift && !e.altKey
+      && !isInInput && !dialoogOpen && getActiveDocument()?.pdfDoc && !isPdfAReadOnly()) {
+    e.preventDefault();
+    startNewCount();
     return;
   }
 
@@ -704,7 +729,7 @@ async function voerStandaardToetsUit(e) {
       }
       redraw();
     }
-  } else if (e.key === 'Delete') {
+  } else if (isVerwijderToets(e)) {
     if (!aan(e, 'edit.delete', 'Delete')) return;
     e.preventDefault();
     if (heeftGekozenAfbeelding()) {
@@ -953,6 +978,12 @@ async function voerStandaardToetsUit(e) {
     showDocPropertiesDialog();
   } else if (ctrl && shortcutKey === 'l') {
     if (!aan(e, 'view.fullscreen', 'Ctrl+L')) return;
+    e.preventDefault();
+    toggleFullscreen();
+  } else if (e.altKey && !ctrl && !shift && e.key === 'Enter') {
+    // Tweede toets voor volledig scherm (#1137): een browser houdt Ctrl+L
+    // zelf (de adresbalk), dus in de webversie komt die toets nooit aan.
+    if (!aan(e, 'view.fullscreen', 'Alt+Enter')) return;
     e.preventDefault();
     toggleFullscreen();
   }

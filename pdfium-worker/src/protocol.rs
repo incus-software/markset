@@ -13,6 +13,10 @@ pub enum Request {
         /// (older app) = off.
         #[serde(default)]
         thin_lines: bool,
+        /// Every widget's stored appearance (page thumbnails, #1101). Absent
+        /// = the screen look: editable fields are left to the HTML form layer.
+        #[serde(default)]
+        forms: bool,
     },
     RenderRegion {
         id: u64,
@@ -26,7 +30,45 @@ pub enum Request {
         region_h_pt: f32,
         #[serde(default)]
         thin_lines: bool,
+        /// Annotation appearances drawn in, as pdf.js does with
+        /// annotationMode 1 (stamp images at load). Absent = the screen tile:
+        /// the app draws its own annotations.
+        #[serde(default)]
+        annotations: bool,
     },
+    /// Pixelvergelijking van een paginapaar (#465), zie compare/mod.rs.
+    Compare(crate::compare::CompareRequest),
+    /// Snap-geometrie van een pagina (snap_geometry.rs). Het resultaat kan
+    /// groter zijn dan de SHM-regio: de app haalt het in stukken op met
+    /// oplopende `offset`; de worker bewaart het resultaat tot het laatste stuk
+    /// is opgehaald.
+    SnapGeometry {
+        id: u64,
+        path: String,
+        page_index: u32,
+        /// Weergavematrix van de pagina bij schaal 1 (a, b, c, d, e, f).
+        viewport: [f64; 6],
+        #[serde(default)]
+        offset: u64,
+    },
+    /// Zoektekst van pagina's `first..first + count` (page_text/mod.rs). Het
+    /// antwoord kan minder pagina's bevatten (tijds- of groottebudget); de
+    /// app vraagt dan vanaf daar verder.
+    PageText {
+        id: u64,
+        path: String,
+        first: u32,
+        count: u32,
+        /// Bestandslengte die de app heeft; afwijkend op schijf = fout.
+        #[serde(default)]
+        expect_len: Option<u64>,
+        #[serde(default = "standaard_tekstbudget")]
+        budget_ms: u32,
+    },
+    /// Symbolen zoeken op een paginabeeld (raster_scan/mod.rs).
+    SymbolScan(crate::raster_scan::SymbolScanRequest),
+    /// Formuliervormen op een paginabeeld (raster_scan/mod.rs).
+    FormShapes(crate::raster_scan::FormShapesRequest),
     /// Sluit open pagina-handles (parse-state, honderden MB's op zware
     /// CAD-pagina's); documenten blijven gecachet. Fire-and-forget: geen
     /// response. Gestuurd door de pool bij inactiviteit.
@@ -34,11 +76,31 @@ pub enum Request {
     Shutdown,
 }
 
+fn standaard_tekstbudget() -> u32 {
+    150
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum Response {
-    Ready { op: String, shm_name: String, shm_size: u64 },
+    /// `caps`: aanvragen die deze worker kent naast render/render_region. De
+    /// app stuurt een nieuwe soort aanvraag alleen naar een worker die hem
+    /// noemt; een oudere sidecar zonder `caps` krijgt hem nooit.
+    Ready {
+        op: String,
+        shm_name: String,
+        shm_size: u64,
+        #[serde(default)]
+        caps: Vec<String>,
+    },
     RenderOk { id: u64, ok: bool, w: u32, h: u32, shm_bytes: u64 },
+    /// Eén stuk snap-geometrie in de SHM-regio: `shm_bytes` vanaf `offset`
+    /// van in totaal `total_bytes`. `ms` = extractietijd (0 voor een stuk uit
+    /// het bewaarde resultaat).
+    SnapOk { id: u64, ok: bool, total_bytes: u64, offset: u64, shm_bytes: u64, ms: f64 },
+    /// Zoektekst (`OPT1`) in de SHM-regio: `pages` pagina's vanaf de
+    /// gevraagde, van de `page_count` in het document; `ms` = leestijd.
+    TextOk { id: u64, ok: bool, op: String, pages: u32, page_count: u32, shm_bytes: u64, ms: f64 },
     RenderErr { id: u64, ok: bool, error: String },
 }
 
@@ -55,6 +117,7 @@ mod tests {
             scale: 0.25,
             rotation: 0,
             thin_lines: true,
+            forms: true,
         };
         let line = serde_json::to_string(&req).unwrap();
         let parsed: Request = serde_json::from_str(&line).unwrap();
@@ -71,7 +134,7 @@ mod tests {
             r#"{"op":"render_region","id":2,"path":"a.pdf","page_index":0,"scale":1.0,"rotation":0,
                 "region_x_pt":0,"region_y_pt":0,"region_w_pt":10,"region_h_pt":10}"#,
         ).unwrap();
-        assert!(matches!(region, Request::RenderRegion { thin_lines: false, .. }));
+        assert!(matches!(region, Request::RenderRegion { thin_lines: false, annotations: false, .. }));
     }
 
     #[test]
@@ -85,6 +148,112 @@ mod tests {
                 "region_x_pt":0,"region_y_pt":0,"region_w_pt":10,"region_h_pt":10,"thin_lines":true}"#,
         ).unwrap();
         assert!(matches!(region, Request::RenderRegion { thin_lines: true, .. }));
+    }
+
+    /// Page thumbnails ask for every widget's stored appearance (#1101); the
+    /// interactive view, and any older app, for the screen look.
+    #[test]
+    fn forms_flag_defaults_to_the_screen_look() {
+        let render: Request = serde_json::from_str(
+            r#"{"op":"render","id":1,"path":"a.pdf","page_index":0,"scale":1.0,"rotation":0}"#,
+        ).unwrap();
+        assert!(matches!(render, Request::Render { forms: false, .. }));
+        let render: Request = serde_json::from_str(
+            r#"{"op":"render","id":1,"path":"a.pdf","page_index":0,"scale":1.0,"rotation":0,"forms":true}"#,
+        ).unwrap();
+        assert!(matches!(render, Request::Render { forms: true, .. }));
+    }
+
+    #[test]
+    fn compare_request_reads_what_the_app_sends() {
+        // Vorm uit js/compare/rust-compare.js (buildRustRequest) + op/id van de pool.
+        let line = r#"{"op":"compare","id":7,
+            "old":{"path":"C:/a.pdf","page_index":0,"width_pt":1190.55,"height_pt":841.89,"expect_len":1234},
+            "new":{"path":"C:/b.pdf","page_index":2,"width_pt":1190.55,"height_pt":841.89,"expect_len":null},
+            "px_per_pt":1.7638888888888888,"threshold":96,
+            "params":{"tolerance_px":1,"min_area_px":5,"merge_px":8,"noise_px":1},
+            "auto_align":{"measure_ratio":null},"skip_detect":false}"#;
+        let Request::Compare(req) = serde_json::from_str(line).unwrap() else { panic!("not a compare request") };
+        assert_eq!(req.id, 7);
+        assert_eq!(req.old.expect_len, Some(1234));
+        assert_eq!(req.new.expect_len, None);
+        assert_eq!(req.new.page_index, 2);
+        assert_eq!(req.params.unwrap().merge_px, 8.0);
+        assert_eq!(req.params.unwrap().max_runs, 2_000_000.0);
+        assert!(req.auto_align.is_some() && req.alignment.is_none());
+        // Handmatige uitlijning, zonder optionele velden.
+        let manual: Request = serde_json::from_str(
+            r#"{"op":"compare","id":8,"old":{"path":"a","page_index":0,"width_pt":10,"height_pt":10},
+                "new":{"path":"b","page_index":0,"width_pt":10,"height_pt":10},"px_per_pt":1,"threshold":96,
+                "alignment":{"dx":1.5,"dy":0,"rotation":0.25,"scale":1}}"#,
+        ).unwrap();
+        let Request::Compare(m) = manual else { panic!() };
+        assert_eq!(m.alignment.unwrap().dx, 1.5);
+        assert!(!m.skip_detect && m.params.is_none());
+    }
+
+    #[test]
+    fn ready_names_the_compare_capability() {
+        let ready = Response::Ready { op: "ready".into(), shm_name: "x".into(), shm_size: 1, caps: vec!["compare".into()] };
+        assert!(serde_json::to_string(&ready).unwrap().contains(r#""caps":["compare"]"#));
+    }
+
+    #[test]
+    fn snap_geometry_request_parses_with_default_offset() {
+        let req: Request = serde_json::from_str(
+            r#"{"op":"snap_geometry","id":7,"path":"a.pdf","page_index":2,"viewport":[1,0,0,-1,0,842]}"#,
+        ).unwrap();
+        assert_eq!(req, Request::SnapGeometry {
+            id: 7, path: "a.pdf".into(), page_index: 2,
+            viewport: [1.0, 0.0, 0.0, -1.0, 0.0, 842.0], offset: 0,
+        });
+    }
+
+    #[test]
+    fn ready_announces_snap_geometry() {
+        let ready = Response::Ready {
+            op: "ready".into(), shm_name: "x".into(), shm_size: 1,
+            caps: vec!["snap_geometry".into()],
+        };
+        assert!(serde_json::to_string(&ready).unwrap().contains(r#""caps":["snap_geometry"]"#));
+    }
+
+    #[test]
+    fn raster_scan_requests_read_what_the_app_sends() {
+        // Vorm uit js/pdf/raster-scan-rust.js + op/id van de pool.
+        let line = r#"{"op":"symbol_scan","id":3,
+            "raster":{"path":"C:/a.pdf","page_index":1,"width":1200,"height":849,"rotation":90,"expect_len":77},
+            "crop":[10.5,20,48,48],"search":false}"#;
+        let Request::SymbolScan(req) = serde_json::from_str(line).unwrap() else { panic!("not a symbol scan") };
+        assert_eq!((req.id, req.raster.width, req.raster.rotation, req.raster.expect_len), (3, 1200, 90, Some(77)));
+        assert_eq!(req.crop, Some([10.5, 20.0, 48.0, 48.0]));
+        assert!(!req.search && req.template.is_none());
+        assert_eq!((req.threshold, req.rotations, req.scales), (0.75, vec![0.0], vec![1.0]));
+        let line = r#"{"op":"symbol_scan","id":4,"raster":{"path":"a","page_index":0,"width":10,"height":10},
+            "template":{"width":2,"height":1,"pixels":"10"},"threshold":0.9,"rotations":[0,90],"scales":[0.8,1]}"#;
+        let Request::SymbolScan(req) = serde_json::from_str(line).unwrap() else { panic!() };
+        assert!(req.search && req.crop.is_none() && req.raster.rotation == 0 && req.raster.expect_len.is_none());
+        assert_eq!(req.template.unwrap().pixels, "10");
+        let line = r#"{"op":"form_shapes","id":5,"raster":{"path":"a","page_index":2,"width":1600,"height":1132,"rotation":270},"scale":1.9}"#;
+        let Request::FormShapes(req) = serde_json::from_str(line).unwrap() else { panic!("not form shapes") };
+        assert_eq!((req.id, req.raster.page_index, req.raster.rotation, req.scale), (5, 2, 270, 1.9));
+    }
+
+    #[test]
+    fn page_text_request_parses_with_defaults() {
+        let req: Request = serde_json::from_str(r#"{"op":"page_text","id":9,"path":"a.pdf","first":3,"count":20}"#).unwrap();
+        assert_eq!(req, Request::PageText { id: 9, path: "a.pdf".into(), first: 3, count: 20, expect_len: None, budget_ms: 150 });
+        let req: Request = serde_json::from_str(
+            r#"{"op":"page_text","id":9,"path":"a.pdf","first":0,"count":1,"expect_len":1234,"budget_ms":40}"#,
+        ).unwrap();
+        assert!(matches!(req, Request::PageText { expect_len: Some(1234), budget_ms: 40, .. }));
+    }
+
+    #[test]
+    fn text_ok_names_its_op() {
+        let r = Response::TextOk { id: 1, ok: true, op: "page_text".into(), pages: 2, page_count: 9, shm_bytes: 64, ms: 1.5 };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(s.contains(r#""op":"page_text""#) && s.contains(r#""pages":2"#) && s.contains(r#""page_count":9"#));
     }
 
     #[test]

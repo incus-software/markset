@@ -1,3 +1,6 @@
+import { fontkitReverseSubstitution } from './scripts/fontkit-reverse-substitution.mjs';
+import { pdfLibXRefBounds } from './scripts/pdf-lib-xref-bounds.mjs';
+import { pdfLibInternPools } from './scripts/pdf-lib-intern-pools.mjs';
 // Bouwdoel `web-unit` — los van de bureaubladversie.
 //
 // Deze config raakt `vite.config.js` en `npm run build` niet aan: eigen root,
@@ -25,7 +28,7 @@ export default defineConfig({
   // Dezelfde PDF.js-worker-backports als de app (#839, #878, #638), op de moderne
   // build die de unit importeert; web-unit/src/viewer.js laadt hem via de
   // virtuele module, zodat dev en build nooit de ongepatchte worker krijgen.
-  plugins: [pdfjsPostscriptProgress({ workerPath: 'build/pdf.worker.mjs' })],
+  plugins: [fontkitReverseSubstitution(), pdfLibXRefBounds(), pdfLibInternPools(), pdfjsPostscriptProgress({ workerPath: 'build/pdf.worker.mjs' })],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -47,9 +50,15 @@ export default defineConfig({
     target: 'es2022',
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
+      // Een gewone Vite-bouw gooit de exports van een entry weg; de gastheer
+      // importeert juist `mount`, `OpenPdfStudio` en `EVENTS` uit
+      // `open-pdf-studio.js`. Zonder deze regel bleef daar alleen een interne
+      // export over (#451).
+      preserveEntrySignatures: 'exports-only',
       input: {
         'open-pdf-studio': resolve(__dirname, 'web-unit/src/index.js'),
         demo: resolve(__dirname, 'web-unit/demo/index.html'),
+        voorbeeld: resolve(__dirname, 'web-unit/voorbeeld/index.html'),
       },
       output: {
         // Een vaste naam voor het script dat de gastheer insluit; alles wat

@@ -1,4 +1,6 @@
 import { state, getActiveDocument, isSelected, getAnnotationBounds, addToSelection, removeFromSelection } from '../../core/state.js';
+import i18next from '../../i18n/config.js';
+import { statusKleur, statusNaam, statusLijst, vergelijkStatus, statusSleutelVan } from '../../review/status-sets.js';
 import { getTypeDisplayName, getAnnotationDisplayName, createDateFormatter } from '../../utils/helpers.js';
 import {
   withoutFoldedChildren, listPreview, expandCorrectionGroups, replaceParentOf,
@@ -7,6 +9,7 @@ import { showProperties, showMultiSelectionProperties } from './properties-panel
 import { goToPage } from '../../pdf/renderer.js';
 import { viewport, markAnchored } from '../../pdf/pdf-viewport.js';
 import { stopAlleWielScrollers } from '../../pdf/wiel-scroll.js';
+import { scrollGedrag } from '../../core/vloeiend-scrollen.js';
 import { redrawAnnotations } from '../../annotations/rendering.js';
 import { paginaNaarWeergave } from '../../pdf/weergave-ruimte.js';
 import { switchLeftPanelTab } from './left-panel.js';
@@ -23,13 +26,10 @@ import {
   refreshAnnotationLayers,
 } from '../../bridge.js';
 
-const statusColors = {
-  'accepted': '#22c55e',
-  'rejected': '#ef4444',
-  'cancelled': '#6b7280',
-  'completed': '#3b82f6',
-  'reviewed': '#8b5cf6'
-};
+// Statuskleur en -naam, ook voor eigen statussen (#1076, review/status-sets.js).
+const eigenStatusLijst = () => statusLijst(state.preferences);
+const tStatus = (sleutel) => i18next.t(sleutel, { ns: 'context' });
+const statusTitel = (status, label) => statusNaam(status, eigenStatusLijst(), tStatus, label);
 
 // Toggle annotations list panel visibility
 export function toggleAnnotationsListPanel() {
@@ -144,7 +144,10 @@ export function updateAnnotationsList(filterValue) {
 
   // De volgorde rekent op één plek (opmerkingen-overzicht.js), zodat lijst,
   // CSV en rapport dezelfde volgorde hebben.
-  filteredAnnotations = sorteerOpmerkingen(filteredAnnotations, currentSort, { typeNaam: getTypeDisplayName });
+  // Op status: de volgorde van de statussets, niet het alfabet (#1076).
+  const statussen = eigenStatusLijst();
+  const opStatus = (a, b) => vergelijkStatus(a, b, statussen);
+  filteredAnnotations = sorteerOpmerkingen(filteredAnnotations, currentSort, { typeNaam: getTypeDisplayName, vergelijkStatus: opStatus });
 
   if (filteredAnnotations.length === 0) {
     setEmptyMessage('No annotations found');
@@ -170,8 +173,6 @@ export function updateAnnotationsList(filterValue) {
 
   const getLastStatusAuthor = laatsteStatusAuteur;
 
-  // Helper to capitalize status
-  const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
   // Group annotations based on sort mode
   const groups = {};
@@ -192,9 +193,9 @@ export function updateAnnotationsList(filterValue) {
     } else if (currentSort === 'subject') {
       groupKey = ann.subject || '(No Subject)';
     } else if (currentSort === 'status') {
-      groupKey = ann.status || 'none';
+      groupKey = statusSleutelVan(ann.status);
     } else if (currentSort === 'statusAndAuthor') {
-      const s = ann.status || 'none';
+      const s = statusSleutelVan(ann.status);
       const a = ann.author || 'User';
       groupKey = `${s}|${a}`;
     } else if (currentSort === 'lastStatusAuthor') {
@@ -215,6 +216,14 @@ export function updateAnnotationsList(filterValue) {
     groupKeys.sort((a, b) => a - b);
   } else if (currentSort === 'modifiedDate' || currentSort === 'creationDate') {
     // Keep insertion order (already sorted by date)
+  } else if (currentSort === 'status') {
+    groupKeys.sort(opStatus);
+  } else if (currentSort === 'statusAndAuthor') {
+    groupKeys.sort((a, b) => {
+      const [sa, aa] = a.split('|');
+      const [sb, ab] = b.split('|');
+      return opStatus(sa, sb) || String(aa).localeCompare(String(ab));
+    });
   } else {
     groupKeys.sort((a, b) => String(a).localeCompare(String(b)));
   }
@@ -227,10 +236,10 @@ export function updateAnnotationsList(filterValue) {
     } else if (currentSort === 'color') {
       headerColor = key;
     } else if (currentSort === 'status') {
-      headerLabel = capitalize(key);
+      headerLabel = statusTitel(key, groups[key][0]?.statusLabel);
     } else if (currentSort === 'statusAndAuthor') {
       const [s, a] = key.split('|');
-      headerLabel = `${capitalize(s)} — ${a}`;
+      headerLabel = `${statusTitel(s, groups[key][0]?.statusLabel)} — ${a}`;
     } else if (currentSort === 'page') {
       // page number stored in item.page
     } else {
@@ -248,7 +257,7 @@ export function updateAnnotationsList(filterValue) {
 
     // Annotation item entries
     groups[key].forEach(ann => {
-      const hasStatus = ann.status && ann.status !== 'none';
+      const hasStatus = statusSleutelVan(ann.status) !== 'none';
       const replyCount = (ann.replies && ann.replies.length) || 0;
       const preview = listPreview(ann, byId) || ann.text;
 
@@ -262,8 +271,8 @@ export function updateAnnotationsList(filterValue) {
         color: ann.color || ann.strokeColor || '#000',
         text: preview ? preview.substring(0, 50) + (preview.length > 50 ? '...' : '') : null,
         meta: `[${ann.author || 'User'}] - ${formatDate(ann.modifiedAt)}`,
-        statusColor: hasStatus ? (statusColors[ann.status] || '#888') : null,
-        statusTitle: hasStatus ? capitalize(ann.status) : null,
+        statusColor: hasStatus ? statusKleur(ann.status, eigenStatusLijst()) : null,
+        statusTitle: hasStatus ? statusTitel(ann.status, ann.statusLabel) : null,
         replyCount,
         selected: selected.has(ann)
       }));
@@ -330,12 +339,12 @@ export function scrollToAnnotation(annotation) {
     const scrollY = wrapperOffset + canvasOffset + centerY - pdfContainer.clientHeight / 2;
     // Een lopende wieluitloop zou deze vloeiende sprong afbreken (#522).
     stopAlleWielScrollers();
-    pdfContainer.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: 'smooth' });
+    pdfContainer.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: scrollGedrag() });
   } else {
     const scrollX = centerX - pdfContainer.clientWidth / 2;
     const scrollY = centerY - pdfContainer.clientHeight / 2;
     stopAlleWielScrollers();
-    pdfContainer.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: 'smooth' });
+    pdfContainer.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: scrollGedrag() });
   }
 }
 

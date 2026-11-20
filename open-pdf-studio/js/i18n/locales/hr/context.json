@@ -3,6 +3,7 @@
     "openPopUpNote": "Otvori skočnu bilješku",
     "hidePopUpNote": "Sakrij skočnu bilješku",
     "resetPopUpLocation": "Poništi položaj skočne bilješke",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Uredi tekst...",
     "addReply": "Dodaj odgovor",
     "locked": "Zaključano",
@@ -12,11 +13,13 @@
     "printable": "Za ispis",
     "status": "Status",
     "showByStatus": "Prikaži prema statusu",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Ništa",
     "statusAccepted": "Prihvaćeno",
     "statusCancelled": "Otkazano",
     "statusCompleted": "Završeno",
     "statusRejected": "Odbijeno",
+    "statusReviewed": "Pregledano",
     "reviewHistory": "Povijest pregleda...",
     "layer": "Sloj:",
     "noLayersAvailable": "Nema dostupnih slojeva",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Dodaj točke u lanac kota",
     "dimChainRemove": "Ukloni pomoćnu liniju iz lanca",
     "selectRoom": "Odaberi prostoriju",
+    "checkScale": "Provjeri mjerilo ovom linijom...",
     "saveToToolSet": "Spremi u skup alata"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Centriraj okomito",
     "distributeHorizontally": "Rasporedi vodoravno",
     "distributeVertically": "Rasporedi okomito",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Odreži kutove zidova",
     "deleteAnnotations": "Obriši {{count}} oznaka",
     "deleteConfirm": "Obrisati {{count}} oznaka?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Ugnijezdi pod novu knjižnu oznaku...",
     "indent": "Povećaj uvlaku",
     "outdent": "Smanji uvlaku",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Izbriši knjižne oznake ({{count}})"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Umetni iz datoteke...",
     "insertFromFileBefore": "Ispred ove stranice...",
     "insertFromFileAfter": "Iza ove stranice...",
-    "pageLabels": "Oznake stranica (izrada naziva)..."
+    "pageLabels": "Oznake stranica (izrada naziva)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Istakni odabrano",
     "strikethroughSelection": "Precrtaj odabrano",
     "underlineSelection": "Podcrtaj odabrano",
-    "curvedLeaderSelection": "Dodaj zakrivljeni oblačić"
+    "curvedLeaderSelection": "Dodaj zakrivljeni oblačić",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Obrisati ovu oznaku?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Obriši vrh",
     "insertVertex": "Umetni vrh ovdje",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Pretvori u luk",
     "convertToLine": "Pretvori u liniju"
   },

@@ -23,12 +23,27 @@ export function leftOutImports(source) {
   return [...found];
 }
 
+// Test helpers (`*.testhulp.mjs`) imported by a test file: their imports count
+// as the test's own. App source is not followed, since it may load a left-out
+// package only when it is there.
+const HELPER_IMPORT = /(?:from\s+|import\s*\(\s*)['"](\.{1,2}\/[^'"]*testhulp[^'"]*)['"]/g;
+
+function sourceWithHelpers(file, seen = new Set()) {
+  if (seen.has(file)) return '';
+  seen.add(file);
+  let source = fs.readFileSync(file, 'utf8');
+  for (const m of [...source.matchAll(HELPER_IMPORT)]) {
+    try { source += '\n' + sourceWithHelpers(path.resolve(path.dirname(file), m[1]), seen); } catch { /* missing helper: the test reports it */ }
+  }
+  return source;
+}
+
 /** Split test files into those that can run and those skipped for a missing package. */
 export function splitRunnable(files, appDir) {
   const run = [], skipped = [];
   for (const file of files) {
     let source = '';
-    try { source = fs.readFileSync(path.join(appDir, file), 'utf8'); } catch { run.push(file); continue; }
+    try { source = sourceWithHelpers(path.join(appDir, file)); } catch { run.push(file); continue; }
     const missing = leftOutImports(source).filter((p) => !fs.existsSync(path.join(appDir, 'node_modules', p)));
     if (missing.length) skipped.push({ file, missing }); else run.push(file);
   }
