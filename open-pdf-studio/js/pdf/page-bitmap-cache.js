@@ -19,18 +19,27 @@ import { invalidateRenderDiagnostics } from './render-diagnostics.js';
  */
 
 import { isTauri, invoke } from '../core/platform.js';
-import { sharpenPageRgba } from './render-sharpen-pref.js';
+import { pageSharpenLevel, sharpenRoute } from './render-sharpen-pref.js';
+import { sharpenAmount } from './render-sharpen.js';
 import { thinLinesKey, thinLinesOn } from './thin-lines.js';
 import { RENDER_PRIORITY, isRenderCancelled, renderQueue } from './render-queue.js';
+import { bitmapsToEvict, pickPreviewBitmap, roundRenderScale } from './zoom-render-plan.js';
+import { rgbaToImageBitmap } from './rgba-bitmap.js';
 
 // Map<key, { bitmap: ImageBitmap, w, h, scale }>
 const _cache = new Map();
 
 // In-flight renders so we don't double-fire for the same key
 const _pending = new Map(); // key -> Promise
+// Who still wants each in-flight render (see ensureExactBitmap): a render
+// whose every requester has moved on is dropped from the render queue.
+const _pendingWanted = new Map(); // key -> Set<() => boolean>
 
-// Per-page bookkeeping (drop oldest entries above limit)
+// Drop oldest entries above either limit. A whole-page bitmap of a 36" x 48"
+// sheet at the 4096 px axis cap is 4096 x 3072 x 4 = 48 MB, so a count alone
+// does not bound memory: twelve of those would be over half a gigabyte.
 const MAX_ENTRIES = 12;
+const MAX_BYTES = 320 * 1024 * 1024;
 
 function _key(filePath, pageNum, rotation, zoomBucket, thin = thinLinesOn()) {
   return `${filePath}:${pageNum}:${(rotation || 0) % 360}:${zoomBucket}:${thinLinesKey(thin)}`;
@@ -189,35 +198,51 @@ export function setCachedBitmapEntry(filePath, pageNum, rotation, zoomBucket, bi
 export function getBestAvailableBitmap(filePath, pageNum, rotation, targetBucket, thin = thinLinesOn()) {
   const exact = getCachedBitmap(filePath, pageNum, rotation, targetBucket, thin);
   if (exact) return exact;
-  // Search by proximity (in log space) to targetBucket. Includes the higher
-  // buckets that computeZoomBucket can now produce so a tile prefetched at
-  // scale=1.0 (bucket=1) is still findable as a fallback at zoom 16x or
-  // higher (bucket=16 or 32).
-  const buckets = [0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128];
-  const sorted = buckets.slice().sort((a, b) =>
-    Math.abs(Math.log2(a) - Math.log2(targetBucket)) -
-    Math.abs(Math.log2(b) - Math.log2(targetBucket))
-  );
-  for (const b of sorted) {
-    const e = getCachedBitmap(filePath, pageNum, rotation, b, thin);
-    if (e) return e;
+  return getBestBitmapForScale(filePath, pageNum, rotation, targetBucket, thin);
+}
+
+/**
+ * The best stand-in for a page at `targetScale` among EVERY cached bitmap of
+ * it (power-of-two buckets, exact-scale renders, progressive results): the
+ * smallest one that is sharp enough, else the sharpest. Searching only the
+ * power-of-two keys missed the exact renders, so after zooming from fit the
+ * page was shown at the fit bitmap's resolution (10 % of what the screen
+ * needed on a 48" sheet) until the new render landed.
+ */
+export function getBestBitmapForScale(filePath, pageNum, rotation, targetScale, thin = thinLinesOn()) {
+  const prefix = `${filePath}:${pageNum}:${(rotation || 0) % 360}:`;
+  const suffix = `:${thinLinesKey(thin)}`;
+  const kandidaten = [];
+  for (const [k, e] of _cache) {
+    if (k.startsWith(prefix) && k.endsWith(suffix) && e && e.bitmap) kandidaten.push(e);
   }
-  return null;
+  return pickPreviewBitmap(kandidaten, targetScale) || null;
+}
+
+/** Is the whole page cached at exactly this render scale? */
+export function hasExactBitmap(filePath, pageNum, rotation, exactScale, thin = thinLinesOn()) {
+  return _cache.has(_key(filePath, pageNum, rotation, roundRenderScale(exactScale), thin));
 }
 
 // Verdring de oudste entries (Map houdt de invoegvolgorde) tot er weer
-// MAX_ENTRIES zijn. Nooit: een getoonde bitmap, een geclaimde sleutel of de
-// entry die net is toegevoegd (`nieuw`; de aanvrager zet hem zo meteen op het
-// scherm). Zijn er alleen zulke entries, dan mag de cache tijdelijk groter zijn.
+// hooguit MAX_ENTRIES zijn en ze samen binnen MAX_BYTES passen. Nooit: een
+// getoonde bitmap, een geclaimde sleutel of de entry die net is toegevoegd
+// (`nieuw`; de aanvrager zet hem zo meteen op het scherm). Zijn er alleen
+// zulke entries, dan mag de cache tijdelijk groter zijn.
 function _evictIfNeeded(nieuw = null) {
   ruimUitgesteldOp();
-  if (_cache.size <= MAX_ENTRIES) return;
   const getoond = _getoond();
-  for (const k of Array.from(_cache.keys())) {
-    if (_cache.size <= MAX_ENTRIES) break;
-    if (k === nieuw || _geclaimd(k)) continue;
+  const weg = bitmapsToEvict(Array.from(_cache.entries()), {
+    maxEntries: MAX_ENTRIES,
+    maxBytes: MAX_BYTES,
+    keep: (k) => {
+      if (k === nieuw || _geclaimd(k)) return true;
+      const e = _cache.get(k);
+      return !!(e && getoond.has(e.bitmap));
+    },
+  });
+  for (const k of weg) {
     const e = _cache.get(k);
-    if (e && getoond.has(e.bitmap)) continue;
     _cache.delete(k);
     _sluitNu(e && e.bitmap);
   }
@@ -241,10 +266,14 @@ export function ensureBitmap(filePath, pageNum, rotation, zoomBucket) {
  * boundary (100%, 200%, 400% @ 2x DPR; off-bucket levels like 150% get the
  * blur). Cached under the rounded exact scale so repeated settles at the
  * same zoom hit the cache instead of re-rendering.
+ *
+ * `isWanted` (optional) returns false once the caller has moved on (the user
+ * zoomed again): a render nobody wants any more is dropped from the render
+ * queue before it starts. One that already started is still cached.
  */
-export function ensureExactBitmap(filePath, pageNum, rotation, exactScale) {
-  const roundedScale = Math.round(exactScale * 1000) / 1000;
-  return _ensureBitmapAtScale(filePath, pageNum, rotation, roundedScale, roundedScale, RENDER_PRIORITY.TILE);
+export function ensureExactBitmap(filePath, pageNum, rotation, exactScale, { isWanted = null } = {}) {
+  const roundedScale = roundRenderScale(exactScale);
+  return _ensureBitmapAtScale(filePath, pageNum, rotation, roundedScale, roundedScale, RENDER_PRIORITY.TILE, isWanted);
 }
 
 /**
@@ -260,14 +289,28 @@ export function prefetchFallbackBitmap(filePath, pageNum, rotation, prefetchScal
   return _ensureBitmapAtScale(filePath, pageNum, rotation, 1, prefetchScale, RENDER_PRIORITY.PREFETCH);
 }
 
-function _ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderScale, priority) {
+function _ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderScale, priority, isWanted = null) {
   // Line mode captured once: the render and the cache key must agree even if
   // the user switches Thin Lines while this render is in flight.
   const thin = thinLinesOn();
   const key = _key(filePath, pageNum, rotation, cacheBucket, thin);
   if (_cache.has(key)) return Promise.resolve(_cache.get(key));
-  if (_pending.has(key)) return _pending.get(key);
+  // A render in flight serves every requester; it stays wanted while any of
+  // them still wants it (a requester without isWanted always does).
+  const wanted = typeof isWanted === 'function' ? isWanted : () => true;
+  if (_pending.has(key)) {
+    _pendingWanted.get(key)?.add(wanted);
+    return _pending.get(key);
+  }
   if (!isTauri() || !filePath) return Promise.resolve(null);
+  const wantedBy = new Set([wanted]);
+  _pendingWanted.set(key, wantedBy);
+  const stillWanted = () => {
+    for (const f of wantedBy) {
+      try { if (f() !== false) return true; } catch { return true; }
+    }
+    return false;
+  };
 
   // Closing the document empties this cache; a render that lands after that
   // must not put its bitmap back (#506).
@@ -290,7 +333,7 @@ function _ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderSc
         rotation: rotation || 0,
         thinLines: thin,
         sharpen: true,
-      }, { priority });
+      }, { priority, isWanted: stillWanted });
       console.log(`[pbc] whole-page KLAAR p${pageNum} scale=${renderScale.toFixed(3)} @${Math.round(performance.now() - _t0)}ms`);
       const fileBytes = result instanceof Uint8Array ? result : new Uint8Array(result);
       if (!fileBytes || fileBytes.length <= 8) return null;
@@ -302,9 +345,14 @@ function _ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderSc
         console.warn('[page-bitmap-cache] size mismatch', expected, fileBytes.length - 8);
         return null;
       }
-      const rgba = sharpenPageRgba(new Uint8ClampedArray(fileBytes.buffer, fileBytes.byteOffset + 8, expected), w, h);
-      const imageData = new ImageData(rgba, w, h);
-      const bitmap = await createImageBitmap(imageData);
+      const _t1 = performance.now();
+      // The bitmap is built off the main thread for big renders
+      // (rgba-bitmap.js). Rust sharpens on the desktop PDFium route
+      // (render-sharpen-route.js); only when it did not (another engine, the
+      // in-process fallback) does the worker apply the page-sharpen filter.
+      const sharpen = sharpenRoute().isVerscherpt(fileBytes) ? 0 : sharpenAmount(pageSharpenLevel());
+      const bitmap = await rgbaToImageBitmap(fileBytes, w, h, { sharpen });
+      console.log(`[pbc] whole-page BITMAP p${pageNum} ${w}x${h} @${Math.round(performance.now() - _t1)}ms`);
       if (renderQueue.documentEpoch(filePath) !== docEpoch) {
         try { bitmap.close?.(); } catch { /* already gone */ }
         return null;
@@ -323,6 +371,7 @@ function _ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderSc
       return null;
     } finally {
       _pending.delete(key);
+      _pendingWanted.delete(key);
     }
   })();
   _pending.set(key, p);
@@ -359,4 +408,5 @@ export function clearAllBitmaps() {
   invalidateRenderDiagnostics();
   _verwijderMetPrefix(null);
   _pending.clear();
+  _pendingWanted.clear();
 }

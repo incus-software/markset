@@ -40,6 +40,7 @@ globalThis.__vpTest = {
   impl: {
     ensureBitmapForCurrentView: () => { orchestrator++; },
     ensureTileForCurrentView: () => {},
+    ensureViewForCurrentZoom: () => { orchestrator++; },
   },
 };
 
