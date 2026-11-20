@@ -76,10 +76,7 @@ export async function refreshAfterThinLinesChange() {
     if (viewport.pageType === 'raster') {
       const orch = await import('./bitmap-orchestrator.js');
       const canvas = typeof document !== 'undefined' ? document.getElementById('pdf-canvas') : null;
-      await Promise.all([
-        orch.ensureBitmapForCurrentView(),
-        canvas ? orch.ensureTileForCurrentView(canvas) : null,
-      ]);
+      await orch.ensureViewForCurrentZoom(canvas);
     }
     // The vector replay path reads the preference on every frame.
     viewport.dirty = true;

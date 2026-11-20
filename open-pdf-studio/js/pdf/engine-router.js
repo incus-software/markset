@@ -35,13 +35,14 @@ import { renderQueue } from './render-queue-state.js';
  * picture without the HTML form layer on top (page thumbnails). The screen
  * leaves the editable fields to that layer (#1101, formulierlaag-scherm.js).
  * @param {{path:string, pageIndex:number, scale:number, rotation?:number, thinLines?:boolean, sharpen?:boolean, forms?:boolean}} args
- * @param {{priority?:number, keepWhenHidden?:boolean}} [schedule]  RENDER_PRIORITY
- *   (default PAGE: the page in view)
+ * @param {{priority?:number, keepWhenHidden?:boolean, isWanted?:() => boolean}} [schedule]
+ *   RENDER_PRIORITY (default PAGE: the page in view); isWanted withdraws a
+ *   request the caller no longer needs (see render-queue.js)
  * @returns {Promise<Uint8Array>} `[w:u32 LE][h:u32 LE][rgba…]` wire format
  */
 export async function renderPdfPage(
   { path, pageIndex, scale, rotation = 0, thinLines = thinLinesOn(), sharpen = false, forms = false },
-  { priority = RENDER_PRIORITY.PAGE, keepWhenHidden = false } = {},
+  { priority = RENDER_PRIORITY.PAGE, keepWhenHidden = false, isWanted = null } = {},
 ) {
   const command = (state?.renderEngineOverride === 'rust-skia')
     ? 'render_pdf_page_skia'
@@ -59,7 +60,7 @@ export async function renderPdfPage(
       ...(gevraagd > 0 ? { sharpen: gevraagd } : {}),
       ...(forms ? { forms: true } : {}),
     }),
-    { docKey: path || null, priority, keepWhenHidden },
+    { docKey: path || null, priority, keepWhenHidden, isWanted },
   );
   if (gevraagd > 0) route().markeer(res, gevraagd);
   return res;
