@@ -2,7 +2,7 @@
 //
 // Thin wrapper that reads viewport state and triggers async fills for the
 // current view. Delegates the actual work:
-//   - whole-page raster -> ensureBitmap() in page-bitmap-cache.js
+//   - whole-page raster -> ensureExactBitmap() in page-bitmap-cache.js
 //   - visible-region high-zoom augment -> invoke('render_pdf_page_region')
 //     + tile-cache.js
 //
@@ -15,7 +15,15 @@
 // overwrite a newer one (e.g. zoom-in while a previous render is pending).
 
 import { viewport } from './pdf-viewport.js';
-import { computeZoomBucket, ensureBitmap, ensureExactBitmap, getBestAvailableBitmap } from './page-bitmap-cache.js';
+import {
+    computeZoomBucket,
+    ensureBitmap,
+    ensureExactBitmap,
+    getBestAvailableBitmap,
+    getBestBitmapForScale,
+    hasExactBitmap,
+} from './page-bitmap-cache.js';
+import { needsRegionTile, wholePageRenderScale } from './zoom-render-plan.js';
 import { tileCacheFindCovering, tileCacheGet, tileCacheSet } from './tile-cache.js';
 import { tileCoversViewport, visiblePdfRegion } from './tile-coverage.js';
 import { rectNaarPagina, viewportGeometrie } from './weergave-rotatie.js';
@@ -77,7 +85,25 @@ function paginaMaatPt() {
     return { w: g.paginaBreedte, h: g.paginaHoogte };
 }
 
-export async function ensureBitmapForCurrentView() {
+// How long the whole-page render waits for the visible tile it lets go first
+// (see ensureViewForCurrentZoom). Only a safety net: the tile normally lands
+// in a few hundred milliseconds.
+const TILE_FIRST_WAIT_MS = 2500;
+
+/**
+ * Brings the current view up to sharpness after a zoom, pan or dpr change:
+ * the visible tile (when one is needed) and the whole-page bitmap. The PDFium
+ * worker pool pins all work for one page to one worker, so the two renders run
+ * one after the other there. When the tile will cover the view it goes FIRST:
+ * the view is sharp after the (fast) tile, and the (slow) whole-page render
+ * for panning follows. Before, the tile queued behind the whole page.
+ */
+export function ensureViewForCurrentZoom(canvas) {
+    const tile = canvas ? ensureTileForCurrentView(canvas).catch(() => {}) : null;
+    return Promise.all([ensureBitmapForCurrentView({ tileFirst: tile, canvas }), tile]);
+}
+
+export async function ensureBitmapForCurrentView({ tileFirst = null, canvas = null } = {}) {
     const myGen = ++_bitmapGen;
     const { filePath, pageNum, rotation, zoom } = viewport;
     const isCurrent = () => myGen === _bitmapGen && viewport.active && viewport.pageType === 'raster'
@@ -93,7 +119,6 @@ export async function ensureBitmapForCurrentView() {
     // aan, vullen we progressief tegel-voor-tegel in i.p.v. één trage whole-page
     // render. Niet-zware pagina's of voorkeur uit → exact het bestaande pad hieronder.
     const dpr = window.devicePixelRatio || 1;
-    const targetScale = viewport.zoom * dpr;
     const maxAxisPt = Math.max(viewport.pageW, viewport.pageH);
     if (maxAxisPt <= 0) {
         viewport.currentBitmap = null;
@@ -126,46 +151,58 @@ export async function ensureBitmapForCurrentView() {
         return;
     }
 
-    // Cap so PDFium never has to render above the 4096 px axis limit.
-    const exactScale = Math.min(targetScale, capScale);
-    const cappedBucket = computeZoomBucket(exactScale);
-    // computeZoomBucket is monotonic, so the capped bucket is always <= the requested one
-    const useBucket = cappedBucket;
+    // One render, at the scale the screen needs, capped so neither axis goes
+    // above the 4096 px limit (see zoom-render-plan.js). This used to render
+    // the next power-of-two bucket first and the exact scale after it: on a
+    // 36" x 48" sheet the bucket was 6912 x 5184 px (143 MB, 2-2.5 s of
+    // PDFium time, then a ~1 s main-thread stall turning it into a bitmap),
+    // and the exact render only started after that.
+    const exactScale = wholePageRenderScale({
+        zoom: viewport.zoom,
+        devicePixelRatio: dpr,
+        pageWpt: viewport.pageW,
+        pageHpt: viewport.pageH,
+        maxAxisPx: MAX_BITMAP_AXIS_PX,
+    });
+    if (!(exactScale > 0)) return;
 
-    // Synchronous: show the best already-cached bitmap immediately. Handles
-    // the "zoom-in while async render is in flight" case — we never blank
-    // out the page while we wait for the higher bucket.
-    const fallback = getBestAvailableBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, useBucket);
+    // Synchronous: show the sharpest bitmap already cached for this page
+    // (any scale), so the page never blanks and is as sharp as it can be
+    // while the exact render runs.
+    const fallback = getBestBitmapForScale(viewport.filePath, viewport.pageNum, viewport.rotation, exactScale);
     if (fallback) {
         viewport.currentBitmap = fallback.bitmap;
         viewport.dirty = true;
     }
 
-    // Async: fetch the exact bucket. ensureBitmap dedups concurrent calls.
-    const entry = await ensureBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, useBucket);
+    // Let the visible tile go first when it will cover the view (see
+    // ensureViewForCurrentZoom): it shares a PDFium worker with this render.
+    if (tileFirst && canvas && !hasExactBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, exactScale)) {
+        const tileCoversView = needsRegionTile({
+            zoom: viewport.zoom,
+            devicePixelRatio: dpr,
+            pageWpt: viewport.pageW,
+            pageHpt: viewport.pageH,
+            viewWcss: canvas.width / dpr,
+            viewHcss: canvas.height / dpr,
+            wholePageReady: false,
+            maxAxisPx: MAX_BITMAP_AXIS_PX,
+        });
+        if (tileCoversView) {
+            await Promise.race([tileFirst, new Promise((r) => setTimeout(r, TILE_FIRST_WAIT_MS))]);
+            if (!isCurrent()) return;
+        }
+    }
+
+    // Async: the exact render. A newer zoom/page makes this one unwanted: if
+    // it has not started yet it is dropped from the render queue.
+    const entry = await ensureExactBitmap(
+        viewport.filePath, viewport.pageNum, viewport.rotation, exactScale, { isWanted: isCurrent },
+    );
     if (!isCurrent()) return;  // stale (newer zoom/page came in)
     if (entry && entry.bitmap) {
         viewport.currentBitmap = entry.bitmap;
         viewport.dirty = true;
-    }
-
-    // Sharpness settle: the bucket is rounded UP to the next power of 2, so
-    // pdf-viewport.js's drawImage() almost always resamples this bitmap down
-    // a little to fit the screen — soft text at any zoom that doesn't land
-    // exactly on a bucket boundary. ensureBitmapForCurrentView() itself only
-    // runs once zoom/pan has been still for a bit (see pdf-viewport.js's
-    // _kickOrchestratorAfterZoom debounce), so this is already a "the user
-    // stopped moving" event — safe to spend one more render getting the
-    // EXACT resolution, without slowing down the zoom/pan itself. Skipped
-    // when the bucket is already within 2% of exact (bucket boundaries,
-    // e.g. 100%/200%/400% @ 2x DPR — nothing to upgrade).
-    if (useBucket / exactScale > 1.02) {
-        const exactEntry = await ensureExactBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, exactScale);
-        if (!isCurrent()) return;  // stale (newer zoom/page/pan came in)
-        if (exactEntry && exactEntry.bitmap) {
-            viewport.currentBitmap = exactEntry.bitmap;
-            viewport.dirty = true;
-        }
     }
 }
 
@@ -410,7 +447,29 @@ export async function ensureTileForCurrentView(canvas) {
     if (maxAxisPt <= 0) return;
     const capScale = MAX_BITMAP_AXIS_PX / maxAxisPt;
     const dpr = window.devicePixelRatio || 1;
-    if (!needsVisibleTile(viewport.zoom, dpr, capScale)) {
+    // Above the axis cap the whole page cannot be sharp, so the tile carries
+    // the detail. Below it, the tile still goes first while the whole page at
+    // this zoom is not cached and is much bigger than the screen: a screen-
+    // sized region renders in a fraction of the whole-page time, so the view
+    // is sharp quickly and the whole page follows for panning.
+    const wholePageReady = hasExactBitmap(
+        viewport.filePath, viewport.pageNum, viewport.rotation,
+        wholePageRenderScale({
+            zoom: viewport.zoom, devicePixelRatio: dpr,
+            pageWpt: viewport.pageW, pageHpt: viewport.pageH, maxAxisPx: MAX_BITMAP_AXIS_PX,
+        }),
+    );
+    const tileWanted = needsRegionTile({
+        zoom: viewport.zoom,
+        devicePixelRatio: dpr,
+        pageWpt: viewport.pageW,
+        pageHpt: viewport.pageH,
+        viewWcss: canvas.width / dpr,
+        viewHcss: canvas.height / dpr,
+        wholePageReady,
+        maxAxisPx: MAX_BITMAP_AXIS_PX,
+    });
+    if (!tileWanted) {
         _tileRequests.cancel();
         // Whole-page bitmap is sufficient; clear any stale tile so the
         // renderer doesn't draw a low-zoom tile on top of a fresh raster.

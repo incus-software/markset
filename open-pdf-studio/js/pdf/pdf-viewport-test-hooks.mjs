@@ -18,7 +18,7 @@ const STUBS = {
     'registreerGetoondeBitmaps', 'ruimUitgesteldOp',
   ],
   'js/annotations/rendering.js': ['redrawContinuous', 'redrawAnnotations'],
-  'js/pdf/bitmap-orchestrator.js': ['ensureBitmapForCurrentView', 'ensureTileForCurrentView'],
+  'js/pdf/bitmap-orchestrator.js': ['ensureBitmapForCurrentView', 'ensureTileForCurrentView', 'ensureViewForCurrentZoom'],
   'js/pdf/renderer.js': ['renderContinuous'],
 };
 
