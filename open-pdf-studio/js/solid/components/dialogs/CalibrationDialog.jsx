@@ -10,7 +10,7 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 import { cloneAnnotation } from '../../../annotations/factory.js';
 import { schaalUitKalibratie } from '../../../annotations/kalibratie-schaal.js';
 import { findScaleInText } from '../../../annotations/document-scale.js';
-import { leesLengte, isImperialeLengte, VOET_INCH_VOORBEELD } from '../../../core/voet-inch.js';
+import { leesLengte, isImperialeLengte, VOET_INCH_VOORBEELD, formatVoetInch } from '../../../core/voet-inch.js';
 import { geldigeUserUnit, userUnitVanPagina } from '../../../annotations/scale-region-scale.js';
 import { IMPERIAL_SCALE_PRESETS, isImperialScalePreset, scaleSelectOptions, scaleDisplayLabel } from '../../../annotations/scale-presets.js';
 import { schaalTekstVoorPpu } from '../../../annotations/schaalcontrole.js';
@@ -74,6 +74,18 @@ export default function CalibrationDialog(props) {
   const [distance, setDistance] = createSignal(1);
   const [unit, setUnit] = createSignal(standaard.lengteEenheid);
   const [pixels, setPixels] = createSignal(72);
+  // Markset: the picked line's length, unrounded, until the user edits the
+  // field. The field shows 2 decimals; calibrating on the rounded value moved
+  // long measurements by a few thousandths.
+  let exactPixels = null;
+
+  // Markset: how the known distance reads, so 28'-1 1/16" is visibly understood.
+  const distancePreview = () => {
+    const v = leesLengte(String(distance() ?? ''), unit());
+    if (!(v > 0)) return `Not a length. Try ${VOET_INCH_VOORBEELD} or 8.5`;
+    if (isImperialeLengte(unit())) return `= ${formatVoetInch(v, unit())}`;
+    return `= ${Math.round(v * 10000) / 10000} ${unit()}`;
+  };
 
   // Standaardschalen van het gekozen stelsel (#996); de schaal van het
   // document blijft erin staan, ook als die uit het andere stelsel komt.
@@ -112,7 +124,7 @@ export default function CalibrationDialog(props) {
 
   function tekenReferentielijn() {
     const restore = { unit: unit(), distance: distance(), overridePdfScale: overridePdfScale() };
-    const huidig = Number(pixels()) || null;
+    const huidig = exactPixels ?? (Number(pixels()) || null); // Markset: unrounded
     closeDialog('calibration');
     startScaleMeasureFlow({
       onDone: (afstand) => openDialog('calibration', { referencePixelLength: afstand, restore }),
@@ -125,6 +137,7 @@ export default function CalibrationDialog(props) {
     const refPx = props.data?.referencePixelLength;
     if (refPx && refPx > 0) {
       setPixels(Math.round(refPx * 100) / 100);
+      exactPixels = refPx; // Markset
       setMethod('reference');
     }
     // Terug van "Lijn tekenen" (#1090): de keuzes van voor het tekenen.
@@ -214,7 +227,7 @@ export default function CalibrationDialog(props) {
     // schaalgebied (#553).
     const scaleData = method() === 'reference'
       // Een voet-inchmaat (12'-6 3/8") mag ook (#996).
-      ? schaalUitKalibratie({ method: 'reference', distance: leesLengte(String(distance()), unit()), pixels: pixels(), unit: unit() })
+      ? schaalUitKalibratie({ method: 'reference', distance: leesLengte(String(distance()), unit()), pixels: exactPixels ?? pixels(), unit: unit() })
       : schaalUitKalibratie({ method: 'ratio', denominator: getScaleDenominator(), unit: ratioUnit(), userUnit: userUnit() });
 
     if (scaleData) {
@@ -332,7 +345,7 @@ export default function CalibrationDialog(props) {
             min="1"
             step="0.01"
             value={pixels()}
-            onInput={(e) => setPixels(e.target.value)}
+            onInput={(e) => { exactPixels = null; setPixels(e.target.value); }}
           />
           <span class="calibration-unit">px{sheetInches(pixels()) ? ` = ${sheetInches(pixels())} on the sheet` : ''}</span>
         </div>
@@ -363,6 +376,12 @@ export default function CalibrationDialog(props) {
             <option value="ft">ft</option>
           </select>
         </div>
+        {/* Markset: live readback of the known distance */}
+        <Show when={String(distance() ?? '').trim() !== ''}>
+          <div class="calibration-page-size" aria-live="polite">
+            {distancePreview()}
+          </div>
+        </Show>
       </Show>
 
       {/* Method 2: Scale Ratio */}
