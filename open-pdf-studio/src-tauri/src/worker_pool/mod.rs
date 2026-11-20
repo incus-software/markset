@@ -9,12 +9,16 @@ pub mod routing;
 pub mod spawn;
 pub mod recovery;
 pub mod shm_files;
+pub mod response;
+pub mod scan;
+pub mod snap;
+pub mod text;
 
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 pub use state::{Status, WorkerState};
 
@@ -41,7 +45,7 @@ fn now_ms() -> u64 {
 /// die een nieuwe `op` niet kent en niets terugstuurt). Zonder deze grens
 /// blokkeert `read_line` eeuwig met de request-lock vast, waardoor die worker
 /// voor ALLE volgende requests wedged raakt en de pagina blanco blijft. Bij
-/// timeout -> Err -> in-proc-PDFium-fallback + respawn van de worker.
+/// timeout -> expliciete fout + beëindigen/respawn; nooit in-proc herhalen.
 const WORKER_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// Grace period for workers to exit on stdin EOF at shutdown before they are
@@ -236,7 +240,9 @@ impl WorkerPool {
         }).collect()
     }
 
-    /// Render via the pool. Returns (width, height, rgba_bytes).
+    /// Render via the pool. Returns (width, height, rgba_bytes). `forms`:
+    /// every widget's stored appearance (thumbnails); otherwise the screen
+    /// look without the editable fields (#1101).
     pub async fn render(
         &self,
         path: &str,
@@ -244,6 +250,7 @@ impl WorkerPool {
         scale: f32,
         rotation: i32,
         thin_lines: bool,
+        forms: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         // First attempt. Pinned: al het werk voor dezelfde (path, page) —
         // volledige render, thumbnail, tegels — blijft op één worker, ook
@@ -251,20 +258,27 @@ impl WorkerPool {
         // content-stream laten parsen (seconden + ~1 GB parse-state op zware
         // CAD-bladen), terwijl de warme worker in ~0,4 s klaar is.
         let depths = self.depths();
+        if depths.iter().all(|&d| d == usize::MAX) { return Err(response::Unavailable.into()); }
         let slot = routing::pick_worker(path, page_index, &depths, true);
         let worker = self.workers[slot].clone();
         self.touch(&worker);
         worker.queue_depth.fetch_add(1, Ordering::Release);
-        let result = self.render_on_worker(worker.clone(), path, page_index, scale, rotation, thin_lines).await;
+        let result = self.render_on_worker(worker.clone(), path, page_index, scale, rotation, thin_lines, forms).await;
         worker.queue_depth.fetch_sub(1, Ordering::Release);
 
         if result.is_ok() {
             return result;
         }
 
-        // First attempt failed → mark crash, retry on a DIFFERENT live slot
-        let recover_task = recovery::handle_worker_crash(worker.clone(), worker_exe_path());
-        tokio::spawn(recover_task);
+        // Recover failed exchanges; exhausted work is never retried.
+        // Other failures may retry once on a different live slot. An error
+        // the worker answered itself (e.g. PDF_OUTPUT_LIMIT) leaves it
+        // healthy: no restart, and no retry, since another worker would only
+        // parse the page cold to give the same answer.
+        if result.as_ref().err().is_some_and(response::needs_recovery) {
+            recovery::schedule_worker_recovery(worker.clone(), worker_exe_path());
+        }
+        if result.as_ref().err().is_some_and(|e| response::is_resource_limit(e) || response::is_worker_reported(e)) { return result; }
 
         let mut depths_retry = self.depths();
         depths_retry[slot] = usize::MAX; // mark as dead for this retry
@@ -275,8 +289,11 @@ impl WorkerPool {
         let worker2 = self.workers[slot2].clone();
         self.touch(&worker2);
         worker2.queue_depth.fetch_add(1, Ordering::Release);
-        let result2 = self.render_on_worker(worker2.clone(), path, page_index, scale, rotation, thin_lines).await;
+        let result2 = self.render_on_worker(worker2.clone(), path, page_index, scale, rotation, thin_lines, forms).await;
         worker2.queue_depth.fetch_sub(1, Ordering::Release);
+        if result2.as_ref().err().is_some_and(response::needs_recovery) {
+            recovery::schedule_worker_recovery(worker2, worker_exe_path());
+        }
         result2
     }
 
@@ -288,17 +305,19 @@ impl WorkerPool {
         scale: f32,
         rotation: i32,
         thin_lines: bool,
+        forms: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         // Eén request tegelijk per worker: het draadprotocol heeft geen id-demux
         // en de SHM-regio wordt per response overschreven.
         let request_lock = worker.request_lock.clone();
         let _t_queue = std::time::Instant::now();
         let _exchange = request_lock.lock().await;
+        if worker.status() != Status::Ready { return Err(response::Unavailable.into()); }
         let _t_run = std::time::Instant::now();
         let _plog = PoolTrace::new(worker.slot, "render", path, page_index, scale, _t_queue, _t_run);
         let id = self.next_request_id.fetch_add(1, Ordering::Release);
 
-        let req = render_request(id, path, page_index, scale, rotation, thin_lines);
+        let req = render_request(id, path, page_index, scale, rotation, thin_lines, forms);
         let req_line = format!("{}\n", req);
 
         // Write request
@@ -313,14 +332,17 @@ impl WorkerPool {
 
         // Read response (met timeout: een vastgelopen/verouderde worker die
         // niets terugstuurt mag de request-lock niet eeuwig vasthouden).
-        let mut resp_line = String::new();
+        let resp_line;
         {
             let mut stdout_guard = worker.stdout.lock().await;
             let stdout = stdout_guard.as_mut()
                 .ok_or_else(|| anyhow!("worker {} has no stdout", worker.slot))?;
-            match tokio::time::timeout(WORKER_READ_TIMEOUT, stdout.read_line(&mut resp_line)).await {
-                Ok(r) => { r.with_context(|| format!("read from worker {}", worker.slot))?; }
-                Err(_) => return Err(anyhow!("worker {} read timeout ({}s)", worker.slot, WORKER_READ_TIMEOUT.as_secs())),
+            match response::read_response(stdout, WORKER_READ_TIMEOUT).await {
+                Ok(line) => resp_line = line,
+                Err(error) => {
+                    worker.set_status(Status::Dead);
+                    return Err(error.context(format!("read from worker {}", worker.slot)));
+                }
             }
         }
 
@@ -331,9 +353,8 @@ impl WorkerPool {
         let resp: serde_json::Value = serde_json::from_str(&resp_line)
             .with_context(|| format!("parse worker {} response: {}", worker.slot, resp_line))?;
 
-        if !resp["ok"].as_bool().unwrap_or(false) {
-            let err = resp["error"].as_str().unwrap_or("unknown");
-            return Err(anyhow!("worker {} render error: {}", worker.slot, err));
+        if let Some(error) = worker_answer_error(worker.slot, "render", &resp) {
+            return Err(error);
         }
 
         let w = resp["w"].as_u64().unwrap_or(0) as u32;
@@ -374,8 +395,10 @@ impl WorkerPool {
         region_h_pt: f32,
         spread: bool,
         thin_lines: bool,
+        annotations: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         let depths = self.depths();
+        if depths.iter().all(|&d| d == usize::MAX) { return Err(response::Unavailable.into()); }
         // Salt de affiniteit met de regio-coördinaten wanneer spreiding gewenst
         // is: tegels van DEZELFDE pagina landen dan op verschillende workers.
         let salt = if spread {
@@ -388,18 +411,24 @@ impl WorkerPool {
         // tegels à ~0,4 s. Met spread is uitwijken juist gewenst.
         let slot = routing::pick_worker(path, page_index ^ salt, &depths, !spread);
         let worker = self.workers[slot].clone();
+        // An older worker ignores the field and would answer with a tile
+        // without the annotations.
+        if annotations && !worker.has_cap("region_annotations") {
+            return Err(anyhow!("PDF_WORKER_UNSUPPORTED: region with annotations"));
+        }
         self.touch(&worker);
         worker.queue_depth.fetch_add(1, Ordering::Release);
         let result = self.render_region_on_worker(
             worker.clone(), path, page_index, scale, rotation,
-            region_x_pt, region_y_pt, region_w_pt, region_h_pt, thin_lines,
+            region_x_pt, region_y_pt, region_w_pt, region_h_pt, thin_lines, annotations,
         ).await;
         worker.queue_depth.fetch_sub(1, Ordering::Release);
-        // Geen retry (de aanroeper valt terug op in-proc PDFium), maar een
+        // Geen retry; alleen niet-fatale fouten mogen in-proc terugvallen. Een
         // gefaalde/getimede worker is mogelijk gedesynchroniseerd — respawn
         // hem zodat de volgende tegel niet weer op een wedged worker landt.
-        if result.is_err() {
-            tokio::spawn(recovery::handle_worker_crash(worker.clone(), worker_exe_path()));
+        // Een fout die de worker zelf antwoordt (budget e.d.) laat hem heel.
+        if result.as_ref().err().is_some_and(response::needs_recovery) {
+            recovery::schedule_worker_recovery(worker.clone(), worker_exe_path());
         }
         result
     }
@@ -417,18 +446,20 @@ impl WorkerPool {
         region_w_pt: f32,
         region_h_pt: f32,
         thin_lines: bool,
+        annotations: bool,
     ) -> Result<(u32, u32, Vec<u8>)> {
         // Zelfde volledige-round-trip-serialisatie als render_on_worker.
         let request_lock = worker.request_lock.clone();
         let _t_queue = std::time::Instant::now();
         let _exchange = request_lock.lock().await;
+        if worker.status() != Status::Ready { return Err(response::Unavailable.into()); }
         let _t_run = std::time::Instant::now();
         let _plog = PoolTrace::new(worker.slot, "region", path, page_index, scale, _t_queue, _t_run);
         let id = self.next_request_id.fetch_add(1, Ordering::Release);
 
         let req = render_region_request(
             id, path, page_index, scale, rotation,
-            region_x_pt, region_y_pt, region_w_pt, region_h_pt, thin_lines,
+            region_x_pt, region_y_pt, region_w_pt, region_h_pt, thin_lines, annotations,
         );
         let req_line = format!("{}\n", req);
 
@@ -441,14 +472,17 @@ impl WorkerPool {
             stdin.flush().await?;
         }
 
-        let mut resp_line = String::new();
+        let resp_line;
         {
             let mut stdout_guard = worker.stdout.lock().await;
             let stdout = stdout_guard.as_mut()
                 .ok_or_else(|| anyhow!("worker {} has no stdout", worker.slot))?;
-            match tokio::time::timeout(WORKER_READ_TIMEOUT, stdout.read_line(&mut resp_line)).await {
-                Ok(r) => { r.with_context(|| format!("read from worker {}", worker.slot))?; }
-                Err(_) => return Err(anyhow!("worker {} region read timeout ({}s)", worker.slot, WORKER_READ_TIMEOUT.as_secs())),
+            match response::read_response(stdout, WORKER_READ_TIMEOUT).await {
+                Ok(line) => resp_line = line,
+                Err(error) => {
+                    worker.set_status(Status::Dead);
+                    return Err(error.context(format!("read from worker {}", worker.slot)));
+                }
             }
         }
 
@@ -459,9 +493,8 @@ impl WorkerPool {
         let resp: serde_json::Value = serde_json::from_str(&resp_line)
             .with_context(|| format!("parse worker {} response: {}", worker.slot, resp_line))?;
 
-        if !resp["ok"].as_bool().unwrap_or(false) {
-            let err = resp["error"].as_str().unwrap_or("unknown");
-            return Err(anyhow!("worker {} region render error: {}", worker.slot, err));
+        if let Some(error) = worker_answer_error(worker.slot, "region render", &resp) {
+            return Err(error);
         }
 
         let w = resp["w"].as_u64().unwrap_or(0) as u32;
@@ -481,10 +514,90 @@ impl WorkerPool {
     }
 }
 
+impl WorkerPool {
+    /// Pixelvergelijking van een paginapaar (#465) in een worker die `compare`
+    /// kent (pdfium-worker/src/compare/). `request` is de aanvraag zonder `op`
+    /// en `id`; die vult de pool in. Affiniteit op het NIEUWE (pad, pagina),
+    /// zodat herhaalde vergelijkingen van hetzelfde paar de maskercache van
+    /// dezelfde worker raken. Geeft de antwoordregel (JSON) en de clusters
+    /// (binair, uit de SHM) terug. Geen worker met `compare` = Unavailable;
+    /// de app rekent dan in JS.
+    pub async fn compare(&self, mut request: serde_json::Value, new_path: &str, new_page: u32) -> Result<(serde_json::Value, Vec<u8>)> {
+        let depths: Vec<usize> = self
+            .workers
+            .iter()
+            .map(|w| match w.status() {
+                Status::Ready if w.has_cap("compare") => w.queue_depth.load(Ordering::Acquire),
+                _ => usize::MAX,
+            })
+            .collect();
+        if depths.iter().all(|&d| d == usize::MAX) {
+            return Err(response::Unavailable.into());
+        }
+        let slot = routing::pick_worker(new_path, new_page, &depths, true);
+        let worker = self.workers[slot].clone();
+        self.touch(&worker);
+        worker.queue_depth.fetch_add(1, Ordering::Release);
+        let result = async {
+            let request_lock = worker.request_lock.clone();
+            let _exchange = request_lock.lock().await;
+            if worker.status() != Status::Ready {
+                return Err(response::Unavailable.into());
+            }
+            let id = self.next_request_id.fetch_add(1, Ordering::Release);
+            request["op"] = json!("compare");
+            request["id"] = json!(id);
+            let line = format!("{}\n", request);
+            {
+                let mut stdin_guard = worker.stdin.lock().await;
+                let stdin = stdin_guard.as_mut().ok_or_else(|| anyhow!("worker {} has no stdin", worker.slot))?;
+                stdin.write_all(line.as_bytes()).await.with_context(|| format!("write to worker {}", worker.slot))?;
+                stdin.flush().await?;
+            }
+            let resp_line = {
+                let mut stdout_guard = worker.stdout.lock().await;
+                let stdout = stdout_guard.as_mut().ok_or_else(|| anyhow!("worker {} has no stdout", worker.slot))?;
+                match response::read_response(stdout, WORKER_READ_TIMEOUT).await {
+                    Ok(line) => line,
+                    Err(error) => {
+                        worker.set_status(Status::Dead);
+                        return Err(error.context(format!("read from worker {}", worker.slot)));
+                    }
+                }
+            };
+            let resp: serde_json::Value = serde_json::from_str(&resp_line)
+                .with_context(|| format!("parse worker {} compare response", worker.slot))?;
+            if resp["id"].as_u64() != Some(id) {
+                worker.set_status(Status::Dead);
+                return Err(anyhow!("worker {} answered another request", worker.slot));
+            }
+            if !resp["ok"].as_bool().unwrap_or(false) {
+                // Inhoudelijke fout (bestand gewijzigd, geometrie): de worker
+                // zelf is in orde.
+                return Ok((resp, Vec::new()));
+            }
+            let bytes = resp["shm_bytes"].as_u64().unwrap_or(0) as usize;
+            let shm_guard = worker.shm.lock().await;
+            let mmap = shm_guard.as_ref().ok_or_else(|| anyhow!("worker {} has no shm", worker.slot))?;
+            const HEADER: usize = 32;
+            if bytes + HEADER > mmap.len() {
+                return Err(anyhow!("worker {} shm_bytes {} exceeds region", worker.slot, bytes));
+            }
+            Ok((resp, mmap[HEADER..HEADER + bytes].to_vec()))
+        }
+        .await;
+        worker.queue_depth.fetch_sub(1, Ordering::Release);
+        if result.as_ref().err().is_some_and(|e| !response::is_unavailable(e)) {
+            recovery::schedule_worker_recovery(worker.clone(), worker_exe_path());
+        }
+        result
+    }
+}
+
 /// Worker-request voor een volledige pagina (zie pdfium-worker/src/protocol.rs).
 /// `thin_lines` = Thin Lines-weergave (#595): de worker tekent elke lijn als
 /// haarlijn.
-fn render_request(id: u64, path: &str, page_index: u32, scale: f32, rotation: i32, thin_lines: bool) -> serde_json::Value {
+fn render_request(id: u64, path: &str, page_index: u32, scale: f32, rotation: i32, thin_lines: bool, forms: bool) -> serde_json::Value {
     json!({
         "op": "render",
         "id": id,
@@ -493,6 +606,7 @@ fn render_request(id: u64, path: &str, page_index: u32, scale: f32, rotation: i3
         "scale": scale,
         "rotation": rotation,
         "thin_lines": thin_lines,
+        "forms": forms,
     })
 }
 
@@ -509,6 +623,7 @@ fn render_region_request(
     region_w_pt: f32,
     region_h_pt: f32,
     thin_lines: bool,
+    annotations: bool,
 ) -> serde_json::Value {
     json!({
         "op": "render_region",
@@ -522,7 +637,19 @@ fn render_region_request(
         "region_w_pt": region_w_pt,
         "region_h_pt": region_h_pt,
         "thin_lines": thin_lines,
+        "annotations": annotations,
     })
+}
+
+/// The error of a worker answer with `ok: false`, or None for a good answer.
+/// Same message as before ("worker N render error: ..."); typed as
+/// WorkerReported so the pool does not restart a healthy worker for it.
+fn worker_answer_error(slot: u32, what: &str, resp: &serde_json::Value) -> Option<anyhow::Error> {
+    if resp["ok"].as_bool().unwrap_or(false) {
+        return None;
+    }
+    let err = resp["error"].as_str().unwrap_or("unknown");
+    Some(response::WorkerReported(format!("worker {} {} error: {}", slot, what, err)).into())
 }
 
 #[cfg(test)]
@@ -530,10 +657,26 @@ mod request_tests {
     use super::*;
 
     #[test]
+    fn a_reported_render_error_does_not_restart_the_worker() {
+        let resp = json!({ "id": 7, "ok": false, "error": "PDF_OUTPUT_LIMIT: bitmap exceeds the caller's RGBA budget" });
+        let error = worker_answer_error(2, "render", &resp).expect("ok:false is an error");
+        assert_eq!(error.to_string(), "worker 2 render error: PDF_OUTPUT_LIMIT: bitmap exceeds the caller's RGBA budget");
+        assert!(!response::needs_recovery(&error));
+        assert!(worker_answer_error(2, "render", &json!({ "id": 7, "ok": true, "w": 1, "h": 1 })).is_none());
+    }
+
+    /// Thumbnails ask the worker for every widget (#1101).
+    #[test]
+    fn page_render_request_carries_the_forms_flag() {
+        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, false, true)["forms"], json!(true));
+        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, false, false)["forms"], json!(false));
+    }
+
+    #[test]
     fn both_render_requests_carry_thin_lines() {
-        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, true)["thin_lines"], json!(true));
-        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, false)["thin_lines"], json!(false));
-        let region = render_region_request(2, "a.pdf", 3, 2.0, 0, 0.0, 0.0, 10.0, 10.0, true);
+        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, true, false)["thin_lines"], json!(true));
+        assert_eq!(render_request(1, "a.pdf", 0, 1.0, 0, false, false)["thin_lines"], json!(false));
+        let region = render_region_request(2, "a.pdf", 3, 2.0, 0, 0.0, 0.0, 10.0, 10.0, true, false);
         assert_eq!(region["thin_lines"], json!(true));
         assert_eq!(region["op"], json!("render_region"));
     }
@@ -574,5 +717,25 @@ impl Drop for PoolTrace {
                 let _ = writeln!(f, "{} run={}ms", l, self.t_run.elapsed().as_millis());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod unavailable_tests {
+    use super::*;
+    #[tokio::test]
+    async fn all_dead_returns_an_isolated_error_for_pages_and_regions() {
+        let worker = Arc::new(WorkerState::new(0));
+        worker.set_status(Status::Dead);
+        let pool = WorkerPool {
+            workers: vec![worker],
+            next_request_id: std::sync::atomic::AtomicU64::new(1),
+            last_used_ms: std::sync::atomic::AtomicU64::new(0),
+            trimmed: std::sync::atomic::AtomicBool::new(false),
+        };
+        let page = pool.render("fixture.pdf", 0, 1.0, 0, false, false).await.unwrap_err();
+        assert!(response::is_unavailable(&page));
+        let region = pool.render_region("fixture.pdf", 0, 1.0, 0, 0.0, 0.0, 10.0, 10.0, false, false, false).await.unwrap_err();
+        assert!(response::is_unavailable(&region));
     }
 }

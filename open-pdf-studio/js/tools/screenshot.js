@@ -1,10 +1,11 @@
 import { state, getActiveDocument, imageCache } from '../core/state.js';
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
-import { isTauri, heeftRustRenderer, saveFileDialog, writeBinaryFile } from '../core/platform.js';
+import { isTauri, isMobile, heeftRustRenderer, saveFileDialog, writeBinaryFile, invoke } from '../core/platform.js';
 import { render } from 'solid-js/web';
 import ScreenshotOverlay from '../solid/components/ScreenshotOverlay.jsx';
 import { startScreenshot, endScreenshot } from '../bridge.js';
 import { setLastCaptureAvailable } from '../solid/stores/screenshotStore.js';
+import { kleurOpname } from './screenshot-lijnkleur.js';
 import { openDialog } from '../solid/stores/dialogStore.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
 import { generateImageId } from '../utils/helpers.js';
@@ -18,6 +19,7 @@ import {
 } from '../pdf/weergave-ruimte.js';
 import i18next from '../i18n/config.js';
 import { kiesPagina, schermDpi, uitvoerMaat, tegelRaster, bestandsnaam } from './screenshot-keuze.js';
+import { kopieerPngNaarKlembord } from './screenshot-klembord.js';
 
 // Weergave draaien (#200): een schermafdruk hoort eruit te zien zoals de
 // gebruiker de pagina ziet. De scherpe render gebeurt in de paginaruimte;
@@ -124,7 +126,8 @@ function _selectionToAppRect(sel, container) {
 const TEGEL_PX = 2048; // region tiles stay well under the render worker's shared memory
 
 /** Page rectangles on screen (client coordinates) that may hold the selection. */
-function _paginasOpScherm(doc) {
+// Ook gebruikt door Afdrukken: Huidige weergave (#947, print-huidige-weergave-dom.js).
+export function paginasOpScherm(doc) {
   if (!doc) return [];
   const volledig = (pageNum) => {
     const m = paginaMaat(pageNum, doc);
@@ -152,7 +155,7 @@ function _paginasOpScherm(doc) {
  *            schermDpi:number, afgesneden:boolean} | null}  rect in page space (points)
  */
 export function gebiedVanSelectie(selectie, doc = getActiveDocument()) {
-  const keuze = kiesPagina(selectie, _paginasOpScherm(doc));
+  const keuze = kiesPagina(selectie, paginasOpScherm(doc));
   if (!keuze) return null;
   const rect = clientRectNaarPagina(keuze.pageNum, keuze.rect, doc);
   const m = paginaMaat(keuze.pageNum, doc);
@@ -273,10 +276,11 @@ export async function renderGebied(gebied, schaal, breedte, hoogte) {
  * @returns {Promise<{canvas: HTMLCanvasElement, paginaCanvas: HTMLCanvasElement,
  *                    maat: ReturnType<typeof uitvoerMaat>}>}
  */
-export async function renderSchermafbeelding(gebied, dpi) {
+export async function renderSchermafbeelding(gebied, dpi, lijnkleur) {
   const maat = uitvoerMaat(gebied.rect.width, gebied.rect.height, dpi);
   if (!maat) throw new Error('empty capture area');
   const paginaCanvas = await renderGebied(gebied, maat.schaal, maat.breedte, maat.hoogte);
+  kleurOpname(paginaCanvas, lijnkleur);
   return { canvas: draaiCanvas(paginaCanvas, weergaveRotatie(gebied.doc)), paginaCanvas, maat };
 }
 
@@ -294,12 +298,19 @@ function _blob(canvas, type, kwaliteit) {
 
 /**
  * Copy a capture to the clipboard. Always PNG: the clipboard takes a bitmap,
- * the format choice is for files.
+ * the format choice is for files. Desktop writes it from the Rust side, see
+ * screenshot-klembord.js (#925).
  */
-export async function kopieerSchermafbeelding(gebied, dpi) {
-  const { canvas, paginaCanvas, maat } = await renderSchermafbeelding(gebied, dpi);
+export async function kopieerSchermafbeelding(gebied, dpi, lijnkleur) {
+  const { canvas, paginaCanvas, maat } = await renderSchermafbeelding(gebied, dpi, lijnkleur);
   const blob = await _blob(canvas, 'image/png');
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  await kopieerPngNaarKlembord(blob, {
+    desktop: isTauri() && !isMobile(),
+    invoke,
+    clipboard: navigator.clipboard,
+    ClipboardItem: globalThis.ClipboardItem,
+    waarschuw: console.warn,
+  });
   _bewaarVoorOverlay(gebied, paginaCanvas);
   updateStatusMessage(i18next.t('dialogs:screenshot.copied', { width: maat.breedte, height: maat.hoogte, dpi: maat.dpi }));
   return maat;
@@ -317,7 +328,7 @@ function _voorstelPad(doc, naam) {
  * .jpg) wins over the format choice. Resolves to the path, or null when the
  * dialog was cancelled.
  */
-export async function bewaarSchermafbeelding(gebied, dpi, formaat = 'png', kwaliteit = 90) {
+export async function bewaarSchermafbeelding(gebied, dpi, formaat = 'png', kwaliteit = 90, lijnkleur) {
   const doc = gebied.doc;
   const effectief = uitvoerMaat(gebied.rect.width, gebied.rect.height, dpi)?.dpi || dpi;
   const naam = bestandsnaam(doc?.fileName || doc?.filePath, gebied.pageNum, effectief, formaat);
@@ -331,7 +342,7 @@ export async function bewaarSchermafbeelding(gebied, dpi, formaat = 'png', kwali
   else if (ext === 'png') formaat = 'png';
   else pad += formaat === 'jpeg' ? '.jpg' : '.png';
 
-  const { canvas, paginaCanvas, maat } = await renderSchermafbeelding(gebied, dpi);
+  const { canvas, paginaCanvas, maat } = await renderSchermafbeelding(gebied, dpi, lijnkleur);
   const { canvasToBytes } = await import('../pdf/exporter.js');
   const { imageWithDpi } = await import('../pdf/image-dpi.js');
   const ruw = await canvasToBytes(canvas, formaat, Math.max(0.01, Math.min(1, kwaliteit / 100)));

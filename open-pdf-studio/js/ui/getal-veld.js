@@ -18,9 +18,17 @@
 //   daarna volgt ook de notatie van de taal.
 // - pijl omhoog/omlaag stapt met step, binnen min en max.
 // - letters worden niet aangenomen, net als in een getalveld.
+// - een LENGTEVELD (data-getal="lengte") neemt daarnaast een voet-inchmaat
+//   aan (12'-6 3/8", 6", 1.5'; #1145): `value` geeft die tekst dan zoals ze
+//   getypt is, en de aanroeper leest haar met leesLengte (core/voet-inch.js),
+//   dezelfde parser als overal. Een kaal getal blijft een gewoon getal.
+// - op een veld in een gebied met data-getal-sleep (het eigenschappenpaneel)
+//   kan gesleept worden om de waarde te veranderen (#1168, getal-slepen.js).
 
 import { normaliseerGetalTekst, leesGetal, toonGetal } from '../core/getal-invoer.js';
 import { installeerGetalStappen } from './getal-stappen.js';
+import { installeerGetalSlepen } from './getal-slepen.js';
+import { leesVoetInch, VOET_INCH_TEKENS } from '../core/voet-inch.js';
 
 export const GETAL_SELECTOR = 'input[data-getal]';
 
@@ -56,9 +64,39 @@ export function zichtbareTekst(el) {
   return st ? st.nat.get.call(el) : el?.value;
 }
 
+/** Zet de zichtbare tekst zonder omweg (voor het slepen van een waarde). */
+function zetZichtbareTekst(el, tekst) {
+  maakGetalVeld(el);
+  const st = velden.get(el);
+  if (!st) { el.value = tekst; return; }
+  st.wachtend = null;
+  st.nat.set.call(el, tekst);
+}
+
+/** Is dit een lengteveld (data-getal="lengte")? */
+function isLengteVeld(el) {
+  return el?.getAttribute?.('data-getal') === 'lengte';
+}
+
+/** De voet-inchmaat in een lengteveld (bijgesneden), of null. */
+function voetInchTekst(el, tekst) {
+  if (!isLengteVeld(el) || typeof tekst !== 'string') return null;
+  const kaal = tekst.trim();
+  return leesVoetInch(kaal) != null ? kaal : null;
+}
+
 function schrijf(el, st, waarde) {
   const tekst = waarde == null ? '' : String(waarde);
   const huidig = st.nat.get.call(el);
+  // Een voet-inchmaat in een lengteveld blijft staan zoals ze is.
+  const maat = voetInchTekst(el, tekst);
+  if (maat != null) {
+    if (voetInchTekst(el, huidig) === maat) { st.wachtend = null; return; }
+    if (st.bewerkt && heeftFocus(el)) { st.wachtend = tekst; return; }
+    st.wachtend = null;
+    st.nat.set.call(el, maat);
+    return;
+  }
   const nieuw = leesGetal(tekst);
   // Hetzelfde getal: laat de notatie van de gebruiker staan (geen
   // cursorsprong tijdens het typen, "0.1" blijft "0.1" tot het veld verlaten wordt).
@@ -101,7 +139,10 @@ export function maakGetalVeld(el) {
   Object.defineProperty(el, 'value', {
     configurable: true,
     enumerable: true,
-    get() { return normaliseerGetalTekst(nat.get.call(el)); },
+    get() {
+      const ruw = nat.get.call(el);
+      return normaliseerGetalTekst(ruw) || voetInchTekst(el, ruw) || '';
+    },
     set(v) { schrijf(el, st, v); },
   });
   Object.defineProperty(el, 'valueAsNumber', {
@@ -112,7 +153,7 @@ export function maakGetalVeld(el) {
   });
   // Wat er al stond (statische value of eerdere toewijzing) in de notatie van de taal.
   const nu = nat.get.call(el);
-  if (nu !== '') nat.set.call(el, toonGetal(normaliseerGetalTekst(nu), taalBron()));
+  if (nu !== '' && voetInchTekst(el, nu) == null) nat.set.call(el, toonGetal(normaliseerGetalTekst(nu), taalBron()));
 }
 
 function aantalDecimalen(n) {
@@ -169,6 +210,8 @@ export function verwerkPijl(e) {
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return false;
   if (e.altKey || e.ctrlKey || e.metaKey) return false;
   if (el.disabled || el.readOnly) return false;
+  // Een voet-inchmaat heeft geen stap: de pijl laat haar met rust.
+  if (voetInchTekst(el, st.nat.get.call(el)) != null) return false;
   e.preventDefault();
   const nieuw = stapWaarde(st.nat.get.call(el), e.key === 'ArrowUp' ? 1 : -1, {
     min: el.getAttribute('min'), max: el.getAttribute('max'), step: el.getAttribute('step'),
@@ -200,7 +243,10 @@ const TOEGESTAAN = /^[0-9٠-٩۰-۹.,٫٬+\-−eE\s]*$/;
 export function verwerkVoorInvoer(e) {
   if (!velden.has(e.target)) return;
   if (!String(e.inputType || '').startsWith('insert')) return;
-  if (e.data != null && !TOEGESTAAN.test(e.data)) e.preventDefault();
+  if (e.data == null || TOEGESTAAN.test(e.data)) return;
+  // Een lengteveld neemt ook de tekens van een voet-inchmaat aan.
+  if (isLengteVeld(e.target) && [...e.data].every((ch) => TOEGESTAAN.test(ch) || VOET_INCH_TEKENS.includes(ch))) return;
+  e.preventDefault();
 }
 
 /** Bij het verlaten: uitgestelde waarde toepassen, anders de notatie van de taal. */
@@ -245,14 +291,26 @@ export function herformatteerGetalVelden(root = globalThis.document) {
 
 /**
  * Eenmalig bij de start: waardeert elk getalveld op zodra het in de DOM komt.
- * @param {{taal?: () => string}} [opties] taal: de huidige app-taal
+ * @param {object} [opties]
+ * @param {() => string} [opties.taal] de huidige app-taal
+ * @param {() => string} [opties.sleepHint] tooltip voor het label van een veld waarop gesleept kan worden
+ * @param {(veld: Element) => void} [opties.sleepBegin] een waarde wordt gesleept
+ * @param {(info: {veld: Element, geannuleerd: boolean}) => void} [opties.sleepEinde] de sleep is klaar
  */
-export function installeerGetalVelden({ taal } = {}) {
+export function installeerGetalVelden({ taal, sleepHint, sleepBegin, sleepEinde } = {}) {
   if (typeof taal === 'function') taalBron = taal;
   const doc = globalThis.document;
   if (geinstalleerd || !doc) return;
   geinstalleerd = true;
   installeerGetalStappen(doc);
+  installeerGetalSlepen(doc, {
+    leesTekst: zichtbareTekst,
+    schrijfTekst: zetZichtbareTekst,
+    taal: () => taalBron(),
+    hint: sleepHint,
+    begin: sleepBegin,
+    einde: sleepEinde,
+  });
   waardeerOp(doc.documentElement);
   new MutationObserver((mutaties) => {
     for (const m of mutaties) {

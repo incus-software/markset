@@ -48,7 +48,9 @@
     "autoDetectTitle": "Detect scale from title block",
     "scaleDetected": "Mittakaava tunnistettu",
     "noScaleFound": "Mittakaavaa ei löytynyt",
-    "detecting": "Tunnistetaan..."
+    "detecting": "Tunnistetaan...",
+    "scaleCheck": "Tarkista mittakaava",
+    "scaleCheckTitle": "Mittaa tunnettu mitta ja näytä mittakaavan poikkeama prosentteina"
   },
   "home": {
     "document": "Asiakirja",
@@ -81,6 +83,7 @@
     "fitPageLabel": "Sovita sivu",
     "rotateLeft": "Kierrä vasemmalle",
     "rotateRight": "Kierrä oikealle",
+    "rotatePages": "Kierrä sivuja",
     "edit": "Muokkaa",
     "editText": "Muokkaa tekstiä",
     "addText": "Lisää tekstiä",
@@ -110,6 +113,12 @@
     "scaleRegionFullPageTitle": "Sijoita koko sivun kattava mittakaava-alue",
     "drawing": "Piirros",
     "highlight": "Korostus",
+    "textHighlight": "Text highlight",
+    "textHighlightTitle": "Drag across text to highlight it. Double-click: one word. Triple-click: the whole label.",
+    "areaHighlight": "Area highlight",
+    "areaHighlightTitle": "Draw a box to highlight an area",
+    "highlightMode": "Highlight: area or text",
+    "highlightSwitchTip": "Click again to switch between area and text",
     "freehand": "Vapaapiirto",
     "line": "Viiva",
     "arrow": "Nuoli",
@@ -134,6 +143,8 @@
     "callout": "Kuvateksti",
     "stamp": "Leima",
     "signature": "Allekirjoitus",
+    "digitalSign": "Sähköinen allekirjoitus",
+    "digitalSignTooltip": "Allekirjoita asiakirja varmenteella (.p12/.pfx). Allekirjoitus-painike lisää vain kuvan.",
     "measure": "Mittaus",
     "measureDistance": "Mittaa etäisyys",
     "distance": "Etäisyys",
@@ -171,7 +182,9 @@
     "unflattenAll": "Kumoa litistys",
     "unflattenAllTooltip": "Palauta merkinnät, jotka litistettiin palautus sallittuna",
     "fileAttachment": "Liitä tiedosto",
-    "fileAttachmentTitle": "Tiedostoliite: napsauta sivua ja valitse tiedosto"
+    "fileAttachmentTitle": "Tiedostoliite: napsauta sivua ja valitse tiedosto",
+    "link": "Link",
+    "linkTitle": "Insert a hyperlink: select text first, or drag a rectangle on the page"
   },
   "view": {
     "pageDisplay": "Sivun näyttö",
@@ -308,6 +321,8 @@
     "box": "Alue",
     "boxHint": "Näytä muutokset täytettynä alueena",
     "contour": "Ääriviiva",
+    "colourOverlay": "Värit",
+    "colourOverlayHint": "Näytä molemmat piirustukset päällekkäin, kumpikin omalla värillään",
     "contourHint": "Näytä muutokset ääriviivalla",
     "annotation": "Merkintä",
     "changes": "Muutokset",
@@ -316,7 +331,98 @@
     "modified": "Muutettu",
     "noChanges": "Ei muutoksia",
     "textTab": "Teksti",
-    "noTextChanges": "Ei tekstieroja"
+    "noTextChanges": "Ei tekstieroja",
+    "previousVersion": "ennen viimeisintä tallennusta",
+    "fromDisk": "tiedosto",
+    "fileLoadError": "Tiedostoa ei voitu avata PDF-tiedostona.",
+    "browse": "Selaa…",
+    "browseHint": "Valitse PDF-tiedosto levyltä",
+    "pickSecondSide": "Valitse toinen puoli levyllä olevasta tiedostosta tai avaa toinen PDF välilehteen.",
+    "sensitivity": "Herkkyys",
+    "sensitivityHint": "Asettaa yhdessä mustekynnyksen, muutoksen vähimmäiskoon ja yhdistämisetäisyyden",
+    "preset": {
+      "line": "Viivapiirustus",
+      "scan": "Skannaus",
+      "text": "Tekstiasiakirja"
+    },
+    "autoAlign": "Kohdista automaattisesti",
+    "autoAlignHint": "Arvioi siirtymä, kierto ja mittakaava piirustuksista",
+    "autoAlignEach": "Auto",
+    "autoAlignEachHint": "Kohdista jokainen sivupari automaattisesti, kun se näytetään ensimmäisen kerran",
+    "rotation": "kierto",
+    "scale": "mittak.",
+    "resetAlignHint": "Poista kohdistus",
+    "alignManual": "käsin",
+    "confidence": "Luotettavuus",
+    "confidenceHint": "Kohdistuksen jälkeen yhteen osuvan musteen osuus",
+    "alignByMeasure": "mittakaava mittakaavoista",
+    "alignNone": "jo kohdistettu",
+    "alignByContent": "piirustuksen sisällöstä",
+    "pair": "Pari",
+    "pagesTab": "Sivut",
+    "pairing": "Yhdistetään sivuja…",
+    "onlyInOld": "Vain vanhassa",
+    "onlyInNew": "Vain uudessa",
+    "pairReason": {
+      "sheet": "Yhdistetty piirustusnumerolla",
+      "label": "Yhdistetty sivutunnisteella",
+      "content": "Yhdistetty sisällöllä",
+      "index": "Yhdistetty sivujärjestyksellä",
+      "manual": "Yhdistetty käsin"
+    },
+    "truncated": "Liian paljon eroja: tarkista kohdistus tai herkkyys.",
+    "selectForClouds": "Valitse pilviksi uuteen asiakirjaan",
+    "report": {
+      "button": "Raportti",
+      "csv": "Vie muutosluettelo (CSV)…",
+      "pdf": "Vie PDF-yhteenveto…",
+      "clouds": "Lisää valitut muutokset pilvinä",
+      "cloudsNeedTab": "Uuden asiakirjan on oltava auki välilehdessä",
+      "saved": "Raportti tallennettu",
+      "failed": "Raporttia ei voitu luoda",
+      "cloudsPlaced": "{{count}} pilveä lisätty uuteen asiakirjaan",
+      "title": "Vertailuraportti",
+      "generated": "Luotu",
+      "settings": "Asetukset",
+      "fileSuffix": "muutokset",
+      "sourcePixel": "Piirustus",
+      "sourceText": "Teksti",
+      "cloudSubject": "Vertailu",
+      "before": "Ennen",
+      "after": "Jälkeen",
+      "col": {
+        "no": "Nro",
+        "pair": "Pari",
+        "oldPage": "Vanha sivu",
+        "newPage": "Uusi sivu",
+        "sheet": "Piirustus nro",
+        "type": "Tyyppi",
+        "source": "Lähde",
+        "xMm": "X (mm)",
+        "yMm": "Y (mm)",
+        "widthMm": "Leveys (mm)",
+        "heightMm": "Korkeus (mm)",
+        "oldText": "Teksti ennen",
+        "newText": "Teksti jälkeen"
+      },
+      "sourceVector": "Vektori"
+    },
+    "methodVector": "Vektori",
+    "methodVectorHint": "Vertaa piirrettyjä polkuja tarkasti, kun molemmat sivut ovat vektoripiirustuksia; muut sivut verrataan pikseleinä",
+    "methodPixelFallback": "pikselit: ei vektorisivu",
+    "precision": "Precision",
+    "precisionHint": "Lower: only larger differences count. Higher: small differences and line edges count too.",
+    "precisionLevel": {
+      "lowest": "Lowest",
+      "low": "Low",
+      "normal": "Normal",
+      "high": "High",
+      "highest": "Highest"
+    },
+    "selectAll": "Select all",
+    "selectGroup": "Select all of this kind",
+    "selectHint": "Ctrl+click adds or removes a change, Shift+click selects a range, Ctrl+A selects all",
+    "cloudsButton": "Place clouds"
   },
   "organize": {
     "pages": "Sivut",
@@ -350,8 +456,16 @@
     "scanTextHint": "Korvaa tunnistettu sana napsauttamalla sitä. Skannauksen vanha sana peitetään.",
     "scanTextNone": "Tällä sivulla ei ole tunnistettua tekstiä. Suorita ensin Tekstintunnistus (OCR).",
     "shiftPage": "Siirrä sivua",
+    "scanGroup": "Skannaus",
+    "scan": "Skannaa",
+    "scanTitle": "Skannaa sivut haettavaksi PDF:ksi",
+    "batchOcr": "Kansion OCR",
+    "batchOcrTitle": "Tunnista teksti kaikista kansion PDF-tiedostoista",
     "editPages": "Muokkaa sivuja",
-    "editPagesTitle": "Muokkaa sivuja visuaalisesti: järjestä, kierrä, lisää, poista, irrota ja jaa"
+    "editPagesTitle": "Muokkaa sivuja visuaalisesti: järjestä, kierrä, lisää, poista, irrota ja jaa",
+    "protect": "Suojaa",
+    "security": "Suojaus",
+    "securityTitle": "Aseta tai poista salasanat ja oikeudet"
   },
   "help": {
     "settings": "Asetukset",
@@ -378,7 +492,9 @@
     "setDefaultPdf": "Aseta oletus-PDF-sovellus",
     "fileAssociations": "Tiedostoyhteydet",
     "previousVersionTitle": "Asenna Open PDF Studion edellinen versio",
-    "previousVersion": "Edellinen versio"
+    "previousVersion": "Edellinen versio",
+    "virusWarningTitle": "Did your virus scanner give a warning? Read what to do and report it",
+    "virusWarning": "Virus scanner"
   },
   "format": {
     "styleRed": "Punainen",
@@ -482,6 +598,8 @@
     "size": "Koko",
     "sameSize": "Sama koko",
     "sameWidth": "Sama leveys",
+    "fitBoxToText": "Fit Box to Text",
+    "fitBoxToTextTip": "Resize the box of the selected text boxes and callouts to fit their text",
     "sameHeight": "Sama korkeus",
     "rotate": "Kierrä",
     "rotate90CCW": "Kierrä 90° vastapäivään",
@@ -501,7 +619,11 @@
     "x": "X:",
     "w": "L:",
     "y": "Y:",
-    "h": "K:"
+    "h": "K:",
+    "alignToPage": "Align to Page",
+    "alignToPageTip": "Align the selection to the edges or the centre of the page (also works with one markup)",
+    "alignPageEach": "Align Each Markup Separately",
+    "alignPageEachTip": "With Align to Page: move every markup to the page edge on its own instead of as a group"
   },
   "theme": {
     "system": "Järjestelmä (Automaattinen)",
@@ -683,7 +805,21 @@
     "symbolScaleTitle": "Koko, jossa uusi symboli sijoitetaan",
     "symbolScaleCustom": "Mukautettu mittakaava",
     "count": "Laske",
-    "arc": "Kaari"
+    "arc": "Kaari",
+    "countGroup": "Count group",
+    "countGroupLabel": "Group",
+    "countGroupTip": "New count markers go into this group; the number is the total in the group",
+    "countGroupColor": "Color",
+    "countGroupColorTip": "Color of the whole group, including the markers already placed",
+    "countGroupNew": "New group",
+    "countGroupAdd": "Add group",
+    "countNew": "Uusi laskenta",
+    "countNewTip": "New count: starts a new group with its own colour; numbering starts again at 1. Earlier counts keep their numbers and colour. While counting: Enter",
+    "countNewName": "Laskenta",
+    "countNewStarted": "Uusi laskenta: {{name}}",
+    "countDefaultDoors": "Ovet",
+    "countDefaultWindows": "Ikkunat",
+    "countDefaultSockets": "Pistorasiat"
   },
   "proofread": {
     "group": "Oikoluku",
@@ -764,7 +900,8 @@
       "nen1414-tn": "NL NEN 1414 — Turvavalaistus",
       "nen1414-tr": "NL NEN 1414 — Savunpoisto",
       "nen1414-tv": "NL NEN 1414 — Ilmanvaihto",
-      "nen1414-tw": "NL NEN 1414 — Vesi/Sprinkleri"
+      "nen1414-tw": "NL NEN 1414 — Vesi/Sprinkleri",
+      "gdt-bewerking": "GD&T ja koneistus"
     },
     "sectors": {
       "aec": "AEC (Rakentaminen)",
@@ -773,5 +910,34 @@
       "mep": "Talotekniikka (MEP)",
       "infra": "Infrastruktuuri"
     }
+  },
+  "clipboardPalette": {
+    "title": "Clipboard",
+    "tip": "Click a copy, then press Ctrl+V on the sheet: it lands at the mouse.",
+    "empty": "Copy markups (Ctrl+C) to collect them here.",
+    "clear": "Clear the clipboard",
+    "clearShort": "Clear",
+    "remove": "Remove",
+    "close": "Close",
+    "markups": "{{count}} markups",
+    "picked": "Copy is on the clipboard: press Ctrl+V on the sheet"
+  },
+  "workspace": {
+    "button": "Workspace",
+    "buttonTitle": "Workspaces: switch between saved panel layouts, save the current layout, reset it, or change the interface size",
+    "saved": "Saved workspaces",
+    "none": "No saved workspaces",
+    "manage": "Save or manage workspaces...",
+    "reset": "Reset to default layout",
+    "interfaceSize": "Interface size",
+    "dialogTitle": "Workspaces",
+    "intro": "A workspace remembers which panels and palettes are open, collapsed or floating, the width of the navigation panel and whether the ribbon is collapsed.",
+    "name": "Name:",
+    "save": "Save current layout",
+    "overwrite": "Overwrite",
+    "savedAs": "Saved as \"{{name}}\".",
+    "full": "You can save up to {{max}} workspaces. Delete one first.",
+    "apply": "Apply",
+    "delete": "Delete"
   }
 }

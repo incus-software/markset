@@ -2,6 +2,9 @@
   "contextMenu": {
     "deleteVertex": "ລຶບຈຸດຍອດ",
     "insertVertex": "ແຊກຈຸດຍອດບ່ອນນີ້",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "ປ່ຽນເປັນເສັ້ນໂຄ້ງ",
     "convertToLine": "ປ່ຽນເປັນເສັ້ນຊື່"
   },
@@ -9,6 +12,7 @@
     "openPopUpNote": "ເປີດບັນທຶກປັອບອັບ",
     "hidePopUpNote": "ເຊື່ອງບັນທຶກປັອບອັບ",
     "resetPopUpLocation": "ຕັ້ງຕຳແໜ່ງບັນທຶກປັອບອັບຄືນໃໝ່",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "ແກ້ໄຂຂໍ້ຄວາມ...",
     "addReply": "ເພີ່ມຄຳຕອບກັບ",
     "locked": "ລັອກແລ້ວ",
@@ -18,11 +22,13 @@
     "printable": "ສາມາດພິມໄດ້",
     "status": "ສະຖານະ",
     "showByStatus": "ສະແດງຕາມສະຖານະ",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "ບໍ່ມີ",
     "statusAccepted": "ຍອມຮັບແລ້ວ",
     "statusCancelled": "ຍົກເລີກແລ້ວ",
     "statusCompleted": "ສຳເລັດແລ້ວ",
     "statusRejected": "ປະຕິເສດແລ້ວ",
+    "statusReviewed": "ກວດສອບແລ້ວ",
     "reviewHistory": "ປະຫວັດການກວດກາ...",
     "layer": "ຊັ້ນ:",
     "noLayersAvailable": "ບໍ່ມີຊັ້ນຂໍ້ມູນ",
@@ -55,6 +61,7 @@
     "wallJoinDisallow": "ບໍ່ອະນຸຍາດໃຫ້ເຊື່ອມຕໍ່ (ສົ້ນນີ້)",
     "properties": "ຄຸນສົມບັດ...",
     "editViewportScale": "ແກ້ໄຂມາດຕາສ່ວນມຸມມອງ",
+    "checkScale": "ກວດສອບມາດຕາສ່ວນດ້ວຍເສັ້ນນີ້...",
     "saveToToolSet": "ບັນທຶກໃສ່ຊຸດເຄື່ອງມື"
   },
   "multiSelect": {
@@ -70,6 +77,7 @@
     "centerVertically": "ຈັດເຄິ່ງກາງແນວຕັ້ງ",
     "distributeHorizontally": "ກະຈາຍໄລຍະຫ່າງແນວນອນ",
     "distributeVertically": "ກະຈາຍໄລຍະຫ່າງແນວຕັ້ງ",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "ຕັດມຸມຝາ",
     "deleteAnnotations": "ລຶບ {{count}} ຄຳອະທິບາຍ",
     "deleteConfirm": "ລຶບ {{count}} ຄຳອະທິບາຍແທ້ບໍ່?",
@@ -115,6 +123,8 @@
     "nestUnderNew": "ຈັດໄວ້ພາຍໃຕ້ບຸກມາກໃໝ່...",
     "indent": "ຍໍ້ໜ້າເຂົ້າ",
     "outdent": "ຍໍ້ໜ້າອອກ",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "ລຶບ {{count}} ບຸກມາກ"
   },
   "thumbnail": {
@@ -139,13 +149,30 @@
     "insertFromFile": "ແຊກຈາກໄຟລ໌...",
     "insertFromFileBefore": "ກ່ອນໜ້ານີ້...",
     "insertFromFileAfter": "ຫຼັງໜ້ານີ້...",
-    "pageLabels": "ປ້າຍຊື່ໜ້າ (ຕົວສ້າງຊື່)..."
+    "pageLabels": "ປ້າຍຊື່ໜ້າ (ຕົວສ້າງຊື່)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "ເນັ້ນສີຂໍ້ຄວາມທີ່ເລືອກ",
     "strikethroughSelection": "ຂີດຂ້າຂໍ້ຄວາມທີ່ເລືອກ",
     "underlineSelection": "ຂີດກ້ອງຂໍ້ຄວາມທີ່ເລືອກ",
-    "curvedLeaderSelection": "ເພີ່ມຂໍ້ຄວາມຊີ້ບອກເສັ້ນໂຄ້ງ"
+    "curvedLeaderSelection": "ເພີ່ມຂໍ້ຄວາມຊີ້ບອກເສັ້ນໂຄ້ງ",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "ລຶບຄຳອະທິບາຍນີ້ແທ້ບໍ່?",

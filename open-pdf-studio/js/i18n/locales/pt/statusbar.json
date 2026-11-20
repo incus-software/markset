@@ -30,7 +30,8 @@
     "formRadio": "Botão de opção de formulário",
     "screenshot": "Captura de tela",
     "pageLabelPick": "Escolher texto para o rótulo da página",
-    "proofread": "Revisão"
+    "proofread": "Revisão",
+    "count": "Contar"
   },
   "toolLabel": "Ferramenta:",
   "annotationsLabel": "Anotações:",
@@ -110,6 +111,7 @@
   "searchHitsOne": "1 correspondência",
   "searchHitsMany": "{{count}} correspondências",
   "passwordProtectedBar": "Protegido por senha: aberto somente para leitura.",
+  "passwordProtectedEditableBar": "Protegido por senha. Salvar mantém a proteção.",
   "documentSearch": {
     "title": "Pesquisar documentos",
     "query": "Texto da pesquisa",
@@ -157,5 +159,12 @@
     "port": "Porta: {{port}}",
     "lastTool": "Última ferramenta: {{tool}} às {{time}}",
     "noTool": "Ainda não há chamadas de ferramentas"
-  }
+  },
+  "sharedReviewActive": "Revisão partilhada",
+  "sharedReviewUpdates": "Revisão partilhada: {{n}} novas",
+  "sharedReviewTitle": "As anotações são partilhadas através de {{folder}}. Clique para abrir a revisão partilhada.",
+  "sharedReviewError": "Revisão partilhada: pasta indisponível",
+  "pdfaReadOnly": "Este documento está em conformidade com o padrão {{label}} e foi aberto somente leitura para evitar modificações.",
+  "pdfaValidate": "Validar",
+  "countGroupTip": "Grupo de contagem ativo: o próximo marcador entra neste grupo"
 }

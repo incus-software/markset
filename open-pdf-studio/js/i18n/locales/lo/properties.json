@@ -24,7 +24,9 @@
     "statusSetBy": "ກຳນົດໂດຍ {{author}} ເມື່ອ {{date}}",
     "layer": "ຊັ້ນ",
     "layerMarkupGroup": "ເລເຢີເຄື່ອງໝາຍ",
-    "layerDocumentGroup": "ຊັ້ນຂອງເອກະສານ"
+    "layerDocumentGroup": "ຊັ້ນຂອງເອກະສານ",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "ບໍ່ມີ",
   "moreColors": "ສີເພີ່ມເຕີມ...",
@@ -178,6 +180,9 @@
     "scaleAuto": "ມາດຕາສ່ວນເອກະສານ",
     "scaleTooltip": "ກຳນົດມາດຕາສ່ວນສະເພາະສຳລັບຄຳອະທິບາຍນີ້ (ຫົວໜ່ວຍຕໍ່ຈຸດ). ປະຫວ່າງໄວ້ເພື່ອໃຊ້ມາດຕາສ່ວນຂອງເອກະສານ/ຂອບເຂດ.",
     "unit": "ຫົວໜ່ວຍ",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "ຄວາມລະອຽດ (ເລກທົດສະນິຍົມ)",
     "dimType": "ປະເພດ",
     "dimTypeCustom": "ກຳນົດເອງ",
@@ -199,7 +204,9 @@
     "depthNone": "ບໍ່ມີ",
     "depthTooltip": "ຄວາມສູງຂອງຝາ, ຄວາມໜາຂອງພື້ນ ແລະ ອື່ນໆ ໃນຫົວໜ່ວຍຂອງການວັດແທກ. ຄວາມຍາວ × ຄວາມເລິກ ໄດ້ພື້ນທີ່ໜ້າ, ພື້ນທີ່ × ຄວາມເລິກ ໄດ້ບໍລິມາດ.",
     "surface": "ພື້ນທີ່ໜ້າ",
-    "volume": "ບໍລິມາດ"
+    "volume": "ບໍລິມາດ",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "scaleBar": {
     "title": "ແຖບມາດຕາສ່ວນ",
@@ -218,7 +225,9 @@
     "measureTitle": "ລວງຍາວຕົວຈິງ",
     "measureQuestion": "ໄລຍະຫ່າງນີ້ມີລວງຍາວຕົວຈິງເທົ່າໃດ?",
     "measuredOnPaper": "ວັດແທກເທິງເຈ້ຍ",
-    "computedScale": "ມາດຕາສ່ວນທີ່ຄິດໄລ່ໄດ້"
+    "computedScale": "ມາດຕາສ່ວນທີ່ຄິດໄລ່ໄດ້",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "ມາດຕາສ່ວນ",
@@ -226,7 +235,9 @@
     "viewports": "ຊ່ອງມຸມມອງ",
     "noViewports": "ບໍ່ມີການກຳນົດຊ່ອງມຸມມອງ",
     "measurements": "ການວັດແທກ",
-    "noMeasurements": "ຍັງບໍ່ມີການວັດແທກເທື່ອ"
+    "noMeasurements": "ຍັງບໍ່ມີການວັດແທກເທື່ອ",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "lineEndings": {
     "title": "ຫົວທ້າຍເສັ້ນ",
@@ -286,6 +297,7 @@
     "title": "ຫົວຂໍ້",
     "author": "ຜູ້ສ້າງ",
     "subject": "ເລື່ອງ",
+    "keywords": "ຄຳສຳຄັນ",
     "creator": "ໂປຣແກຣມສ້າງ",
     "producer": "ໂປຣແກຣມຜະລິດ PDF",
     "pdfVersion": "ເວີຊັນ PDF",
@@ -354,7 +366,8 @@
     "redaction": "ການປິດບັງຂໍ້ມູນ",
     "scaleBar": "ແຖບມາດຕາສ່ວນ",
     "parametricSymbol": "ສັນຍະລັກພາຣາມິເຕີ",
-    "fileAttachment": "ໄຟລ໌ແນບ"
+    "fileAttachment": "ໄຟລ໌ແນບ",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "ເປີດ/ປິດ ແຖບຂ້າງ",
@@ -379,6 +392,8 @@
     "deleteBookmark": "ລຶບບຸກມາກ",
     "findBookmark": "ຊອກຫາ...",
     "findBookmarkTip": "ພິມເພື່ອໄປຫາບຸກມາກ. ກົດ Enter ເພື່ອເປີດ, ກົດ Enter ອີກຄັ້ງເພື່ອໄປຫາລາຍການທີ່ກົງກັນຕໍ່ໄປ.",
+    "findPage": "ຊອກຫາ...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "ເພີ່ມໄຟລ໌ຕິດຄັດ",
     "openAttachment": "ເປີດໄຟລ໌ຕິດຄັດ",
     "saveAttachment": "ບັນທຶກໄຟລ໌ຕິດຄັດ",
@@ -496,7 +511,18 @@
     },
     "preview": "ສະແດງຕົວຢ່າງ",
     "exportCsv": "ສົ່ງອອກ CSV",
-    "workbookBindings": "ການເຊື່ອມໂຍງຕາຕະລາງຄຳນວນ"
+    "workbookBindings": "ການເຊື່ອມໂຍງຕາຕະລາງຄຳນວນ",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "ຕົວຊ່ວຍສ້າງຕາຕະລາງ",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "ເຊື່ອມຕໍ່ຕອນຕົ້ນ",
     "joinAtEnd": "ເຊື່ອມຕໍ່ຕອນທ້າຍ",
-    "joinHint": "ປິດ: ປາຍຝານີ້ຈະບໍ່ຖືກຕັດມຸມ, ຕໍ່ເປັນຮູບໂຕ T ຫຼື ຕັດຕໍ່ກັບຝາອື່ນ; ມັນຈະຮັກສາປາຍຕັດກົງຕາມບ່ອນທີ່ແຕ້ມໄວ້."
+    "joinHint": "ປິດ: ປາຍຝານີ້ຈະບໍ່ຖືກຕັດມຸມ, ຕໍ່ເປັນຮູບໂຕ T ຫຼື ຕັດຕໍ່ກັບຝາອື່ນ; ມັນຈະຮັກສາປາຍຕັດກົງຕາມບ່ອນທີ່ແຕ້ມໄວ້.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "ການຕັ້ງຄ່າແບບແຕ້ມ",
@@ -682,6 +804,7 @@
       "height": "ລວງສູງ",
       "location": "ສະຖານທີ່",
       "locationSource": "ແຫຼ່ງທີ່ມາຂອງສະຖານທີ່",
+      "layer": "ຊັ້ນ",
       "rebarMark": "ເລກເຫຼັກ",
       "rebarDiameter": "Ø",
       "rebarShape": "ຮູບແບບການງໍ",
@@ -807,6 +930,24 @@
     "rules": "ການກຳນົດໃຊ້ຈຸດກາງຂອງກອບຂອບເຂດຂອງເຄື່ອງໝາຍ, ລວມທັງຂອບ. ເຂດທີ່ຢູ່ເລິກສຸດຊະນະ, ຕາມດ້ວຍພື້ນທີ່ນ້ອຍສຸດ, ແລ້ວ ID ຂອງເຂດ. ໃຊ້ຮູບຫຼາຍຫຼ່ຽມເສັ້ນຊື່ທີ່ບໍ່ມີຮູ ຫຼື ກອບທີ່ບໍ່ໝູນ. ຕົວຕົນຂອງເຂດທີ່ບໍ່ຖືກຕ້ອງ ຫຼື ຊ້ຳກັນຈະຖືກຍົກເວັ້ນ.",
     "loading": "ກຳລັງໂຫຼດຄຳອະທິບາຍປະກອບ: ສະຖານທີ່ອາດຍັງປ່ຽນແປງໄດ້."
   },
+  "dynamicStamp": {
+    "title": "ຊ່ອງຂໍ້ມູນກາປະທັບ",
+    "template": "ແມ່ແບບ",
+    "refresh": "ອັບເດດວັນທີ, ຜູ້ໃຊ້ ແລະ ໜ້າ",
+    "lock": "ລັອກກາປະທັບ",
+    "lockConfirm": "ລັອກກາປະທັບນີ້ບໍ? ຈະບໍ່ສາມາດປ່ຽນຊ່ອງຂໍ້ມູນໄດ້ອີກ.",
+    "locked": "ກາປະທັບນີ້ຖືກລັອກ: ບໍ່ສາມາດປ່ຽນຊ່ອງຂໍ້ມູນໄດ້ອີກ.",
+    "field": {
+      "date": "ວັນທີ",
+      "time": "ເວລາ",
+      "datetime": "ວັນທີ ແລະ ເວລາ",
+      "user": "ຜູ້ໃຊ້",
+      "page": "ໜ້າ",
+      "pages": "ຈຳນວນໜ້າ",
+      "filename": "ຊື່ໄຟລ໌",
+      "title": "ຫົວຂໍ້ເອກະສານ"
+    }
+  },
   "toolSets": {
     "title": "ຊຸດເຄື່ອງມື",
     "typeWall": "ຝາ",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "ໄຟລ໌ໃຫຍ່ເກີນໄປສຳລັບຊຸດເຄື່ອງມື.",
     "errorFileInvalid": "ໄຟລ໌ນີ້ບໍ່ແມ່ນຊຸດເຄື່ອງມືທີ່ຖືກຕ້ອງ.",
     "errorFileNewer": "ຊຸດເຄື່ອງມືນີ້ສ້າງດ້ວຍ Open PDF Studio ລຸ້ນໃໝ່ກວ່າ. ອັບເດດແອັບເພື່ອນຳເຂົ້າ.",
-    "damagedStatus": "ບໍ່ສາມາດອ່ານຊຸດເຄື່ອງມືທີ່ບັນທຶກໄວ້ໄດ້. ໄຟລ໌ທີ່ເສຍຫາຍຖືກເກັບໄວ້ເປັນ \"{{name}}\"."
+    "damagedStatus": "ບໍ່ສາມາດອ່ານຊຸດເຄື່ອງມືທີ່ບັນທຶກໄວ້ໄດ້. ໄຟລ໌ທີ່ເສຍຫາຍຖືກເກັບໄວ້ເປັນ \"{{name}}\".",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "ເປີດ",
     "saveAs": "ບັນທຶກເປັນ...",
     "noContent": "ເນື້ອຫາຂອງໄຟລ໌ນີ້ບໍ່ໄດ້ຝັງຢູ່ໃນ PDF."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

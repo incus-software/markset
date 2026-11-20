@@ -4,7 +4,10 @@
 
 import { totalBarLengthM } from '../annotations/stavenreeks.js';
 import { nettoVlakOppervlak } from '../annotations/vlak-ringen.js';
-import { veelhoekPunten } from '../annotations/veelhoek-punten.js';
+import { veelhoekPunten, veelhoekKrommen } from '../annotations/veelhoek-punten.js';
+import { hasCurves, pathLength, pathArea } from '../annotations/curve-path.js';
+import { expandArcPoints, hasArcPoints } from '../annotations/arc-points.js';
+import { vlakUitkomst } from '../annotations/oppervlakte-eenheid.js';
 
 // --- Vertaalhaak -----------------------------------------------------------
 // Deze module blijft puur: hij kent i18next niet. De UI-laag injecteert via
@@ -161,6 +164,10 @@ const GEOMETRISCHE_VLAKKEN = new Set([
 function pixelArea(el) {
   // Een veelhoek (#622): de hoekpunten zoals het scherm ze in zijn vak tekent.
   const pts = (el.type === 'polygon' && veelhoekPunten(el)) || (Array.isArray(el.points) ? el.points : null);
+  // Veelhoek met krommen (#1169): de oppervlakte onder de krommen, exact.
+  if (el.type === 'polygon' && pts && pts.length >= 3 && hasCurves(el.curves)) {
+    return pathArea(pts, veelhoekKrommen(el));
+  }
   if (pts && pts.length >= 3) return nettoVlakOppervlak(pts, el.holes);
   const w = Math.abs(el.width || 0), h = Math.abs(el.height || 0);
   if (w > 0 && h > 0) {
@@ -174,9 +181,11 @@ function pixelArea(el) {
 // Oppervlakte + eenheid van een vlak-element.
 function areaMeting(el) {
   if (el.type === 'measureArea') {
-    return typeof el.measureValue === 'number'
-      ? normaliseerMeting(el.measureValue, el.measureUnit)
-      : null;
+    // In de eenheid waarin het vlak zijn oppervlakte op het blad toont
+    // (measureAreaUnit: acres, hectares, ..., #1129; anders mm² als m², zie
+    // normaliseerMeting). De kolom rekent daarna alle rijen om naar één
+    // eenheid (eenheid-omrekening.js).
+    return vlakUitkomst(el);
   }
   // Getekende vormen droegen tot nu toe géén oppervlakte: de kolom bleef leeg.
   // De store verrijkt ze met de opgeloste schaal (__pxPerUnit/__unit), net als
@@ -208,6 +217,10 @@ function pixelLength(el) {
   }
   const pts = Array.isArray(el.points) ? el.points
     : (Array.isArray(el.path) ? el.path : null);
+  // Polylijn met krommen (#1169): de lengte van de krommen zelf.
+  if (el.type === 'polyline' && pts && pts.length >= 2 && hasCurves(el.curves)) {
+    return pathLength(pts, el.curves);
+  }
   if (pts && pts.length >= 2) {
     let total = 0;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -220,14 +233,100 @@ function pixelLength(el) {
   return null;
 }
 
-// Lengte in meter (schaal-eenheid) voor een lijnvormig element.
-// Meet-annotaties dragen hun waarde al in `measureValue`. Gewone lijnen/pijlen
-// (en points-lijnen) hebben die niet: bereken de pixel-lengte uit de coördinaten
-// en reken om via de meegegeven schaal (`__pxPerUnit`, in px per schaal-eenheid).
-// De store verrijkt elementen met deze schaal, net zoals de meet-tools dat doen
-// (zie annotations/measurement.js getMeasureScale). Zonder schaal (bv. in tests
-// die 1 px = 1 unit aannemen) valt `__pxPerUnit` terug op 1.
+// Lengte van een gesloten ring in pagina-eenheden (boogsegmenten uitgeklapt,
+// net als bij de oppervlakte), inclusief het sluitende segment.
+function ringOmtrek(ring) {
+  if (!Array.isArray(ring) || ring.length < 2) return 0;
+  const p = hasArcPoints(ring) ? expandArcPoints(ring) : ring;
+  let total = 0;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length];
+    if (!a || !b) continue;
+    total += Math.hypot((b.x ?? 0) - (a.x ?? 0), (b.y ?? 0) - (a.y ?? 0));
+  }
+  return total;
+}
+
+// Omtrek van een vlak in pagina-eenheden: de buitenring plus de extra ringen
+// (gaten en losse delen hebben ook een rand). Rechthoekige vormen uit hun vak,
+// cirkel/ellips met de benadering van Ramanujan. Null zonder geometrie.
+function pixelOmtrek(el) {
+  const pts = (el.type === 'polygon' && veelhoekPunten(el)) || (Array.isArray(el.points) ? el.points : null);
+  // Veelhoek met krommen (#1169): de lengte van de krommen zelf.
+  if (el.type === 'polygon' && pts && pts.length >= 3 && hasCurves(el.curves)) {
+    return pathLength(pts, veelhoekKrommen(el), { closed: true });
+  }
+  if (pts && pts.length >= 3) {
+    let total = ringOmtrek(pts);
+    if (Array.isArray(el.holes)) {
+      for (const h of el.holes) if (Array.isArray(h) && h.length >= 3) total += ringOmtrek(h);
+    }
+    return total;
+  }
+  const w = Math.abs(el.width || 0), h = Math.abs(el.height || 0);
+  if (w > 0 && h > 0) {
+    if (el.type === 'circle' || el.type === 'ellipse') {
+      const a = w / 2, b = h / 2;
+      return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+    }
+    return 2 * (w + h);
+  }
+  return null;
+}
+
+// Lengte-eenheid bij een oppervlakte-eenheid: 'mm²' → 'mm', 'sq ft' → 'ft'.
+function lengteEenheidVan(eenheid) {
+  if (typeof eenheid !== 'string') return null;
+  const kaal = eenheid.trim().replace(/²$/, '').replace(/^sq\.?\s+/i, '').trim();
+  return kaal || null;
+}
+
+// Omtrek van een vlak in de schaal-eenheid (GitHub #982). De lengte-kolom van
+// een vlak toonde de puntlengte van de OPEN puntenlijst zonder schaal: een
+// meetvlak van 4,7 x 5,2 m op 1:50 kwam zo als 827,72 "m" in de staat.
+//
+// Een meetvlak draagt zijn oppervlakte al in de tekeneenheid. De lengteschaal
+// leiden we daaruit af (√(waarde / pagina-oppervlak)), zodat omtrek en
+// oppervlakte altijd met dezelfde schaal gerekend zijn: eigen schaal,
+// schaalgebied, PDF-viewport of documentschaal, /UserUnit inbegrepen. Lukt
+// dat niet, dan de schaal die de store meegaf; zonder schaal blijft de cel
+// leeg in plaats van een getal in pagina-eenheden te tonen.
+function omtrekMeting(el) {
+  const px = pixelOmtrek(el);
+  if (px == null) return null;
+  if (el.type === 'measureArea') {
+    const pxArea = pixelArea(el);
+    const unit = lengteEenheidVan(el.measureUnit);
+    if (typeof el.measureValue === 'number' && el.measureValue > 0 && pxArea > 0 && unit) {
+      return normaliseerMeting(px * Math.sqrt(el.measureValue / pxArea), unit);
+    }
+    if (typeof el.__pxPerUnit === 'number' && el.__pxPerUnit > 0) {
+      return normaliseerMeting(px / el.__pxPerUnit, el.__unit || null);
+    }
+    return null;
+  }
+  if (!GEOMETRISCHE_VLAKKEN.has(el.type)) return null;
+  // Getekende vlakken: dezelfde schaal als hun oppervlakte-kolom.
+  const ppu = (typeof el.__pxPerUnit === 'number' && el.__pxPerUnit > 0) ? el.__pxPerUnit : 1;
+  return normaliseerMeting(px / ppu, el.__unit || null);
+}
+
+// Lengte in de schaal-eenheid. Per categorie:
+//  - lijnvormig: meet-annotaties dragen hun waarde al in `measureValue`.
+//    Gewone lijnen/pijlen (en points-lijnen) hebben die niet: bereken de
+//    pixel-lengte uit de coördinaten en reken om via de meegegeven schaal
+//    (`__pxPerUnit`, in px per schaal-eenheid). De store verrijkt elementen
+//    met deze schaal, net zoals de meet-tools dat doen (zie
+//    annotations/measurement.js getMeasureScale). Zonder schaal (bv. in tests
+//    die 1 px = 1 unit aannemen) valt `__pxPerUnit` terug op 1.
+//  - vlak: de omtrek (zie omtrekMeting).
+//  - overige categorieën (tekst, telling, symbool, ...): geen lengte. De
+//    engine leest elk veld op elke rij; zonder deze grens kreeg bv. een
+//    tekstballon de lengte van zijn aanwijslijn in pagina-eenheden.
 function lengthMeting(el) {
+  const cat = categoryOf(el);
+  if (cat === 'area') return omtrekMeting(el);
+  if (cat !== 'line-based') return null;
   if ((el.type === 'measureDistance' || el.type === 'measurePerimeter')
       && typeof el.measureValue === 'number') {
     return normaliseerMeting(el.measureValue, el.measureUnit || el.__unit || null);
@@ -274,6 +373,9 @@ const COMMON = [
   F('label', 'Label', 'text', el => el.label || el.measureName || el.subject || ''),
   F('location', 'Location', 'text', el => el.__location?.path || ''),
   F('locationSource', 'Location source', 'text', el => el.__location?.source || 'none'),
+  // Annotatielaag (#1130): de weergavenaam, zodat een staat per laag kan
+  // filteren en groeperen. De store zet `__layer` (staatElementen.js).
+  F('layer', 'Layer', 'text', el => el.__layer || ''),
   F('color', 'Color', 'text', el => el.color || el.strokeColor || el.fillColor || ''),
   F('ifcCategory', 'IFC category', 'text', el => el.ifcCategory || ''),
   F('count', 'Count', 'number', () => 1, '', 0),
@@ -296,6 +398,9 @@ export function scheduleUsesLocation({ fields = [], filters = [], sort = [] } = 
 export const FIELD_REGISTRY = {
   'area': [...COMMON,
     F('area', 'Area', 'number', areaValue, 'm²', undefined, areaUnit),
+    // Omtrek van het vlak (#982): dezelfde 'length'-sleutel als bij de
+    // lijnvormige elementen, zodat een gemengde staat één lengte-kolom houdt.
+    F('length', 'Length', 'number', lengthValue, 'm', undefined, lengthUnit),
     F('dakhoek', 'Roof pitch', 'number', el => el.dakhoek || 0, '°', 0),
     F('realArea', 'Actual area', 'number', realArea, 'm²', undefined, areaUnit),
   ],
@@ -343,6 +448,17 @@ export const FIELD_REGISTRY = {
   ],
   'other': [...COMMON],
 };
+
+/**
+ * Heeft de staat de laagnaam van de elementen nodig: als kolom, filter of
+ * sortering? Alleen dan zoekt de store per element de laag op.
+ * @param {{fields?: string[], filters?: {field: string}[], sort?: {field: string}[]}} cfg
+ */
+export function scheduleUsesLayer({ fields = [], filters = [], sort = [] } = {}) {
+  return (fields || []).includes('layer')
+    || (filters || []).some((f) => f?.field === 'layer')
+    || (sort || []).some((s) => s?.field === 'layer');
+}
 
 /** Unie van velddefinities over geselecteerde categorieën, uniek op key (eerste wint). */
 export function fieldsForCategories(cats) {

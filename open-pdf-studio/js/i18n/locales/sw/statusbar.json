@@ -30,7 +30,8 @@
     "formRadio": "Kitufe cha Kuchagua cha Fomu",
     "screenshot": "Picha ya Skrini",
     "pageLabelPick": "Chagua Maandishi kwa Lebo ya Ukurasa",
-    "proofread": "Usahihishaji"
+    "proofread": "Usahihishaji",
+    "count": "Hesabu"
   },
   "toolLabel": "Zana:",
   "annotationsLabel": "Maoni:",
@@ -110,6 +111,7 @@
   "searchHitsOne": "Tokeo 1",
   "searchHitsMany": "Matokeo {{count}}",
   "passwordProtectedBar": "Imelindwa kwa nenosiri: imefunguliwa kwa kusoma tu.",
+  "passwordProtectedEditableBar": "Imelindwa kwa nenosiri. Kuhifadhi kunadumisha ulinzi.",
   "documentSearch": {
     "title": "Tafuta hati",
     "query": "Maandishi ya kutafuta",
@@ -157,5 +159,12 @@
     "port": "Mlango: {{port}}",
     "lastTool": "Zana ya mwisho: {{tool}} saa {{time}}",
     "noTool": "Bado hakuna miito ya zana"
-  }
+  },
+  "sharedReviewActive": "Ukaguzi wa pamoja",
+  "sharedReviewUpdates": "Ukaguzi wa pamoja: {{n}} mapya",
+  "sharedReviewTitle": "Maelezo yanashirikiwa kupitia {{folder}}. Bofya ili kufungua ukaguzi wa pamoja.",
+  "sharedReviewError": "Ukaguzi wa pamoja: folda haipatikani",
+  "pdfaReadOnly": "Hati hii inafuata kiwango cha {{label}} na imefunguliwa katika hali ya kusoma tu ili kuzuia mabadiliko.",
+  "pdfaValidate": "Thibitisha",
+  "countGroupTip": "Active count group: the next marker goes into this group"
 }

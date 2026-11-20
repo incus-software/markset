@@ -8,8 +8,18 @@
 // losse sticky notes; deze module herkent ze en zet de status op de
 // doel-annotatie zelf.
 //
-// Bewust GEEN app-imports hier zodat de logica ook standalone (Node-
-// tests) draait.
+// Een eigen statusmodel (#1076): een status uit een statusset staat onder
+// /StateModel met de naam van die set, en ook een ander programma kan een
+// eigen model schrijven. Elke /State die geen Marked is wordt de status van
+// de doel-annotatie; model en schrijfwijze gaan mee, zodat de saver ze
+// ongewijzigd terugschrijft (review/status-history.js).
+//
+// Bewust GEEN app-imports hier (alleen het pure status-sets.js) zodat de
+// logica ook standalone (Node-tests) draait.
+
+import { VASTE_STATUSSEN } from '../../review/status-sets.js';
+
+const VASTE_SLEUTELS = new Set(VASTE_STATUSSEN.map((s) => s.key));
 
 // PDF-datum (D:YYYYMMDDHHmmSS...) of ISO-string → ISO-string (of null).
 export function toIsoDate(raw) {
@@ -43,11 +53,26 @@ export function toIsoDate(raw) {
  *
  * @returns {null | {__statusReply: true, targetId, state, stateModel, author, date}}
  */
+// PDF.js geeft /State en /StateModel als ruwe bytes door. Een tekst met
+// tekens buiten Latin-1 (een eigen status als "Geëvalueerd", #1076) staat er
+// als UTF-16 met byte-order-mark, of in PDF 2.0 als UTF-8 met BOM.
+export function pdfTekstUitBytes(waarde) {
+  const s = String(waarde ?? '');
+  if (s.length < 2 || [...s].some((c) => c.charCodeAt(0) > 0xff)) return s;
+  const bytes = Uint8Array.from(s, (c) => c.charCodeAt(0));
+  try {
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
+    if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
+    if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return new TextDecoder('utf-8').decode(bytes.subarray(3));
+  } catch { /* geen geldige codering: de bytes zoals ze zijn */ }
+  return s;
+}
+
 export function statusReplyFromPdfAnnotation(annot) {
   if (!annot || annot.subtype !== 'Text') return null;
   if (!annot.inReplyTo || !annot.state) return null;
-  const state = String(annot.state);
-  let stateModel = annot.stateModel ? String(annot.stateModel) : '';
+  const state = pdfTekstUitBytes(annot.state);
+  let stateModel = annot.stateModel ? pdfTekstUitBytes(annot.stateModel) : '';
   if (!stateModel) {
     // /StateModel is verplicht bij /State; toch defensief afleiden.
     stateModel = (state === 'Marked' || state === 'Unmarked') ? 'Marked' : 'Review';
@@ -65,12 +90,20 @@ export function statusReplyFromPdfAnnotation(annot) {
 /**
  * Pas verzamelde status-replies toe op hun doel-annotaties.
  *
- * - Model "Review": zet `status` (lowercase: accepted/rejected/cancelled/
- *   completed/...) plus `statusBy`/`statusAt` op het doel.
  * - Model "Marked": zet het bestaande `marked`-veld.
+ * - Elk ander model ("Review", de naam van een statusset, een model van een
+ *   ander programma): zet `status` (lowercase: accepted/rejected/...,
+ *   'approved', ...) plus `statusBy`/`statusAt` op het doel. Is de status
+ *   geen vaste, dan komen het model en de schrijfwijze uit het bestand in
+ *   `statusModel` en `statusLabel` (en per stap in `model` en `label`).
+ * - Een None met hetzelfde tijdstip als de stap erna, in een ander model, is
+ *   de tussenstap die de saver bij een modelwissel schrijft: geen eigen stap.
  *
  * Replies worden op datum (oplopend) toegepast zodat bij meerdere
  * status-wijzigingen de laatste wint; zonder datum telt documentvolgorde.
+ * Zijn er meerdere Review-replies, dan komt hun verloop als
+ * `statusHistory` ([{status, by, at}], oud naar nieuw) op het doel (#629,
+ * review/status-history.js).
  *
  * @param {Array} pending  markers uit statusReplyFromPdfAnnotation()
  * @param {Map<string, object>} byPdfId  PDF.js-annotatie-id → app-annotatie
@@ -89,22 +122,42 @@ export function applyStatusReplies(pending, byPdfId) {
     .map(x => x.p);
 
   let applied = 0;
+  const verloop = new Map(); // doel -> [{status, by, at, model?, label?, ruwModel}]
   for (const st of sorted) {
     const target = byPdfId.get(st.targetId);
     if (!target) continue;
     if (st.stateModel === 'Marked') {
       target.marked = st.state === 'Marked';
     } else {
-      const s = st.state.toLowerCase();
-      if (s === 'none') {
-        delete target.status;
-      } else {
-        target.status = s;
+      const s = st.state.toLowerCase() || 'none';
+      const stap = { status: s, by: st.author || '', at: st.date || null, ruwModel: st.stateModel };
+      if (s !== 'none' && !VASTE_SLEUTELS.has(s)) {
+        stap.model = st.stateModel;
+        stap.label = st.state;
       }
-      if (st.author) target.statusBy = st.author;
-      if (st.date) target.statusAt = st.date;
+      if (!verloop.has(target)) verloop.set(target, []);
+      verloop.get(target).push(stap);
     }
     applied++;
+  }
+  for (const [target, ruw] of verloop) {
+    const stappen = ruw.filter((stap, i) => {
+      const volgende = ruw[i + 1];
+      return !(stap.status === 'none' && volgende && volgende.status !== 'none'
+        && stap.at && volgende.at === stap.at && volgende.ruwModel !== stap.ruwModel);
+    }).map(({ ruwModel, ...stap }) => stap);
+    for (const stap of stappen) {
+      if (stap.status === 'none') delete target.status;
+      else target.status = stap.status;
+      if (stap.by) target.statusBy = stap.by;
+      if (stap.at) target.statusAt = stap.at;
+    }
+    const laatste = stappen[stappen.length - 1];
+    if (laatste?.model) {
+      target.statusModel = laatste.model;
+      target.statusLabel = laatste.label;
+    }
+    if (stappen.length > 1) target.statusHistory = stappen;
   }
   return applied;
 }

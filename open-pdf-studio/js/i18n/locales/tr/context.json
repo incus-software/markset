@@ -3,6 +3,7 @@
     "openPopUpNote": "Açılır Notu Aç",
     "hidePopUpNote": "Açılır Notu Gizle",
     "resetPopUpLocation": "Açılır Not Konumunu Sıfırla",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Metni Düzenle...",
     "addReply": "Yanıt Ekle",
     "locked": "Kilitli",
@@ -12,11 +13,13 @@
     "printable": "Yazdırılabilir",
     "status": "Durum",
     "showByStatus": "Duruma Göre Göster",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Yok",
     "statusAccepted": "Kabul Edildi",
     "statusCancelled": "İptal Edildi",
     "statusCompleted": "Tamamlandı",
     "statusRejected": "Reddedildi",
+    "statusReviewed": "İncelendi",
     "reviewHistory": "İnceleme Geçmişi...",
     "layer": "Katman:",
     "noLayersAvailable": "Kullanılabilir katman yok",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Ölçü Zincirine Nokta Ekle",
     "dimChainRemove": "Uzatma Çizgisini Zincirden Kaldır",
     "selectRoom": "Mahal Seç",
+    "checkScale": "Ölçeği bu çizgiyle denetle...",
     "saveToToolSet": "Araç setine kaydet"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Dikey Ortala",
     "distributeHorizontally": "Yatay Dağıt",
     "distributeVertically": "Dikey Dağıt",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Duvar Köşelerini Buda",
     "deleteAnnotations": "{{count}} Açıklamayı Sil",
     "deleteConfirm": "{{count}} açıklama silinsin mi?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Yeni yer iminin altına yerleştir...",
     "indent": "Girintiyi artır",
     "outdent": "Girintiyi azalt",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "{{count}} yer imini sil"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Dosyadan Ekle...",
     "insertFromFileBefore": "Bu Sayfadan Önce...",
     "insertFromFileAfter": "Bu Sayfadan Sonra...",
-    "pageLabels": "Sayfa Etiketleri (Ad Oluşturucu)..."
+    "pageLabels": "Sayfa Etiketleri (Ad Oluşturucu)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Seçimi Vurgula",
     "strikethroughSelection": "Seçimin Üstünü Çiz",
     "underlineSelection": "Seçimin Altını Çiz",
-    "curvedLeaderSelection": "Eğri Açıklama Balonu Ekle"
+    "curvedLeaderSelection": "Eğri Açıklama Balonu Ekle",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Bu açıklama silinsin mi?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Köşe noktasını sil",
     "insertVertex": "Buraya köşe noktası ekle",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Yaya dönüştür",
     "convertToLine": "Çizgiye dönüştür"
   },

@@ -1,15 +1,20 @@
 import { createSignal, Show, For, onMount, onCleanup } from 'solid-js';
+import { klemPaletPositie } from './palette-grenzen.js';
+import { startPaletteDrag, DockLiveIcon, DockTargetIcons } from './palette-dock.jsx';
 import { state, noPdf } from '../../core/state.js';
 import { setTool } from '../../tools/manager.js';
+import { ClipboardWindow, clipboardWindowOpen, toggleClipboardWindow, clipboardIcon } from './ClipboardHistory.jsx';
+import { highlightMode, highlightActive, markeringKnop } from '../../tools/highlight-mode.js';
 import { isPdfAReadOnly } from '../../pdf/loader.js';
 import {
-  highlightIcon, freehandIcon, lineIcon, arrowIcon, polylineIcon,
+  highlightIcon, textHighlightIcon, freehandIcon, lineIcon, arrowIcon, polylineIcon,
   rectIcon, ellipseIcon, polygonIcon, cloudIcon, cloudPolylineIcon,
-  textboxIcon, calloutIcon, noteIcon,
+  textboxIcon, calloutIcon, noteIcon, linkIcon,
   stampIcon, signatureIcon,
   measureDistanceIcon, measureAreaIcon, measurePerimeterIcon
 } from '../data/ribbonIcons.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
+import { LINK_TOOL } from '../../annotations/link/link-maken.js';
 import { savePreferences } from '../../core/preferences.js';
 import { registerPaletteDock, unregisterPaletteDock } from '../stores/paletteOrder.js';
 import { leesOpslag, schrijfOpslag } from '../../core/opslag.js';
@@ -81,8 +86,7 @@ function clampFloatPosition() {
   const w = el ? el.offsetWidth : 80;
   const h = el ? el.offsetHeight : 40;
   const pos = floatPos();
-  const nx = Math.max(0, Math.min(pos.x, window.innerWidth - w));
-  const ny = Math.max(0, Math.min(pos.y, window.innerHeight - h));
+  const { x: nx, y: ny } = klemPaletPositie(pos, w, h);
   if (nx !== pos.x || ny !== pos.y) {
     setFloatPos({ x: nx, y: ny });
     savePaletteState();
@@ -97,9 +101,6 @@ window.addEventListener('resize', () => {
     clampFloatPosition();
   });
 });
-
-const DOCK_STRIP_WIDTH = 34;
-const DOCK_SNAP = 60;
 
 const tools = [
   { tool: 'hand', key: 'home.hand', icon: handIcon, group: 0 },
@@ -117,6 +118,9 @@ const tools = [
   { tool: 'textbox', key: 'comment.textBox', icon: textboxIcon, group: 3 },
   { tool: 'callout', key: 'comment.callout', icon: calloutIcon, group: 3 },
   { tool: 'comment', key: 'comment.note', icon: noteIcon, group: 3 },
+  // Hyperlink (#953): uit de tekstselectie (link-tool.js, onActivate),
+  // anders een vak slepen.
+  { tool: LINK_TOOL, key: 'comment.link', icon: linkIcon, group: 3 },
   { tool: 'stamp', key: 'comment.stamp', icon: stampIcon, group: 4 },
   { tool: 'signature', key: 'comment.signature', icon: signatureIcon, group: 4 },
   { tool: 'measureDistance', key: 'comment.measureDistance', icon: measureDistanceIcon, group: 5 },
@@ -124,72 +128,17 @@ const tools = [
   { tool: 'measurePerimeter', key: 'comment.measurePerimeter', icon: measurePerimeterIcon, group: 5 },
 ];
 
-// --- Shared drag logic ---
+// --- Drag and dock (shared with the extension palettes) ---
 function startDrag(e, fromDocked) {
-  if (e.button !== 0) return;
-  e.preventDefault();
-  const mainViewEl = document.querySelector('.main-view');
-  if (!mainViewEl) return;
-  let hasMoved = false;
-  const startCX = e.clientX;
-  const startCY = e.clientY;
-  // For floating: offset from palette origin
-  const offsetX = fromDocked ? 17 : (e.clientX - floatPos().x);
-  const offsetY = fromDocked ? 12 : (e.clientY - floatPos().y);
-
-  setIsDragging(true);
-
-  function getSnapSide(cx) {
-    // Use live measurement so it stays correct during drag
-    const rect = mainViewEl.getBoundingClientRect();
-    const relL = cx - rect.left;
-    const relR = rect.right - cx;
-    if (relL < DOCK_SNAP) return 'left';
-    if (relR < DOCK_SNAP) return 'right';
-    return null;
-  }
-
-  function onMove(ev) {
-    if (!hasMoved) {
-      const dx = Math.abs(ev.clientX - startCX);
-      const dy = Math.abs(ev.clientY - startCY);
-      if (dx < 4 && dy < 4) return; // dead zone
-      hasMoved = true;
-      if (fromDocked) {
-        setPaletteMode('float');
-        unregisterPaletteDock('tool');
-      }
-    }
-
-    const el = document.querySelector('.tp-float:not(.tp-ext)');
-    const pw = el ? el.offsetWidth : 80;
-    const ph = el ? el.offsetHeight : 40;
-    const nx = Math.max(0, Math.min(ev.clientX - offsetX, window.innerWidth - pw));
-    const ny = Math.max(0, Math.min(ev.clientY - offsetY, window.innerHeight - ph));
-    setFloatPos({ x: nx, y: ny });
-    setDockPreview(getSnapSide(ev.clientX));
-  }
-
-  function onUp(ev) {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-    setIsDragging(false);
-    setDockPreview(null);
-
-    if (!hasMoved) return;
-
-    const snap = getSnapSide(ev.clientX);
-    if (snap) {
-      setPaletteMode(`docked-${snap}`);
-      registerPaletteDock('tool', snap);
-    } else {
-      unregisterPaletteDock('tool');
-    }
-    savePaletteState();
-  }
-
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  startPaletteDrag(e, {
+    id: 'tool', fromDocked,
+    floatPos, setFloatPos,
+    setMode: setPaletteMode,
+    setDragging: setIsDragging,
+    setPreview: setDockPreview,
+    floatSelector: '.tp-float:not(.tp-ext)',
+    onEnd: savePaletteState,
+  });
 }
 
 // --- Context menu for icon size toggle ---
@@ -250,14 +199,24 @@ function PaletteContextMenu() {
 function ToolBtn(props) {
   const toolDisabled = () => noPdf() || isPdfAReadOnly();
   const alwaysEnabled = props.tool === 'hand' || props.tool === 'select';
-  const isActive = () => state.currentTool === props.tool && !state.toolOverrides;
+  // Markeren (#927): gebied of tekst (highlight-mode.js). Nog eens klikken
+  // als hij aan staat wisselt van modus; pictogram en tooltip tonen welke.
+  const isHighlight = props.tool === 'highlight';
+  // Tekst markeren draait op Selecteren; dan staat alleen Markeren aan.
+  const isActive = () => (isHighlight
+    ? highlightActive()
+    : state.currentTool === props.tool && !(props.tool === 'select' && state.textHighlightMode)) && !state.toolOverrides;
+  const icon = () => (isHighlight && highlightMode() === 'text' ? textHighlightIcon : props.icon);
+  const title = () => (isHighlight
+    ? `${highlightMode() === 'text' ? props.textTitle : props.areaTitle}\n${props.switchTip}`
+    : props.title);
   return (
     <button
       class={`tp-btn ${isActive() ? 'active' : ''}`}
       disabled={!alwaysEnabled && toolDisabled()}
-      onClick={() => setTool(props.tool)}
-      title={props.title}
-      innerHTML={props.icon}
+      onClick={() => (isHighlight ? markeringKnop() : setTool(props.tool))}
+      title={title()}
+      innerHTML={icon()}
     />
   );
 }
@@ -266,24 +225,39 @@ function ToolList() {
   const { t } = useTranslation('ribbon');
   let lastGroup = -1;
   return (
-    <For each={tools}>
-      {(item) => {
-        const showSep = lastGroup !== -1 && lastGroup !== item.group;
-        lastGroup = item.group;
-        return (
-          <>
-            {showSep && <div class="tp-sep" />}
-            <ToolBtn tool={item.tool} title={t(item.key)} icon={item.icon} />
-          </>
-        );
-      }}
-    </For>
+    <>
+      <For each={tools}>
+        {(item) => {
+          const showSep = lastGroup !== -1 && lastGroup !== item.group;
+          lastGroup = item.group;
+          return (
+            <>
+              {showSep && <div class="tp-sep" />}
+              <ToolBtn tool={item.tool} title={t(item.key)} icon={item.icon}
+                areaTitle={`${t('comment.areaHighlight')}: ${t('comment.areaHighlightTitle')}`}
+                textTitle={`${t('comment.textHighlight')}: ${t('comment.textHighlightTitle')}`}
+                switchTip={t('comment.highlightSwitchTip')} />
+            </>
+          );
+        }}
+      </For>
+      {/* Klembord (#929): de kopieen van deze sessie in een venster naast de palet. */}
+      <div class="tp-sep" />
+      <button
+        class={`tp-btn ${clipboardWindowOpen() ? 'active' : ''}`}
+        id="tp-clipboard"
+        title={`${t('clipboardPalette.title')}\n${t('clipboardPalette.tip')}`}
+        onClick={(e) => toggleClipboardWindow(e.currentTarget)}
+        innerHTML={clipboardIcon}
+      />
+      <ClipboardWindow />
+    </>
   );
 }
 
 // Height needed for all tools in a single column
-const SINGLE_COL_HEIGHT_SMALL = 635;  // 20 btns × 30px + 5 seps × 7px
-const SINGLE_COL_HEIGHT_LARGE = 935;  // 20 btns × 44px + 5 seps × 7px
+const SINGLE_COL_HEIGHT_SMALL = 702;  // 22 btns × 30px + 6 seps × 7px
+const SINGLE_COL_HEIGHT_LARGE = 1010; // 22 btns × 44px + 6 seps × 7px
 
 // Docked strip — sits in the flex layout
 export function DockedToolPalette(props) {
@@ -297,6 +271,7 @@ export function DockedToolPalette(props) {
   // Button sizes follow the interface size (#883), so the pixel heights do too.
   function updateColumns() {
     if (!paletteEl) return;
+    if (side() === 'top' || side() === 'bottom') { setTwoCol(false); return; }
     const schaal = uiSchaalFactor();
     const available = paletteEl.clientHeight - 46 * schaal;
     const threshold = (paletteIconSize() === 'large' ? SINGLE_COL_HEIGHT_LARGE : SINGLE_COL_HEIGHT_SMALL) * schaal;
@@ -316,7 +291,10 @@ export function DockedToolPalette(props) {
 
   return (
     <Show when={shouldShow()}>
-      <div class={`tp-docked tp-docked-${side()}${paletteIconSize() === 'large' ? ' tp-large' : ''}`} ref={bindRef} onContextMenu={showPaletteCtxMenu}>
+      <div class={`tp-docked tp-docked-${side()}${paletteIconSize() === 'large' ? ' tp-large' : ''}${isDragging() ? ' tp-dock-live' : ''}`} ref={bindRef} onContextMenu={showPaletteCtxMenu}>
+        {/* While it is being dragged and has snapped here: highlight the
+            palette itself, with the dock icon over it (same on all sides). */}
+        <DockLiveIcon dragging={isDragging} side={side()} />
         <div class="tp-grip" onMouseDown={(e) => startDrag(e, true)}>
           <svg width="10" height="16" viewBox="0 0 10 16">
             <circle cx="3" cy="2" r="1.2" fill="currentColor"/><circle cx="7" cy="2" r="1.2" fill="currentColor"/>
@@ -381,28 +359,7 @@ export function FloatingToolPalette() {
 
 // Dock targets — shown inside .main-view when dragging
 export function DockTargets() {
-  return (
-    <>
-      <div class={`tp-dock-target tp-dock-target-left ${isDragging() ? 'visible' : ''} ${dockPreview() === 'left' ? 'active' : ''}`}>
-        <div class="tp-dock-target-icon">
-          <svg width="20" height="20" viewBox="0 0 20 20">
-            <rect x="1" y="1" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-            <rect x="1" y="1" width="6" height="18" rx="1" fill="currentColor" opacity="0.4"/>
-          </svg>
-        </div>
-      </div>
-      <div class={`tp-dock-target tp-dock-target-right ${isDragging() ? 'visible' : ''} ${dockPreview() === 'right' ? 'active' : ''}`}>
-        <div class="tp-dock-target-icon">
-          <svg width="20" height="20" viewBox="0 0 20 20">
-            <rect x="1" y="1" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-            <rect x="13" y="1" width="6" height="18" rx="1" fill="currentColor" opacity="0.4"/>
-          </svg>
-        </div>
-      </div>
-      <div class={`tp-dock-preview tp-dock-preview-left ${dockPreview() === 'left' ? 'active' : ''}`} />
-      <div class={`tp-dock-preview tp-dock-preview-right ${dockPreview() === 'right' ? 'active' : ''}`} />
-    </>
-  );
+  return <DockTargetIcons dragging={isDragging} preview={dockPreview} />;
 }
 
 export default DockedToolPalette;

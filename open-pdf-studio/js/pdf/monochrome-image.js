@@ -1,6 +1,8 @@
 // Conservative image-XObject building block for #902. No document parsing,
 // UI, file writes or mutation: a caller must qualify those budgets separately.
 import { PDFArray, PDFDict, PDFName, PDFNumber, PDFNull, PDFBool, PDFRef, PDFRawStream } from 'pdf-lib';
+import { volgendeTaak } from '../core/volgende-taak.js';
+import { encodeCcittG4, ccittG4Params, CcittOutputLimit } from './ccitt-g4.js';
 
 export const MONOCHROME_LIMITS = Object.freeze({ decodedBytes: 32 * 1024 * 1024, encodedBytes: 32 * 1024 * 1024, workingBytes: 96 * 1024 * 1024 });
 class SkipImage extends Error {}
@@ -55,15 +57,48 @@ async function transform(bytes, codec, limit, signal) {
   }
 }
 
+// /Decode van een acht-bit beeld: { ok, decode } met decode null (standaard)
+// of [0, 1] / [1, 0]. Niet ok als het daar niet op terug te brengen is.
+function eightBitDecode(context, d, channels) {
+  if (!d || d === PDFNull) return { ok: true, decode: null };
+  if (!(d instanceof PDFArray) || d.size() !== channels * 2) return { ok: false, decode: null };
+  const values = d.asArray().map(v => number(resolve(context, v)));
+  if (!((values[0] === 0 && values[1] === 1) || (values[0] === 1 && values[1] === 0))
+    || values.some((v, i) => v !== values[i % 2])) return { ok: false, decode: null };
+  return { ok: true, decode: values.slice(0, 2) };
+}
+
+function blackIs1Of(context, decode) {
+  if (Array.isArray(decode)) return decode[0] > decode[1];
+  if (decode instanceof PDFArray && decode.size() >= 2) {
+    const [d0, d1] = [0, 1].map(i => number(resolve(context, decode.get(i))));
+    return d0 !== null && d1 !== null && d0 > d1;
+  }
+  return false;
+}
+
+let nativeWarned = false;
+function warnNativeOnce(error) {
+  if (nativeWarned) return;
+  nativeWarned = true;
+  console.warn('[monochrome] Rust encoder failed, using the JS encoder:', error?.message ?? error);
+}
+
 /**
  * Returns a smaller replacement stream, or a stable skip reason. The source
  * stream/dictionary, indirect resources and document are never modified.
  * Supports raw/Flate one-bit gray, stencil, indexed and single-channel ICC
- * samples, plus exactly black/white eight-bit DeviceGray samples. RGB packing is deliberately unsupported: a
- * conversion to gray needs all shared-use default color spaces/output intents.
+ * samples, plus exactly black/white eight-bit DeviceGray samples. Eight-bit
+ * DeviceRGB is packed only with `allowRgb`: the caller must first establish
+ * for the whole document that no DefaultRGB/DefaultGray, output intent or
+ * blending space can make RGB black/white differ from gray (monochrome-document.js).
  * Other filters/profiles/predictors remain untouched with an explicit reason.
+ * The one-bit result is encoded both as Flate and as CCITT Group 4 (T.6); the
+ * smaller complete stream wins (`filter` in the result names it).
+ * `native` (monochrome-rust.js) does the per-image work in Rust when given;
+ * on any error the JS encoder below takes over with the same rules.
  */
-export async function optimizeMonochromeImage(stream, { signal, limits = MONOCHROME_LIMITS, checkpoint = () => new Promise(r => setTimeout(r, 0)) } = {}) {
+export async function optimizeMonochromeImage(stream, { signal, limits = MONOCHROME_LIMITS, checkpoint = volgendeTaak, allowRgb = false, native = null } = {}) {
   checkAbort(signal);
   if (!(stream instanceof PDFRawStream)) return { replacement: null, reason: 'not-image' };
   const context = stream.dict.context;
@@ -80,10 +115,22 @@ export async function optimizeMonochromeImage(stream, { signal, limits = MONOCHR
     const bits = number(get('BitsPerComponent')) ?? (stencil ? 1 : null);
     if (bits !== 1 && bits !== 8) skip('unsupported-samples');
     const color = get('ColorSpace');
-    const channels = 1;
+    let channels = 1;
     if (bits === 8) {
-      if (stencil || get('Mask') || get('SMask') || (number(get('SMaskInData')) ?? 0) !== 0) skip('masked-eight-bit');
-      if (name(color) !== 'DeviceGray') skip('color-profile-or-space');
+      if (name(color) === 'DeviceRGB' && allowRgb) channels = 3;
+      else if (name(color) !== 'DeviceGray') skip('color-profile-or-space');
+      // Een stencilmasker (/Mask als beeldstream) en een /SMask zijn eigen
+      // beelden met eigen samples: die blijven onder hun referentie staan. Een
+      // kleursleutelmasker (/Mask als array) noemt acht-bit samplewaarden en
+      // een /Matte bij RGB drie kleurcomponenten; die passen niet meer na het
+      // pakken naar één grijsbit.
+      const mask = get('Mask'), smask = get('SMask');
+      if (stencil || (number(get('SMaskInData')) ?? 0) !== 0) skip('masked-eight-bit');
+      if (mask && mask !== PDFNull && !(mask instanceof PDFRawStream)) skip('masked-eight-bit');
+      if (smask && smask !== PDFNull) {
+        if (!(smask instanceof PDFRawStream)) skip('masked-eight-bit');
+        if (channels === 3 && smask.dict.get(PDFName.of('Matte'))) skip('masked-eight-bit');
+      }
     } else if (!stencil && name(color) !== 'DeviceGray') {
       if (!(color instanceof PDFArray)) skip('color-profile-or-space');
       const kind = name(resolve(context, color.get(0)));
@@ -100,9 +147,12 @@ export async function optimizeMonochromeImage(stream, { signal, limits = MONOCHR
     if (input.length > limits.encodedBytes) skip('encoded-limit');
     // Worst retained buffers: input, decoded input, packed samples, compressed
     // output and its final compact copy. This is NOT a total-process RSS cap.
+    // The CCITT candidate (growing buffer plus compact copy) only runs when it
+    // also fits; otherwise Flate alone decides.
     const outputCap = Math.min(limits.encodedBytes, input.length + 1024);
     const working = input.length + decodedSize + (bits === 8 ? packedSize : 0) + outputCap * 2;
     if (working > limits.workingBytes) skip('working-buffer-limit');
+    const ccittFits = working + outputCap * 2 <= limits.workingBytes;
 
     let filter = get('Filter'), params = get('DecodeParms');
     if (filter instanceof PDFArray) {
@@ -120,21 +170,69 @@ export async function optimizeMonochromeImage(stream, { signal, limits = MONOCHR
       if (predictor && number(predictor) !== 1) skip('unsupported-predictor');
     }
     if (typeof CompressionStream !== 'function' || typeof DecompressionStream !== 'function') skip('codec-unavailable');
+    // Acht bit: /Decode moet [0 1] of [1 0] zijn (per kanaal gelijk).
+    const eight = bits === 8 ? eightBitDecode(context, get('Decode'), channels) : null;
+    // CCITT codeert "zwart" en "wit"; welke samplewaarde zwart is volgt uit
+    // /Decode ([1 0]: bit 1 is zwart, anders bit 0, ook bij een stencil
+    // waar bit 0 de verfwaarde is). Decoderen geeft dezelfde samplebits terug,
+    // dus /Decode en de kleurruimte blijven ongewijzigd gelden.
+    const blackIs1 = blackIs1Of(context, bits === 8 ? eight.decode : get('Decode'));
+    const dictionary = stream.dict.clone(context);
+    if (bits === 8) {
+      dictionary.set(PDFName.of('BitsPerComponent'), PDFNumber.of(1));
+      dictionary.set(PDFName.of('ColorSpace'), PDFName.of('DeviceGray'));
+      // /DL (PDF 2.0) is the decoded length of the eight-bit samples; after
+      // packing it would be eight times too large. One-bit data keeps it.
+      dictionary.delete(PDFName.of('DL'));
+      if (eight.ok && eight.decode) dictionary.set(PDFName.of('Decode'), context.obj(eight.decode));
+    }
+    const candidateStream = (filterName, data) => {
+      const d = dictionary.clone(context);
+      d.set(PDFName.of('Filter'), PDFName.of(filterName));
+      if (filterName === 'CCITTFaxDecode') d.set(PDFName.of('DecodeParms'), context.obj(ccittG4Params(width, height, blackIs1)));
+      else d.delete(PDFName.of('DecodeParms'));
+      d.set(PDFName.of('Length'), PDFNumber.of(data.length));
+      return PDFRawStream.of(d, data);
+    };
+    // Compare COMPLETE serialized stream objects (dictionary + data). Masks
+    // and profiles retain the same references/content, so their cost cancels.
+    const before = PDFRawStream.of(stream.dict.clone(context), input).sizeInBytes();
+    const result = (best) => {
+      const after = best.stream.sizeInBytes();
+      if (after >= before) skip('not-smaller');
+      const replacement = PDFRawStream.of(best.stream.dict, best.stream.getContents().slice());
+      return { replacement, reason: null, filter: best.filter, before, after, decodedBytes: decodedSize, workingBufferBytes: working + (ccittFits ? outputCap * 2 : 0) };
+    };
+
+    if (native) {
+      // Zelfde stappen in Rust (monochrome-rust.js); bij een fout neemt de
+      // JS-route hieronder het over.
+      let answer = null;
+      try {
+        const empty = new Uint8Array(0);
+        answer = await native(input, {
+          width, height, bits, channels, flateSource: name(filter) === 'FlateDecode',
+          decodedSize, outputCap, ccittFits, blackIs1, decodeOk: bits !== 8 || eight.ok, before,
+          flateBase: candidateStream('FlateDecode', empty).sizeInBytes(),
+          ccittBase: candidateStream('CCITTFaxDecode', empty).sizeInBytes(),
+        });
+      } catch (error) {
+        warnNativeOnce(error);
+      }
+      checkAbort(signal);
+      if (answer) {
+        if (!answer.filter) skip(answer.reason);
+        return result({ filter: answer.filter, stream: candidateStream(answer.filter, answer.data) });
+      }
+    }
+
     const samples = name(filter) === 'FlateDecode'
       ? await transform(input, new DecompressionStream('deflate'), decodedSize, signal)
       : input;
     if (samples.length !== decodedSize) skip('invalid-sample-length');
     let packed = samples;
-    let decode = null;
     if (bits === 8) {
-      const d = get('Decode');
-      if (d && d !== PDFNull) {
-        if (!(d instanceof PDFArray) || d.size() !== channels * 2) skip('unsupported-decode');
-        const values = d.asArray().map(v => number(resolve(context, v)));
-        if (!((values[0] === 0 && values[1] === 1) || (values[0] === 1 && values[1] === 0))
-          || values.some((v, i) => v !== values[i % 2])) skip('unsupported-decode');
-        decode = values.slice(0, 2);
-      }
+      if (!eight.ok) skip('unsupported-decode');
       packed = new Uint8Array(packedSize);
       const stride = Math.ceil(width / 8);
       for (let y = 0; y < height; y++) {
@@ -143,32 +241,43 @@ export async function optimizeMonochromeImage(stream, { signal, limits = MONOCHR
           const i = (y * width + x) * channels;
           const value = samples[i];
           if ((value !== 0 && value !== 255)) skip('not-black-and-white');
+          if (channels === 3 && (samples[i + 1] !== value || samples[i + 2] !== value)) skip('not-black-and-white');
           if (value === 255) packed[y * stride + (x >> 3)] |= 128 >> (x & 7);
         }
       }
     }
     checkAbort(signal);
-    const compressed = await transform(packed, new CompressionStream('deflate'), outputCap, signal);
-    checkAbort(signal);
-    const dictionary = stream.dict.clone(context);
-    dictionary.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
-    dictionary.delete(PDFName.of('DecodeParms'));
-    dictionary.set(PDFName.of('Length'), PDFNumber.of(compressed.length));
-    if (bits === 8) {
-      dictionary.set(PDFName.of('BitsPerComponent'), PDFNumber.of(1));
-      dictionary.set(PDFName.of('ColorSpace'), PDFName.of('DeviceGray'));
-      // /DL (PDF 2.0) is the decoded length of the eight-bit samples; after
-      // packing it would be eight times too large. One-bit data keeps it.
-      dictionary.delete(PDFName.of('DL'));
-      if (decode) dictionary.set(PDFName.of('Decode'), context.obj(decode));
+    let flate = null;
+    try {
+      flate = await transform(packed, new CompressionStream('deflate'), outputCap, signal);
+    } catch (error) {
+      if (!(error instanceof SkipImage)) throw error;
     }
-    // Compare COMPLETE serialized stream objects (dictionary + data). Masks
-    // and profiles retain the same references/content, so their cost cancels.
-    const original = PDFRawStream.of(stream.dict.clone(context), input);
-    const candidate = PDFRawStream.of(dictionary, compressed);
-    const before = original.sizeInBytes(), after = candidate.sizeInBytes();
-    if (after >= before) skip('not-smaller');
-    return { replacement: PDFRawStream.of(dictionary, compressed.slice()), reason: null, before, after, decodedBytes: decodedSize, workingBufferBytes: working };
+    checkAbort(signal);
+    let ccitt = null;
+    if (ccittFits) {
+      try {
+        // Alleen interessant als het kleiner is dan Flate: daar stopt de encoder.
+        ccitt = await encodeCcittG4(packed, width, height, {
+          blackIs1,
+          maxBytes: flate ? flate.length : outputCap,
+          rowsPerCheckpoint: 512,
+          checkpoint: async () => { await checkpoint(); checkAbort(signal); },
+        });
+      } catch (error) {
+        if (!(error instanceof CcittOutputLimit)) throw error;
+      }
+    }
+    checkAbort(signal);
+    if (!flate && !ccitt) skip('decoded-or-output-limit');
+    let best = null, after = Infinity;
+    for (const [filterName, data] of [['FlateDecode', flate], ['CCITTFaxDecode', ccitt]]) {
+      if (!data) continue;
+      const candidate = { filter: filterName, stream: candidateStream(filterName, data) };
+      const size = candidate.stream.sizeInBytes();
+      if (size < after) { best = candidate; after = size; }
+    }
+    return result(best);
   } catch (error) {
     checkAbort(signal);
     if (error instanceof SkipImage) return { replacement: null, reason: error.message };

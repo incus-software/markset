@@ -3,6 +3,7 @@
     "openPopUpNote": "فتح ملاحظة منبثقة",
     "hidePopUpNote": "إخفاء الملاحظة المنبثقة",
     "resetPopUpLocation": "إعادة تعيين موقع الملاحظة المنبثقة",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "تحرير النص...",
     "addReply": "إضافة رد",
     "locked": "مقفل",
@@ -12,11 +13,13 @@
     "printable": "قابل للطباعة",
     "status": "الحالة",
     "showByStatus": "عرض حسب الحالة",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "بلا",
     "statusAccepted": "مقبول",
     "statusCancelled": "ملغي",
     "statusCompleted": "مكتمل",
     "statusRejected": "مرفوض",
+    "statusReviewed": "تمت المراجعة",
     "reviewHistory": "سجل المراجعة...",
     "layer": "الطبقة:",
     "noLayersAvailable": "لا توجد طبقات متاحة",
@@ -49,6 +52,7 @@
     "dimChainAdd": "إضافة نقاط إلى سلسلة الأبعاد",
     "dimChainRemove": "إزالة خط الامتداد من السلسلة",
     "selectRoom": "تحديد الغرفة",
+    "checkScale": "التحقق من المقياس بهذا الخط...",
     "saveToToolSet": "حفظ في مجموعة أدوات"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "توسيط عمودي",
     "distributeHorizontally": "توزيع أفقي",
     "distributeVertically": "توزيع عمودي",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "تشذيب زوايا الجدران",
     "deleteAnnotations": "حذف {{count}} تعليق",
     "deleteConfirm": "هل تريد حذف {{count}} تعليقات؟",
@@ -109,6 +114,8 @@
     "nestUnderNew": "تضمين تحت إشارة مرجعية جديدة...",
     "indent": "زيادة المسافة البادئة",
     "outdent": "إنقاص المسافة البادئة",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "حذف {{count}} إشارات مرجعية"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "إدراج من ملف...",
     "insertFromFileBefore": "قبل هذه الصفحة...",
     "insertFromFileAfter": "بعد هذه الصفحة...",
-    "pageLabels": "تسميات الصفحات (منشئ الأسماء)..."
+    "pageLabels": "تسميات الصفحات (منشئ الأسماء)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "تمييز التحديد",
     "strikethroughSelection": "يتوسطه خط للتحديد",
     "underlineSelection": "تسطير التحديد",
-    "curvedLeaderSelection": "إضافة وسيلة شرح منحنية"
+    "curvedLeaderSelection": "إضافة وسيلة شرح منحنية",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "هل تريد حذف هذا التعليق؟",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "حذف الرأس",
     "insertVertex": "إدراج رأس هنا",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "تحويل إلى قوس",
     "convertToLine": "تحويل إلى خط"
   },

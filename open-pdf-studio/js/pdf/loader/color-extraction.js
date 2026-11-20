@@ -8,13 +8,19 @@ import { decodePdfTextObject } from '../saver/pdf-text.js';
 import { readPluginPdfAnnotation } from '../../plugins/plugin-pdf.js';
 import { laagVanOc } from '../saver/annotatie-lagen.js';
 import { leesRuweSleutels } from '../saver/ruwe-sleutels.js';
+import { dictVingerafdruk } from '../saver/bron-vingerafdruk.js';
 import { leesPlattegrondMeta } from './plattegrond-meta.js';
 import { readSmartAssets, parseFrozen } from '../../../markset/smart/assets.js'; // Markset
 import { leesLijnSleutels } from './maatlijn-uit-bestand.js';
+import { eenheidFactor } from '../../annotations/vlak-zijden.js';
+import { getalopmaakReeks } from '../pdf-viewports.js';
+import { opmaakUitGetalopmaken, maatEenheid } from '../../core/maat-opmaak.js';
 import { blendUitPdf } from '../../annotations/blend-modes.js';
 import { leesStempelAp } from './stempel-ap.js';
+import { readDynamicStamp } from './dynamic-stamp-load.js';
 import { leesInktSleutels } from '../saver/inkt-sleutels.js';
 import { leesBijlageAnnotatie } from '../bijlage-annotatie.js';
+import { leesEigenLink } from './link-laden.js';
 import { bewaarBijlageInhoud, bijlageItem } from '../../annotations/bijlage-store.js';
 
 // Bijlage-annotaties (#376) die al gelezen zijn, op hun /FS-object: een pagina
@@ -225,9 +231,17 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
     const annots = context.lookup(annotsRaw);
     if (!annots) return colorMap;
 
+    // Per annotatie een vingerafdruk van het woordenboek, op pdf.js-id: zo
+    // weet de saver of het object nog is wat de lader las (saver/bron-behoud.js).
+    const bronnen = new Map();
+    colorMap.bronnen = bronnen;
     for (let i = 0; i < annots.size(); i++) {
       const annotDict = context.lookup(annots.get(i));
       if (!annotDict) continue;
+      const bronRef = annots.get(i);
+      if (Number.isInteger(bronRef?.objectNumber)) {
+        bronnen.set(`${bronRef.objectNumber}R${bronRef.generationNumber || ''}`, dictVingerafdruk(annotDict));
+      }
       const subtype = annotDict.get(PDFName.of('Subtype'));
       if (!subtype) continue;
       const subtypeName = subtype.toString();
@@ -240,6 +254,14 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
       const key = `${pdfNum(rect.get(0))},${pdfNum(rect.get(1))},${pdfNum(rect.get(2))},${pdfNum(rect.get(3))}`;
 
       const colors = {};
+      // Links (#953): alleen een link van de app wordt een annotatie in het
+      // model (loader/link-laden.js). Een link van een ander programma (een
+      // inhoudsopgave met honderden) slaat de rest van het lezen over.
+      if (subtypeName === '/Link') {
+        const link = leesEigenLink(context, annotDict, pdfDoc);
+        if (!link) continue;
+        colors.link = link;
+      }
       const pluginAnnotation = readPluginPdfAnnotation(annotDict, context);
       if (pluginAnnotation) {
         // Rectangles are not unique: overlapping plugin objects may have
@@ -379,6 +401,9 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
           const tekst = leesPdfTekst(context, opsTekstRaw);
           if (tekst) colors.opsStampText = tekst;
         }
+        // Dynamic stamp (#629): template + field values.
+        const dynStamp = await readDynamicStamp(context, annotDict);
+        if (dynStamp) colors.opsDynamicStamp = dynStamp;
         // Vak en draaiing van een stempel of afbeelding komen uit de
         // appearance (stempel-geometrie.js).
         const stempelAp = await leesStempelAp(context, annotDict);
@@ -484,6 +509,17 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         const prec = pdfNum(context.lookup(opsPrecRaw) || opsPrecRaw);
         if (prec !== null) colors.opsPrecision = prec;
       }
+      // /OPS_DimDecimal: de maat is uitdrukkelijk decimaal (core/maat-opmaak.js).
+      const opsDecRaw = annotDict.get(PDFName.of('OPS_DimDecimal'));
+      if (opsDecRaw !== undefined && String(context.lookup(opsDecRaw) ?? opsDecRaw) === 'true') colors.opsDimDecimal = true;
+
+      // Metingen (#959): een schaal van de pagina die alleen voor andere
+      // programma's in /Measure staat (saver/dimension-measure.js), en de
+      // meettekst van de app als /Contents er de eenheid bij kreeg.
+      const opsErfRaw = annotDict.get(PDFName.of('OPS_ScaleInherited'));
+      if (opsErfRaw && String(context.lookup(opsErfRaw) || opsErfRaw) === 'true') colors.opsScaleInherited = true;
+      const opsMeettekst = leesPdfTekst(context, annotDict.get(PDFName.of('OPS_MeasureText')));
+      if (typeof opsMeettekst === 'string' && opsMeettekst) colors.opsMeasureText = opsMeettekst;
 
       // Read /OPS_TextOffsetX/Y (user-dragged dimension-text offset from the
       // dimension-line midpoint, stored in the visual annotation frame)
@@ -835,6 +871,24 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         if (ar !== null) colors.opsArcRadius = ar;
       }
 
+      // Krommen van een polylijn of veelhoek (#1169, pdf/curve-pdf.js): de
+      // knopen en de stuurpunten per krom segment, als platte getallenlijsten.
+      for (const [sleutel, veld] of [['OPS_CurveNodes', 'opsCurveNodes'], ['OPS_Curves', 'opsCurves']]) {
+        const ruw = annotDict.get(PDFName.of(sleutel));
+        if (!ruw) continue;
+        const lijst = context.lookup(ruw) || ruw;
+        if (!lijst || typeof lijst.size !== 'function') continue;
+        const getallen = [];
+        let geldig = true;
+        for (let pi = 0; pi < lijst.size(); pi++) {
+          const val = lijst.get(pi);
+          const num = pdfNum(context.lookup(val) || val);
+          if (num === null) { geldig = false; break; }
+          getallen.push(num);
+        }
+        if (geldig && getallen.length) colors[veld] = getallen;
+      }
+
       // Read /OPS_Points (our custom control points for spline annotations)
       const opsPointsRaw = annotDict.get(PDFName.of('OPS_Points'));
       if (opsPointsRaw) {
@@ -882,6 +936,7 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         const nv = nr !== undefined ? pdfNum(context.lookup(nr) || nr) : null;
         if (nv !== null) colors.opsCountNumber = nv;
         for (const [sleutel, veld] of [['OPS_CountCategory', 'opsCountCategory'],
+          ['OPS_CountCategoryName', 'opsCountCategoryName'],
           ['OPS_MarkerStyle', 'opsMarkerStyle'], ['OPS_SymbolId', 'opsSymbolId']]) {
           const t = leesPdfTekst(context, annotDict.get(PDFName.of(sleutel)));
           if (t) colors[veld] = t;
@@ -1118,11 +1173,32 @@ const result = {};
           // /D = distance display format — its D value is a denominator (e.g. 100000 = 5 decimals)
           // Fallback to /X precision for annotations without /D (e.g. simple Line dimensions)
           const dFmt = readNumberFormat(measureDict.get(PDFName.of('D')));
+          // /D rekent verder vanuit de eenheid van /X (ISO 32000-1, 12.9.1):
+          // /X in m en /D in mm (C 1000) toont millimeters. De schaal van de
+          // app staat dan in de eenheid die de lezer toont (#959). Alleen als
+          // /D een zuivere omrekening is: een /D met een andere eenheid maar
+          // C 1 is een slordig etiket, daar blijft /X gelden.
+          // Voet → inch (/D met twee opmaken, ' en "): de maat blijft in voet
+          // en wordt als voet-inch getoond, niet omgerekend naar inches
+          // (core/maat-opmaak.js). ' en " heten voortaan ft en in.
+          const dReeks = getalopmaakReeks(measureDict.get(PDFName.of('D')), (v) => context.lookup(v) ?? v);
+          const voetInchReeks = dReeks.length >= 2 && maatEenheid(dReeks[0].U) === 'ft'
+            && maatEenheid(dReeks[dReeks.length - 1].U) === 'in';
+          if (colors.measureUnit) colors.measureUnit = maatEenheid(colors.measureUnit);
+          const dFactor = dFmt?.unit && !voetInchReeks ? eenheidFactor(colors.measureUnit, maatEenheid(dFmt.unit)) : null;
+          if (colors.measureScale && dFactor && maatEenheid(dFmt.unit) !== colors.measureUnit
+              && Math.abs((dFmt.scale || 1) - dFactor) <= 1e-3 * dFactor) {
+            colors.measureScale *= dFactor;
+            colors.measureUnit = maatEenheid(dFmt.unit);
+          }
           if (dFmt && dFmt.precision !== undefined && dFmt.precision > 1) {
             colors.measurePrecision = Math.round(Math.log10(dFmt.precision));
           } else if (xFmt && xFmt.precision !== undefined) {
             colors.measurePrecision = xFmt.precision;
           }
+          // Een breuk (/F /F): voet-inch met die kleinste breuk; /D 1 is hele inches.
+          const opmaakD = opmaakUitGetalopmaken(dReeks);
+          if (opmaakD?.fractie) colors.measureFraction = opmaakD.fractie;
           // /A = area display format — D value is also a denominator
           const aFmt = readNumberFormat(measureDict.get(PDFName.of('A')));
           if (aFmt && aFmt.unit) {
@@ -1273,6 +1349,24 @@ const result = {};
             const w = pdfNum(border.get(2));
             if (w !== null) colors.borderWidth = w;
           }
+        }
+      }
+
+      // /RD van een rechthoek of ellips: de vorm ligt zoveel binnen /Rect,
+      // de rand daar weer binnen (pdf/vorm-rand-inzet.js).
+      if (subtypeName === '/Square' || subtypeName === '/Circle') {
+        // Zonder /BS en /Border is de rand 1 (PDF 32000-1: /Border [0 0 1]).
+        // pdf.js geeft dan 0: op het scherm een haarlijn, bij opslaan /W 0
+        // (onzichtbaar in andere lezers), en geen inzet bij /RD.
+        if (colors.borderWidth === undefined && !bwBsRaw && !annotDict.get(PDFName.of('Border'))) {
+          colors.borderWidth = 1;
+        }
+        const rdRaw = annotDict.get(PDFName.of('RD'));
+        const rdArr = rdRaw !== undefined ? (context.lookup(rdRaw) || rdRaw) : null;
+        if (rdArr && typeof rdArr.size === 'function' && rdArr.size() === 4) {
+          const rd = [];
+          for (let j = 0; j < 4; j++) rd.push(pdfNum(context.lookup(rdArr.get(j)) || rdArr.get(j)));
+          if (rd.every((v) => typeof v === 'number' && Number.isFinite(v))) colors.vormRd = rd;
         }
       }
 

@@ -1,14 +1,15 @@
 import { state, getActiveDocument } from '../../core/state.js';
 import { cloneAnnotation } from '../../annotations/factory.js';
 import { recordModify } from '../../core/undo-manager.js';
-import { formatDimensionText, expandArcPoints, herberekenVlakMaat, vlakMeting, vlakZijdeTeksten } from '../../annotations/measurement.js';
+import { maatlijnTekst, expandArcPoints, herberekenVlakMaat, vlakMeting, vlakZijdeTeksten, vlakTekst } from '../../annotations/measurement.js';
 import { drawVlakZijdematen } from '../../annotations/rendering/measurements.js';
 import { applyToolTransform } from '../tool-context.js';
 import { randkleurenUitVoorkeur } from '../../annotations/fill-utils.js';
 import { zetRechtopRond } from '../../pdf/weergave-ruimte.js';
 import { docHasScale } from '../../../markset/page-scale.js'; // Markset
-import { imperialOr } from '../../../markset/us-units.js'; // Markset
 import { documentHeeftSchaal } from '../../annotations/schaal-op-punt.js';
+import { handmatigeSchaal } from '../../annotations/eenhedenstelsel.js';
+import { meldMetingZonderSchaal } from '../meting-zonder-schaal.js';
 import {
   enterTypeLengthMode,
   exitTypeLengthMode,
@@ -129,21 +130,26 @@ export const measureDistanceTool = {
       // documentschaal uit de kalibratie, #554), dan neemt de maat haar schaal
       // daaruit (calculateDistance zoekt de bron op het gemeten punt). De
       // handmatige voorkeursschaal geldt alleen zonder enige bron.
+      // In het imperiale stelsel telt de onaangeroerde standaard (1 per punt,
+      // mm) niet als handmatige schaal (#1158): dan de maat op papier in inches.
       const hasScaleSource = documentHeeftSchaal(getActiveDocument())
-        || docHasScale(getActiveDocument()); // Markset: per-sheet calibrations count too
-      const dimScale = hasScaleSource ? 0 : (prefs.measureDistDimScale || 0);
-      const dimUnit = hasScaleSource ? dist.unit : (prefs.measureDistDimUnit || dist.unit);
+    || docHasScale(getActiveDocument()); // Markset: per-sheet calibrations count too
+      const handmatig = hasScaleSource ? null : handmatigeSchaal(prefs, 'measureDist');
+      const dimScale = handmatig ? handmatig.scale : 0;
+      const dimUnit = handmatig ? handmatig.unit : dist.unit;
       // mm shows whole numbers (no decimals); other units use the user pref.
       const dimPrecision = (dimUnit === 'mm') ? 0
         : (prefs.measureDistDimPrecision != null ? prefs.measureDistDimPrecision : 2);
+      // Getalopmaak automatisch (measureFraction niet gezet, core/maat-opmaak.js):
+      // met de schaal van de pagina volgt de maat de opmaak van de viewport
+      // (`dist.opmaak`, /D in de PDF), ook als die later verandert.
+      const opmaakDrager = { measurePrecision: dimPrecision };
       let mText;
       if (dimScale) {
         const pixelDist = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
-        const v = (pixelDist * dimScale).toFixed(dimPrecision);
-        // mm is the implied drawing unit on dimensions — no suffix.
-        mText = imperialOr(pixelDist * dimScale, dimUnit, prefs, dimUnit === 'mm' ? v : `${v} ${dimUnit}`); // Markset: feet-inch
+        mText = maatlijnTekst({ ...opmaakDrager, measureScale: dimScale }, { value: pixelDist * dimScale, unit: dimUnit });
       } else {
-        mText = formatDimensionText(dist);
+        mText = maatlijnTekst(opmaakDrager, dist);
       }
       const ann = ctx.createAnnotation({
         type: 'measureDistance',
@@ -174,6 +180,7 @@ export const measureDistanceTool = {
       state.dimPoints = [];
       state.isDrawingDimension = false;
       ctx.redraw();
+      meldMetingZonderSchaal(getActiveDocument());
 
       // Auto-reset to select tool
       import("../../tools/manager.js").then(m => m.maybeRevertToSelect && m.maybeRevertToSelect());
@@ -245,21 +252,22 @@ export const measureDistanceTool = {
     // ook de kalibratie en de viewports uit de PDF (#554), gaat voor de
     // handmatige voorkeursschaal.
     const hasScaleSourcePreview = documentHeeftSchaal(getActiveDocument())
-        || docHasScale(getActiveDocument()); // Markset: per-sheet calibrations count too
-    const dimScale = hasScaleSourcePreview ? 0 : (prefs.measureDistDimScale || 0);
-    const dimUnit = prefs.measureDistDimUnit || '';
+    || docHasScale(getActiveDocument()); // Markset: per-sheet calibrations count too
+    const handmatig = hasScaleSourcePreview ? null : handmatigeSchaal(prefs, 'measureDist');
+    const dimScale = handmatig ? handmatig.scale : 0;
+    const dimUnit = handmatig ? handmatig.unit : '';
     // mm shows whole numbers (no decimals); other units use the user pref.
     const dimPrecision = (dimUnit === 'mm') ? 0
       : (prefs.measureDistDimPrecision != null ? prefs.measureDistDimPrecision : 2);
 
+    // Dezelfde tekst als de maat die straks ontstaat (core/maat-opmaak.js).
     function dimMeasureText(sx, sy, ex, ey) {
       if (dimScale) {
         const pixelDist = Math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2);
-        const v = (pixelDist * dimScale).toFixed(dimPrecision);
-        return imperialOr(pixelDist * dimScale, dimUnit, prefs, dimUnit === 'mm' ? v : `${v} ${dimUnit}`); // Markset: feet-inch
+        return maatlijnTekst({ measurePrecision: dimPrecision, measureScale: dimScale }, { value: pixelDist * dimScale, unit: dimUnit });
       }
       const d = ctx.calculateDistance(sx, sy, ex, ey, getActiveDocument()?.currentPage);
-      return formatDimensionText(d);
+      return maatlijnTekst({ measurePrecision: dimPrecision }, d);
     }
 
     if (state.dimPoints.length === 1) {
@@ -476,7 +484,7 @@ function _measureMultiClickDown(ctx, e, toolType) {
 
   // Object snap (including in-progress vertices)
   const allInProgressPoints = _getAllInProgressPoints(state, isArea);
-  const snap = ctx.snap(x, y, null, allInProgressPoints);
+  const snap = ctx.snap(x, y, null, allInProgressPoints, _loodlijnOpties(state));
   let ptX = snap.snapped ? snap.x : x;
   let ptY = snap.snapped ? snap.y : y;
 
@@ -583,7 +591,7 @@ function _finishMeasureWithHoles(ctx) {
 
   if (outerPoints && outerPoints.length >= 3) {
     const ann = ctx.createMeasureAreaAnnotation(outerPoints, holes);
-    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); }
+    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); meldMetingZonderSchaal(doc); }
   }
 
   // Reset all state
@@ -601,6 +609,14 @@ function _finishMeasureWithHoles(ctx) {
 }
 
 // Collect all in-progress points for snap exclusion
+// Loodrecht/raaklijn vanaf het laatst geplaatste punt van de ring in aanbouw.
+// In de gatenfase staan in de snap-punten na die ring nog de buitenrand en
+// de eerdere gaten; het laatste element daarvan is dan niet het laatste punt.
+function _loodlijnOpties(state) {
+  const pts = state.measurePoints;
+  return pts && pts.length > 0 ? { loodlijnVanaf: pts[pts.length - 1] } : undefined;
+}
+
 function _getAllInProgressPoints(state, isArea) {
   const points = [];
   if (state.measurePoints) {
@@ -644,7 +660,7 @@ function _measureMultiClickMove(ctx, e, toolType) {
   const mFillColor = isArea ? (prefs.measureAreaFillNone ? 'none' : (prefs.measureAreaFillColor || null)) : null;
 
   const allInProgressPoints = _getAllInProgressPoints(state, isArea);
-  const snap = ctx.snap(x, y, null, allInProgressPoints);
+  const snap = ctx.snap(x, y, null, allInProgressPoints, _loodlijnOpties(state));
   state.lastSnapResult = snap.snapped ? snap : null;
 
   let snapX = snap.snapped ? snap.x : x;
@@ -741,7 +757,7 @@ function _measureMultiClickMove(ctx, e, toolType) {
     if (outerPoints.length >= 3) {
       const currentPage = getActiveDocument()?.currentPage || 1;
       const area = ctx.calculateArea(outerPoints, allHoles.length > 0 ? allHoles : undefined, currentPage);
-      ctx.drawCentroidLabel(canvasCtx, outerPoints, ctx.formatMeasurement(area), mColor);
+      ctx.drawCentroidLabel(canvasCtx, outerPoints, _nieuwVlakTekst(area), mColor);
       _voorvertoningZijdematen(canvasCtx, outerPoints, mColor);
     }
   } else {
@@ -776,7 +792,7 @@ function _measureMultiClickMove(ctx, e, toolType) {
     if (isArea && previewPoints.length >= 3) {
       const expandedPoints = expandArcPoints(previewPoints);
       const area = ctx.calculateArea(expandedPoints, undefined, currentPage);
-      ctx.drawCentroidLabel(canvasCtx, previewPoints, ctx.formatMeasurement(area), mColor);
+      ctx.drawCentroidLabel(canvasCtx, previewPoints, _nieuwVlakTekst(area), mColor);
       _voorvertoningZijdematen(canvasCtx, previewPoints, mColor);
     } else if (!isArea && previewPoints.length >= 2) {
       const perim = ctx.calculatePerimeter(previewPoints, currentPage);
@@ -806,6 +822,12 @@ function _measureMultiClickMove(ctx, e, toolType) {
   if (snap.snapped && !nearFirst) {
     ctx.drawSnapIndicator(snap);
   }
+}
+
+// De oppervlaktetekst van een vlak in aanbouw: in de weergave-eenheid die
+// nieuwe meetvlakken krijgen (voorkeur measureAreaDisplayUnit, #1129).
+function _nieuwVlakTekst(area) {
+  return vlakTekst({ measureAreaUnit: state.preferences?.measureAreaDisplayUnit }, area);
 }
 
 // Zijdematen in de voorvertoning (#536), als ze als standaard aanstaan: zo
@@ -842,7 +864,7 @@ function _drawHolesPhasePreview(ctx, cursorX, cursorY) {
   // Show area text
   const currentPage = getActiveDocument()?.currentPage || 1;
   const area = ctx.calculateArea(outerPoints, completedHoles.length > 0 ? completedHoles : undefined, currentPage);
-  ctx.drawCentroidLabel(canvasCtx, outerPoints, ctx.formatMeasurement(area), mColor);
+  ctx.drawCentroidLabel(canvasCtx, outerPoints, _nieuwVlakTekst(area), mColor);
   _voorvertoningZijdematen(canvasCtx, outerPoints, mColor);
 
   // Draw hint text near cursor (rechtop op het scherm, ook gedraaid, #200)
@@ -866,10 +888,10 @@ function _finishMeasure(ctx, toolType) {
 
   if (toolType === 'measureArea' && points.length >= 3) {
     const ann = ctx.createMeasureAreaAnnotation(points);
-    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); }
+    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); meldMetingZonderSchaal(doc); }
   } else if (toolType === 'measurePerimeter' && points.length >= 2) {
     const ann = ctx.createMeasurePerimeterAnnotation(points);
-    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); }
+    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); meldMetingZonderSchaal(doc); }
   }
   state.measurePoints = null;
   state.measurePhase = 'outer';
@@ -1157,7 +1179,7 @@ export const addHoleTool = {
     if (ann.type === 'measureArea' && ann.points && ann.points.length >= 3) {
       // Met de eigen schaal van het vlak, zoals na het toevoegen (#536).
       const area = vlakMeting({ ...ann, page: ann.page || 1, holes: allHoles.length > 0 ? allHoles : undefined });
-      ctx.drawCentroidLabel(canvasCtx, ann.points, ctx.formatMeasurement(area), mColor);
+      ctx.drawCentroidLabel(canvasCtx, ann.points, vlakTekst(ann, area), mColor);
     }
 
     // Arc-mode hint near cursor
@@ -1267,7 +1289,7 @@ function _drawAddHolePreview(ctx, cursorX, cursorY) {
   // Show area text (measureArea only), met de eigen schaal van het vlak (#536)
   if (ann.type === 'measureArea') {
     const area = vlakMeting({ ...ann, page: ann.page || 1 });
-    ctx.drawCentroidLabel(canvasCtx, ann.points, ctx.formatMeasurement(area), mColor);
+    ctx.drawCentroidLabel(canvasCtx, ann.points, vlakTekst(ann, area), mColor);
   }
 
   // Draw hint text near cursor (rechtop op het scherm, ook gedraaid, #200)

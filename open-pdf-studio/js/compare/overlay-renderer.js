@@ -13,36 +13,9 @@
 // deprecated no-op fallback to preserve the public API for any external
 // callers, but it is no longer used internally.
 
-import { OLD_TINT_CSS as MARKSET_OLD_TINT, NEW_TINT_CSS as MARKSET_NEW_TINT, HIGHLIGHT_COLORS as MARKSET_HIGHLIGHT_COLORS } from '../../markset/compare/diff-classify.js';
-
 // Tint colors (as CSS rgb strings).
-// Markset: colour-blind-safe orange (old) / blue (new) instead of red / green.
-export const OLD_TINT = MARKSET_OLD_TINT;
-export const NEW_TINT = MARKSET_NEW_TINT;
-
-/**
- * Apply a solid-color tint to all non-white pixels of a canvas while keeping
- * vector sharpness. Operates on the canvas's existing 2d context.
- *
- * The canvas is expected to contain a black-on-white PDF render. After this
- * call, ink (anything that was not pure white) is replaced by the tint color
- * over a white background. The tint is applied at full pixel-resolution so
- * antialiasing edges remain smooth.
- *
- * Implementation: we use globalCompositeOperation = 'multiply' to multiply a
- * solid tint plane across the canvas. White (1,1,1) * tint = tint, while the
- * paper-white background stays white. This is equivalent to a per-channel
- * darken which preserves antialiasing.
- */
-export function tintCanvas(canvas, cssColor) {
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = cssColor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.restore();
-}
+export const OLD_TINT = 'rgb(220, 38, 38)';   // red-600
+export const NEW_TINT = 'rgb(22, 163, 74)';   // green-600
 
 /**
  * Deprecated. Pixel-diff threshold compositor — replaced by vector tinting +
@@ -55,17 +28,20 @@ export function composeOverlay(_oldData, _newData) {
 export const INK_THRESHOLD = 600;
 
 // Per-change-type fill/stroke colors for translucent highlights.
-// Markset: orange / blue / dashed grey (see markset/compare/diff-classify.js).
-export const HIGHLIGHT_COLORS = MARKSET_HIGHLIGHT_COLORS;
+export const HIGHLIGHT_COLORS = {
+  added:    { fill: 'rgba(22, 163, 74, 0.28)',  stroke: 'rgba(22, 163, 74, 0.95)'  },
+  removed:  { fill: 'rgba(220, 38, 38, 0.28)',  stroke: 'rgba(220, 38, 38, 0.95)'  },
+  modified: { fill: 'rgba(202, 138, 4, 0.28)',  stroke: 'rgba(202, 138, 4, 0.95)'  },
+};
 
 /**
  * Draw translucent rectangles for each visible change on an overlay canvas.
  *
  * @param {HTMLCanvasElement} canvas — sized to match the base render
- * @param {Array} changes — change records from change-detector (in detection-px)
+ * @param {Array} changes — change records (page points, see compare-viewport.js)
  * @param {Object} opts
- *   @prop {number} ratio — multiplier mapping detection-px to display-px
- *                          (typically displayScale / change.detectScale)
+ *   @prop {number} ratio — multiplier mapping change coordinates to display-px
+ *                          (page points to display px: the display scale)
  *   @prop {Object} visibleTypes — { added: bool, removed: bool, modified: bool }
  *   @prop {Object|null} selected — change record currently selected, drawn with
  *                                  a thicker matching-color border (no fill)
@@ -100,9 +76,7 @@ export function drawHighlights(canvas, changes, opts = {}) {
     if (showContour) {
       ctx.strokeStyle = colors.stroke;
       ctx.lineWidth = 2;
-      ctx.setLineDash(colors.dash || []); // Markset: dashed = modified
       ctx.strokeRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
-      ctx.setLineDash([]);
     }
   }
 
@@ -121,4 +95,26 @@ export function drawHighlights(canvas, changes, opts = {}) {
     ctx.strokeRect(x + 1.5, y + 1.5, Math.max(0, w - 3), Math.max(0, h - 3));
     ctx.restore();
   }
+}
+
+/**
+ * Kleuroverlay (#1024): kleur de inkt van een paginarender in een kleur naar
+ * zijn donkerte (zwart = de kleur, wit blijft wit, grijs een tint). Twee zo
+ * gekleurde renders over elkaar met mix-blend-mode multiply tonen waar ze
+ * samenvallen donker en elk verschil in de kleur van zijn tekening.
+ */
+export function kleurInkt(canvas, hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!canvas || !m || !(canvas.width > 0 && canvas.height > 0)) return;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const beeld = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = beeld.data;
+  const kr = parseInt(m[1].slice(0, 2), 16), kg = parseInt(m[1].slice(2, 4), 16), kb = parseInt(m[1].slice(4, 6), 16);
+  for (let i = 0; i < d.length; i += 4) {
+    const inkt = 1 - (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+    d[i] = 255 + (kr - 255) * inkt;
+    d[i + 1] = 255 + (kg - 255) * inkt;
+    d[i + 2] = 255 + (kb - 255) * inkt;
+  }
+  ctx.putImageData(beeld, 0, 0);
 }

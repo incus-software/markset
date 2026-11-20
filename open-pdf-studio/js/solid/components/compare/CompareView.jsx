@@ -1,4 +1,5 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, For, Show } from 'solid-js';
+import { wheelZoomDelta } from '../../../core/wheel-zoom.js';
+import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, For, Show } from 'solid-js';
 import {
   compareActive,
   compareOldPath,
@@ -43,27 +44,69 @@ import {
   setCompareTextComparing,
   setPagePair,
   setCompareMode,
+  compareAlignInfo,
+  compareAlignPending,
+  compareAutoAlign,
+  setCompareAutoAlign,
+  requestAutoAlign,
+  resetCompareAlignment,
+  comparePreset,
+  setComparePreset,
+  comparePrecision,
+  setComparePrecision,
+  comparePairs,
+  comparePairing,
+  setComparePairing,
+  setComparePairs,
+  assignComparePair,
+  gotoComparePair,
+  compareMatchedIndex,
+  compareMatchedCount,
+  compareTruncated,
+  compareMethod,
+  compareMethodUsed,
+  setCompareMethod,
+  compareColourOverlay,
+  compareOldColour,
+  compareNewColour,
+  setCompareColourOverlay,
+  setCompareOldColour,
+  setCompareNewColour,
 } from '../../../compare/compare-store.js';
+import { kleurInkt } from '../../../compare/overlay-renderer.js';
 import {
   renderCompareSideBySide,
   renderCompareOverlay,
   paintHighlights,
   clearCompareDocCache,
+  autoPairPages,
+  pageNames,
 } from '../../../compare/compare-viewport.js';
+import { alignmentCss, normalizeAlignment } from '../../../compare/alignment.js';
+import { SENSITIVITY_PRESETS, MM_PER_PT, PRECISION_LEVELS, PRECISION_NAMES } from '../../../compare/detect-plan.js';
+import { indexPairs } from '../../../compare/page-pairing.js';
+import {
+  collectReport, exportReportCsv, exportReportPdf, canPlaceClouds, placeChangeClouds,
+} from '../../../compare/compare-report-run.js';
+import { clearCompareSources } from '../../../compare/compare-sources.js';
 import { runTextCompare, clearTextCompareCache } from '../../../compare/text-compare.js';
 import { diffWords } from '../../../compare/text-diff.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { leesGetal } from '../../../core/getal-invoer.js';
 import { state } from '../../../core/state.js';
 import { diffAnnotationsForPair } from '../../../compare/compare-annotations.js';
-// Markset: colour-blind-safe compare colours and the sheet-size warning.
-import { changeTypeColor, OLD_HEX, NEW_HEX } from '../../../../markset/compare/diff-classify.js';
-import { compareSizeMismatch } from '../../../../markset/compare/size-warning.js';
+import { scrollGedrag } from '../../../core/vloeiend-scrollen.js';
 import {
   isSinglePaneMode,
   splitFraction,
-  splitOldTransform,
   screenPx,
 } from '../../../compare/split-line.js';
+import {
+  selectableOrder, clickSelection, selectionState, setAll, pruneSelection, isSelectable,
+} from '../../../compare/change-selection.js';
+import {
+  PANE_PADDING, BASE_SCALE, MAX_ZOOM, clampZoom, anchoredScroll, mirrorScroll,
+} from '../../../compare/pane-geometry.js';
 
 // Verticale scheidingslijn tussen toolbar-groepen — Windows/Visual-Studio-stijl.
 function Sep() {
@@ -77,7 +120,8 @@ export default function CompareView() {
   let oldHiCanvasRef;   // side-by-side: diff overlay on OLD page
   let newHiCanvasRef;   // side-by-side: diff overlay on NEW page
   let overlayNewCanvasRef;
-  let overlayOldCanvasRef; // Markset: old sheet, stacked on NEW with multiply
+  // Kleuroverlay (#1024): de OUDE pagina, gekleurd, boven de nieuwe.
+  let overlayOldCanvasRef;
   // Split line: OLD page on top of NEW, shown left of the line only.
   let splitOldCanvasRef;
   let overlayHighlightCanvasRef;
@@ -98,12 +142,8 @@ export default function CompareView() {
   const syncScroll = (src, dst) => {
     if (_scrollSyncing || !src || !dst) return;
     _scrollSyncing = true;
-    const sx = src.scrollWidth - src.clientWidth;
-    const sy = src.scrollHeight - src.clientHeight;
-    const dx = dst.scrollWidth - dst.clientWidth;
-    const dy = dst.scrollHeight - dst.clientHeight;
-    dst.scrollLeft = sx > 0 ? (src.scrollLeft / sx) * dx : src.scrollLeft;
-    dst.scrollTop = sy > 0 ? (src.scrollTop / sy) * dy : src.scrollTop;
+    dst.scrollLeft = mirrorScroll(src.scrollLeft, src.scrollWidth - src.clientWidth, dst.scrollWidth - dst.clientWidth);
+    dst.scrollTop = mirrorScroll(src.scrollTop, src.scrollHeight - src.clientHeight, dst.scrollHeight - dst.clientHeight);
     requestAnimationFrame(() => { _scrollSyncing = false; });
   };
   // Pannen door slepen in een paneel; de scroll-sync spiegelt de beweging
@@ -143,28 +183,47 @@ export default function CompareView() {
   const [highlight, setHighlight] = createSignal(null); // {x,y,w,h} flash highlight
   // Split line position as a fraction of the NEW page width (0 = all new, 1 = all old).
   const [splitPos, setSplitPos] = createSignal(0.5);
-  // Bitmap size of the NEW page in split mode: the OLD page rotates about
-  // its centre, exactly like the change detection does.
-  const [splitBase, setSplitBase] = createSignal({ w: 0, h: 0 });
+  // Page sizes in points in split mode (from the rendered bitmaps): the OLD
+  // page is placed with the same alignment transform as the detection uses.
+  const [splitBase, setSplitBase] = createSignal({ ow: 0, oh: 0, nw: 0, nh: 0, v: 1 });
   // Overlay and split line share one scroll body and one page wrapper.
   const singlePane = () => isSinglePaneMode(compareMode());
   let highlightTimer = null;
 
-  // Instant CSS-transform preview while zooming. The bitmap stays at the
-  // last hi-quality render scale; we visually scale the wrapper so the user
-  // sees an immediate response. After a short debounce we trigger a true
-  // re-render at the new scale and reset cssScale back to 1.
-  const [cssScale, setCssScale] = createSignal(1);
-  // The compareZoom value at which the current bitmap was rendered.
+  // Page layout and zoom preview (#1149). Each page lies in a box of
+  // (page size x zoom): that box is what the scroll pane lays out, so the
+  // scroll range follows the zoom at once and does not depend on the bitmap.
+  // Inside the box the bitmap is scaled by cssScale = zoom / bitmap zoom: 1
+  // right after a render, something else while a sharper bitmap is on its
+  // way, and permanently above 1 where the bitmap is limited in size
+  // (pane-geometry.js: a canvas cannot hold an A0 at 800 %).
+  // `natural`: page sizes in CSS px at zoom 1, from the last render.
+  const [natural, setNatural] = createSignal({ old: { w: 0, h: 0 }, new: { w: 0, h: 0 } });
+  // The zoom the current bitmaps were rendered at (signal and plain copy).
+  const [bitmapZoom, setBitmapZoom] = createSignal(compareZoom());
   let renderedZoom = compareZoom();
+  const cssScale = () => (bitmapZoom() > 0 ? compareZoom() / bitmapZoom() : 1);
+  // The bitmaps are at their size limit: zooming in further renders nothing new.
+  let bitmapAtCap = false;
   let zoomDebounceTimer = null;
   const ZOOM_DEBOUNCE_MS = 150;
-  // Set true when a zoom already re-anchored the scroll position itself (e.g.
-  // cursor-anchored wheel, center-anchored +/− buttons). In that case the
-  // post-render f-multiply must be skipped: the scroll is already expressed in
-  // final visual terms, and the bitmap swap keeps the same visual size, so
-  // re-scaling the scroll would double-apply the zoom factor and drift.
-  let _scrollAlreadyAnchored = false;
+  const boxStyle = (n) => (n && n.w > 0 && n.h > 0 ? `width:${n.w * compareZoom()}px; height:${n.h * compareZoom()}px;` : '');
+  // Called by the render the moment the canvases have their new size, before
+  // the pages are painted: bitmap zoom, page boxes and highlight canvases
+  // change together, so the page keeps its place and size on screen.
+  const onSized = ({ scale, capped }) => {
+    renderedZoom = scale / BASE_SCALE;
+    bitmapAtCap = !!capped;
+    const dims = (c) => (c && c.width > 0 && renderedZoom > 0 ? { w: c.width / renderedZoom, h: c.height / renderedZoom } : null);
+    const single = singlePane();
+    const n = dims(single ? overlayNewCanvasRef : newCanvasRef);
+    const o = single ? null : dims(oldCanvasRef);
+    batch(() => {
+      setBitmapZoom(renderedZoom);
+      setNatural((cur) => ({ old: o || cur.old, new: n || cur.new }));
+    });
+    repaintHighlights();
+  };
 
   const visibleTypes = () => ({
     added: compareShowAdded(),
@@ -177,12 +236,9 @@ export default function CompareView() {
   // not the live zoom, because the highlight canvas is sized to the bitmap and
   // rides the same CSS `scale(cssScale)` wrapper as the page canvas — so any
   // in-progress zoom preview is applied once, by the wrapper, to both.
-  const highlightRatio = () => {
-    const visualScale = 1.5 * renderedZoom;
-    const list = compareChanges();
-    const detectScale = list[0]?.detectScale || visualScale;
-    return visualScale / detectScale;
-  };
+  // Change records are in page points (#465), like annotation and text
+  // records, so one ratio maps them all onto the bitmap.
+  const highlightRatio = () => 1.5 * renderedZoom;
 
   // Structurele annotatie-verschillen — los van de pixel-diff van de PDF-inhoud.
   // De app-annotaties zitten in een aparte overlay (doc.annotations), niet in
@@ -197,9 +253,7 @@ export default function CompareView() {
   const allChanges = createMemo(() => [...(compareChanges() || []), ...annotationChanges()]);
   // Navigatie/flash-ratio: annotatie-records staan in pagina-coördinaten
   // (× visualScale), inhouds-records in detectie-px (× highlightRatio).
-  const changeRatio = (c) => (c && (c.source === 'annotation' || c.source === 'text'))
-    ? (1.5 * renderedZoom)
-    : highlightRatio();
+  const changeRatio = () => highlightRatio();
 
   // ── Tekstmodus-arcering ────────────────────────────────────────────────
   // Met de Tekst-tab actief vervangt de tekststroom-diff de pixel-diff op de
@@ -255,10 +309,14 @@ export default function CompareView() {
   // Paint one highlight canvas restricted to a subset of change types. Used by
   // both modes: overlay shows all three; side-by-side shows removed+modified on
   // OLD and added+modified on NEW so each edit lands on the page it belongs to.
-  const paintPaneHighlights = (canvas, allow) => {
+  // On the OLD page a content change is drawn at its place on the old sheet
+  // (alignment and scale applied in reverse).
+  const onOldPage = (c) => (c && c.old ? { ...c, x: c.old.x, y: c.old.y, width: c.old.width, height: c.old.height } : c);
+  const paintPaneHighlights = (canvas, allow, side = 'new') => {
     if (!canvas) return;
     const v = visibleTypes();
-    const sel = compareFocusedChange();
+    const sel0 = compareFocusedChange();
+    const sel = side === 'old' ? onOldPage(sel0) : sel0;
     // Only draw the selection accent on a pane that shows the selected type,
     // so a "removed" selection doesn't get a border on the NEW pane.
     const selForPane = sel && allow[sel.type] && v[sel.type] ? sel : null;
@@ -270,7 +328,8 @@ export default function CompareView() {
     const style = { showBox: compareShowBox(), showContour: compareShowContour() };
     // Content changes are measured in detection-px → highlightRatio(). This call
     // clears the canvas first.
-    paintHighlights(canvas, compareChanges(), {
+    const content = side === 'old' ? (compareChanges() || []).map(onOldPage) : compareChanges();
+    paintHighlights(canvas, content, {
       ratio: highlightRatio(), visibleTypes: vis, ...style,
       selected: selForPane && selForPane.source !== 'annotation' ? selForPane : null,
       clear: true,
@@ -305,7 +364,7 @@ export default function CompareView() {
         oldHiCanvasRef.width = oldCanvasRef.width;
         oldHiCanvasRef.height = oldCanvasRef.height;
         if (textMode) paintTextHighlights(oldHiCanvasRef, 'old');
-        else paintPaneHighlights(oldHiCanvasRef, { added: false, removed: true, modified: true });
+        else paintPaneHighlights(oldHiCanvasRef, { added: false, removed: true, modified: true }, 'old');
       }
       if (newHiCanvasRef && newCanvasRef) {
         newHiCanvasRef.width = newCanvasRef.width;
@@ -320,16 +379,18 @@ export default function CompareView() {
   // viewport. Shared by overlay (bodyRef) and side-by-side (both panes).
   const scrollPaneToChange = (pane, wrap, c, smooth = true) => {
     if (!pane || !wrap) return;
-    // highlightRatio() maps to bitmap-px; the wrapper's CSS scale turns that
-    // into on-screen (content) px, so fold cssScale in to hit the right spot
-    // even if a zoom preview is still in flight.
-    const ratio = changeRatio(c) * cssScale();
-    const cx = wrap.offsetLeft + (c.x + c.width / 2) * ratio;
-    const cy = wrap.offsetTop + (c.y + c.height / 2) * ratio;
+    // Where the page starts in the scroll area (it is centred while it fits
+    // the pane), plus the change in screen px: page points x 1.5 x zoom.
+    const pr = pane.getBoundingClientRect();
+    const wr = wrap.getBoundingClientRect();
+    const ratio = BASE_SCALE * compareZoom();
+    const cx = wr.left - pr.left + pane.scrollLeft + (c.x + c.width / 2) * ratio;
+    const cy = wr.top - pr.top + pane.scrollTop + (c.y + c.height / 2) * ratio;
     pane.scrollTo({
       left: Math.max(0, cx - pane.clientWidth / 2),
       top: Math.max(0, cy - pane.clientHeight / 2),
-      behavior: smooth ? 'smooth' : 'auto',
+      // Vloeiend alleen als de voorkeur het toestaat (#1007).
+      behavior: smooth ? scrollGedrag() : 'auto',
     });
   };
 
@@ -346,14 +407,14 @@ export default function CompareView() {
     if (!refPane) return;
     // 1. instantly centre the change in each pane at the current zoom
     _scrollSyncing = true;
-    for (const [pane, wrap] of pairs) scrollPaneToChange(pane, wrap, c, false);
+    for (const [pane, wrap] of pairs) scrollPaneToChange(pane, wrap, pane === oldPaneRef ? onOldPage(c) : c, false);
     requestAnimationFrame(() => { _scrollSyncing = false; });
     // 2. zoom so the change fills ~55% of the pane — clamp to zoom-in only
-    const curW = Math.max(1, c.width * changeRatio(c));
-    const curH = Math.max(1, c.height * changeRatio(c));
+    const curW = Math.max(1, c.width * BASE_SCALE * compareZoom());
+    const curH = Math.max(1, c.height * BASE_SCALE * compareZoom());
     const frac = 0.55;
     let factor = Math.min(refPane.clientWidth * frac / curW, refPane.clientHeight * frac / curH);
-    factor = Math.min(factor, 8 / Math.max(0.01, compareZoom())); // never past max zoom
+    factor = Math.min(factor, MAX_ZOOM / Math.max(0.01, compareZoom())); // never past max zoom
     if (factor <= 1.02) return; // already large enough → leave it centred
     // 3. zoom around the pane centre, where the change now sits
     const rect = refPane.getBoundingClientRect();
@@ -408,22 +469,41 @@ export default function CompareView() {
         newPath: compareNewPath(),
         oldPage: compareOldPage(),
         newPage: compareNewPage(),
-        scale: 1.5 * zoomAtRender,
+        scale: BASE_SCALE * zoomAtRender,
+        onSized,
         offset: compareOffset(),
+        preset: comparePreset(),
+        precision: comparePrecision(),
+        method: compareMethod(),
+        autoAlign: compareAlignPending(),
         skipDetection,
       };
       if (!opts.oldPath || !opts.newPath) return;
       if (compareMode() === 'split') {
         // Both pages rendered visibly; the CSS clip shows OLD left of the line.
         if (splitOldCanvasRef && overlayNewCanvasRef) {
-          await renderCompareSideBySide(splitOldCanvasRef, overlayNewCanvasRef, opts);
-          setSplitBase({ w: overlayNewCanvasRef.width, h: overlayNewCanvasRef.height });
+          const { scale: v } = await renderCompareSideBySide(splitOldCanvasRef, overlayNewCanvasRef, opts);
+          setSplitBase({
+            ow: splitOldCanvasRef.width / v, oh: splitOldCanvasRef.height / v,
+            nw: overlayNewCanvasRef.width / v, nh: overlayNewCanvasRef.height / v, v,
+          });
           repaintHighlights();
         }
+      } else if (compareMode() === 'overlay' && compareColourOverlay() && overlayOldCanvasRef && overlayNewCanvasRef) {
+        // Kleuroverlay (#1024): beide pagina's renderen, elk in zijn kleur;
+        // de oude ligt met multiply en de uitlijning op de nieuwe.
+        const { scale: v } = await renderCompareSideBySide(overlayOldCanvasRef, overlayNewCanvasRef, opts);
+        setSplitBase({
+          ow: overlayOldCanvasRef.width / v, oh: overlayOldCanvasRef.height / v,
+          nw: overlayNewCanvasRef.width / v, nh: overlayNewCanvasRef.height / v, v,
+        });
+        kleurInkt(overlayOldCanvasRef, compareOldColour());
+        kleurInkt(overlayNewCanvasRef, compareNewColour());
+        repaintHighlights();
       } else if (compareMode() === 'overlay') {
         if (overlayNewCanvasRef && overlayHighlightCanvasRef) {
           await renderCompareOverlay(
-            overlayOldCanvasRef || null, // Markset: true overlay
+            null,
             overlayNewCanvasRef,
             opts,
             overlayHighlightCanvasRef,
@@ -441,37 +521,10 @@ export default function CompareView() {
       console.error('[compare] render failed', err);
     } finally {
       busy = false;
-      // The freshly painted bitmap matches zoomAtRender. Reset CSS preview
-      // so what the user sees is the crisp HQ bitmap (not a CSS-stretched
-      // copy). We also remember the zoom so further wheel events can compute
-      // a fresh CSS-only delta from this baseline.
-      const prevZoom = renderedZoom;
-      renderedZoom = zoomAtRender;
-      // Zoom-anker: de content is een factor f groter/kleiner geworden —
-      // schaal de scrollposities mee zodat beide panelen (en de overlay)
-      // dezelfde plek blijven tonen i.p.v. naar linksboven te driften.
-      // Dit vertaalt de scrollpositie uit de CSS-preview-ruimte (bitmap nog op
-      // de oude schaal) naar de nieuwe native-bitmap-ruimte. Bij cursor-zoom
-      // is de scroll al op het cursor-punt gezet in preview-ruimte; deze factor
-      // houdt datzelfde punt vast wanneer de scherpe bitmap de preview vervangt.
-      const f = prevZoom > 0 ? zoomAtRender / prevZoom : 1;
-      if (_scrollAlreadyAnchored) {
-        // Scroll was pre-set to hold a specific anchor; the visual size is
-        // unchanged by the bitmap swap, so leave scroll untouched.
-        _scrollAlreadyAnchored = false;
-      } else if (Math.abs(f - 1) > 1e-4) {
-        _scrollSyncing = true;
-        for (const pane of [oldPaneRef, newPaneRef, bodyRef]) {
-          if (!pane) continue;
-          pane.scrollLeft *= f;
-          pane.scrollTop *= f;
-        }
-        requestAnimationFrame(() => { _scrollSyncing = false; });
-      }
-      // If the user kept zooming during render, recompute cssScale relative
-      // to the new baseline so the preview stays consistent.
-      const cur = compareZoom();
-      setCssScale(cur === renderedZoom ? 1 : cur / renderedZoom);
+      // Bitmap zoom and page boxes were set together when the canvases got
+      // their size (onSized), and the page box follows the zoom by itself:
+      // nothing moves when the sharp bitmap replaces the preview, so the
+      // scroll positions stay as they are.
       // Repaint highlights at the crisp scale (ratio changed with the bitmap).
       repaintHighlights();
       if (pending) {
@@ -485,6 +538,9 @@ export default function CompareView() {
     if (zoomDebounceTimer) clearTimeout(zoomDebounceTimer);
     zoomDebounceTimer = setTimeout(() => {
       zoomDebounceTimer = null;
+      // The bitmap is as large as it may get and the zoom asks for more:
+      // there is nothing sharper to render.
+      if (bitmapAtCap && !busy && compareZoom() >= renderedZoom - 1e-9) return;
       // Zoom-only re-render: skip change detection entirely. Bbox results
       // are in detection-pixel space and don't change with display scale.
       doRender({ skipDetection: true });
@@ -500,10 +556,17 @@ export default function CompareView() {
     compareOldPage();
     compareNewPage();
     compareOffset();
+    comparePreset();
+    comparePrecision();
+    compareMethod();
+    compareAlignPending();
+    compareColourOverlay();
+    compareOldColour();
+    compareNewColour();
     if (compareActive()) {
-      // Reset CSS preview state — after a path/page/mode change the bitmap
-      // baseline is whatever the next render produces.
-      setCssScale(1);
+      // After a path/page/mode change the bitmap is whatever the next render
+      // produces, at whatever size that page allows.
+      bitmapAtCap = false;
       if (zoomDebounceTimer) {
         clearTimeout(zoomDebounceTimer);
         zoomDebounceTimer = null;
@@ -512,14 +575,11 @@ export default function CompareView() {
     }
   });
 
-  // Zoom: instant CSS preview + debounced HQ re-render.
+  // Zoom: the page box and cssScale follow at once (instant preview); a
+  // sharp bitmap follows after a short pause.
   createEffect(() => {
-    const z = compareZoom();
+    compareZoom();
     if (!compareActive()) return;
-    // Visual scale relative to whatever the bitmap was last rendered at.
-    if (renderedZoom > 0) {
-      setCssScale(z / renderedZoom);
-    }
     scheduleHQRender();
   });
 
@@ -551,10 +611,8 @@ export default function CompareView() {
     const req = compareFitRequest();
     if (!req.kind || !compareActive()) return;
     // Reset scroll to the top-left so the (re)fitted page is fully framed
-    // rather than left scrolled where the previous zoom sat. Flag the upcoming
-    // render to keep this scroll instead of scaling the old one.
+    // rather than left scrolled where the previous zoom sat.
     const resetScroll = () => {
-      _scrollAlreadyAnchored = true;
       _scrollSyncing = true;
       for (const p of [oldPaneRef, newPaneRef, bodyRef]) { if (p) { p.scrollLeft = 0; p.scrollTop = 0; } }
       requestAnimationFrame(() => { _scrollSyncing = false; });
@@ -564,22 +622,32 @@ export default function CompareView() {
       resetScroll();
       return;
     }
-    // Fit: the rendered bitmap is (natural * 1.5 * renderedZoom) px. Work out
-    // the natural (scale-1.5) size, then pick a zoom so it fits the pane.
+    // Fit: pick the zoom at which the page at zoom 1 (`natural`, else the
+    // bitmap divided by its zoom) fills the pane inside its padding.
     queueMicrotask(() => {
       const baseCanvas = singlePane() ? overlayNewCanvasRef : newCanvasRef;
       const pane = singlePane() ? bodyRef : newPaneRef;
       if (!baseCanvas || !pane || renderedZoom <= 0) return;
-      const naturalW = baseCanvas.width / renderedZoom;   // px at zoom=1
-      const naturalH = baseCanvas.height / renderedZoom;
+      const n = natural().new;
+      const naturalW = n.w > 0 ? n.w : baseCanvas.width / renderedZoom;   // px at zoom=1
+      const naturalH = n.h > 0 ? n.h : baseCanvas.height / renderedZoom;
       if (naturalW <= 0 || naturalH <= 0) return;
-      const padding = 28; // breathing room inside the pane
+      const padding = 2 * PANE_PADDING; // breathing room inside the pane
       const availW = Math.max(1, pane.clientWidth - padding);
       const availH = Math.max(1, pane.clientHeight - padding);
       const z = Math.min(availW / naturalW, availH / naturalH);
       setCompareZoom(z);
       resetScroll();
     });
+  });
+
+  // Na het sluiten: geen pdf.js-documenten, maskers of tekst-diffs van deze
+  // sessie vasthouden (een eerdere versie kan intussen anders zijn).
+  createEffect(() => {
+    if (!compareActive()) {
+      clearCompareDocCache();
+      clearTextCompareCache();
+    }
   });
 
   onCleanup(() => {
@@ -589,15 +657,14 @@ export default function CompareView() {
     }
     clearCompareDocCache();
     clearTextCompareCache();
+    clearCompareSources();
   });
 
-  // Tekstvergelijking: draait één keer per documentpaar. Markset: meteen bij de
-  // start (niet pas bij het openen van de Tekst-tab), zodat het aantal
-  // tekstwijzigingen zichtbaar is — de beeldvergelijking mist kleine
-  // tekstwijzigingen zoals een aangepaste maat.
+  // Tekstvergelijking: draait één keer per documentpaar zodra de gebruiker de
+  // Tekst-tab opent (lazy — extractie van alle pagina's is niet gratis).
   let _textRunSeq = 0;
   createEffect(() => {
-    if (!compareActive()) return; // Markset: eager, see above
+    if (comparePanelTab() !== 'text' || !compareActive()) return;
     if (compareTextChanges() !== null || compareTextComparing()) return;
     const oldP = compareOldPath();
     const newP = compareNewPath();
@@ -613,6 +680,105 @@ export default function CompareView() {
       })
       .finally(() => { if (seq === _textRunSeq) setCompareTextComparing(false); });
   });
+
+  // Automatische paginakoppeling (#465): één keer per documentpaar, op de
+  // achtergrond. Tot hij klaar is gelden de index-paren.
+  const [pageInfo, setPageInfo] = createSignal({ old: new Map(), new: new Map() });
+  let _pairRunSeq = 0;
+  createEffect(() => {
+    if (!compareActive()) return;
+    const oldP = compareOldPath();
+    const newP = compareNewPath();
+    if (!oldP || !newP) return;
+    const seq = ++_pairRunSeq;
+    setComparePairing(true);
+    setPageInfo({ old: new Map(), new: new Map() });
+    autoPairPages(oldP, newP, () => seq === _pairRunSeq && compareActive())
+      .then((res) => {
+        if (!res || seq !== _pairRunSeq) return;
+        setPageInfo({ old: pageNames(res.oldPages), new: pageNames(res.newPages) });
+        setComparePairs(res.pairs);
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[compare] page pairing failed', err);
+        if (seq === _pairRunSeq) setComparePairs(indexPairs(compareOldPageCount(), compareNewPageCount()));
+      })
+      .finally(() => { if (seq === _pairRunSeq) setComparePairing(false); });
+  });
+
+  // ── Wijzigingsrapport (#465) ──────────────────────────────────────────
+  const [reportBusy, setReportBusy] = createSignal(null); // null | { done, total }
+  const [reportMenu, setReportMenu] = createSignal(false);
+  const [statusMsg, setStatusMsg] = createSignal('');
+  let _statusTimer = null;
+  const flash = (msg) => {
+    setStatusMsg(msg);
+    if (_statusTimer) clearTimeout(_statusTimer);
+    _statusTimer = setTimeout(() => setStatusMsg(''), 5000);
+  };
+  const reportPairs = () => {
+    const list = (comparePairs() || []).filter((p) => p.old != null && p.new != null);
+    return list.length ? list : [{ old: compareOldPage(), new: compareNewPage() }];
+  };
+  const runReport = async (kind) => {
+    setReportMenu(false);
+    if (reportBusy()) return;
+    const o = { oldPath: compareOldPath(), newPath: compareNewPath(), preset: comparePreset(), precision: comparePrecision(), method: compareMethod() };
+    setReportBusy({ done: 0, total: reportPairs().length });
+    try {
+      const results = await collectReport({
+        ...o,
+        pairs: reportPairs(),
+        autoAlign: compareAutoAlign(),
+        sheets: pageInfo().new,
+        onProgress: (done, total) => setReportBusy({ done, total }),
+        isCancelled: () => !compareActive(),
+      });
+      if (!results) return;
+      const ok = kind === 'csv'
+        ? await exportReportCsv(o, results)
+        : await exportReportPdf(o, results, { onProgress: (done, total) => setReportBusy({ done, total }) });
+      if (ok) flash(t('compare.report.saved') || 'Report saved');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[compare] report failed', err);
+      flash(t('compare.report.failed') || 'The report could not be created');
+    } finally {
+      setReportBusy(null);
+    }
+  };
+  // Wijzigingen geselecteerd in de lijst, voor wolken op het nieuwe document.
+  // Meer tegelijk selecteren (#1149): Ctrl+klik, Shift+klik voor een reeks,
+  // Ctrl+A en de vakjes per soort en voor alles (change-selection.js).
+  const [checked, setChecked] = createSignal(new Set());
+  let selectAnchor = null;
+  createEffect(() => { compareChanges(); compareOldPage(); compareNewPage(); selectAnchor = null; setChecked(new Set()); });
+  // Wat de lijst toont en te selecteren is, in de volgorde van de lijst.
+  const selectOrder = createMemo(() => selectableOrder(allChanges(), visibleTypes()));
+  // Een soort uitzetten haalt zijn wijzigingen ook uit de selectie: wat niet
+  // in beeld is wordt niet ongemerkt als wolk geplaatst.
+  createEffect(() => {
+    const order = selectOrder();
+    const cur = untrack(checked);
+    const next = pruneSelection(cur, order);
+    if (next.size !== cur.size) setChecked(next);
+  });
+  const pickChange = (c, how = {}) => {
+    const r = clickSelection({ selected: checked(), anchor: selectAnchor }, c, how, selectOrder());
+    selectAnchor = r.anchor;
+    setChecked(r.selected);
+    if (r.focus) focusOnChange(c);
+  };
+  // Alles (of één soort: `subset`) selecteren of uit de selectie halen.
+  const selectAllChanges = (on, subset) => setChecked(setAll(checked(), subset || selectOrder(), on));
+  const placeClouds = async () => {
+    setReportMenu(false);
+    const list = (allChanges() || []).filter((c) => checked().has(c) && c.source !== 'annotation');
+    if (!list.length) return;
+    const n = await placeChangeClouds(compareNewPath(), compareNewPage(), list);
+    if (n) flash((t('compare.report.cloudsPlaced', { count: n }) || `${n}`));
+  };
 
   // Klik op een tekstverschil → spring naar de betreffende pagina('s), licht
   // de bijbehorende arcering op (selectie-accent) en centreer/zoom erop.
@@ -646,6 +812,13 @@ export default function CompareView() {
       }
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Ctrl+A: alle wijzigingen in de lijst selecteren (#1149).
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A') && comparePanelTab() === 'changes') {
+        e.preventDefault();
+        e.stopPropagation();
+        selectAllChanges(true);
+        return;
+      }
       // Ctrl+PageUp/PageDown is de tabwissel (#539), geen paginapaar.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'PageDown') {
@@ -666,34 +839,41 @@ export default function CompareView() {
   // under the cursor stays put while zooming. Works without Ctrl (the previous
   // implementation was a no-op unless Ctrl was held — the main reason zoom felt
   // "limited"). Shift+wheel keeps native scrolling; Ctrl+wheel still zooms.
-  // Zoom by `factor`, keeping the viewport point (ax, ay) — expressed in the
-  // pane's client coordinates — fixed on screen. Immediately adjusts scroll so
-  // the anchor holds through the CSS preview; flags the render to skip its
-  // post-swap re-scale so the factor isn't double-applied.
+  // Zoom by `factor`, keeping the page point under (ax, ay) — client
+  // coordinates — in place. The new scroll positions are worked out from the
+  // layout (pane-geometry.js: the page is centred while it fits, the padding
+  // does not scale) before the zoom changes, and set right after: the page
+  // box follows the zoom at once, so they hold through the preview and the
+  // sharp render alike. In side-by-side each pane keeps its own point under
+  // the same spot, so both keep showing the same part.
+  const naturalOf = (pane) => (pane === oldPaneRef ? natural().old : natural().new);
   const zoomAnchored = (pane, ax, ay, factor) => {
-    if (!pane) { setCompareZoom(compareZoom() * factor); return; }
+    const z0 = compareZoom();
+    const z1 = clampZoom(z0 * factor);
+    if (!pane) { setCompareZoom(z1); return; }
+    if (Math.abs(z1 / z0 - 1) < 1e-6) return;
     const rect = pane.getBoundingClientRect();
     const offX = ax - rect.left;
     const offY = ay - rect.top;
-    // Point under the anchor, in the current rendered coordinate space.
-    const px = pane.scrollLeft + offX;
-    const py = pane.scrollTop + offY;
-    const z0 = compareZoom();
-    const z1 = Math.max(0.1, Math.min(8, z0 * factor));
-    const applied = z1 / z0;
-    if (Math.abs(applied - 1) < 1e-6) return;
-    const newLeft = Math.max(0, px * applied - offX);
-    const newTop = Math.max(0, py * applied - offY);
-    _scrollAlreadyAnchored = true;
+    const panes = compareMode() === 'side' ? [oldPaneRef, newPaneRef].filter(Boolean) : [pane];
+    const next = panes.map((p) => {
+      const n = naturalOf(p);
+      return {
+        p,
+        left: anchoredScroll({ scroll: p.scrollLeft, anchor: offX, pane: p.clientWidth, content0: n.w * z0, content1: n.w * z1, centre: true }),
+        top: anchoredScroll({ scroll: p.scrollTop, anchor: offY, pane: p.clientHeight, content0: n.h * z0, content1: n.h * z1 }),
+      };
+    });
+    const apply = () => {
+      _scrollSyncing = true;
+      for (const n of next) { n.p.scrollLeft = n.left; n.p.scrollTop = n.top; }
+      requestAnimationFrame(() => { _scrollSyncing = false; });
+    };
     setCompareZoom(z1);
-    _scrollSyncing = true;
-    pane.scrollLeft = newLeft;
-    pane.scrollTop = newTop;
-    if (compareMode() === 'side') {
-      const other = pane === oldPaneRef ? newPaneRef : oldPaneRef;
-      if (other) { other.scrollLeft = newLeft; other.scrollTop = newTop; }
-    }
-    requestAnimationFrame(() => { _scrollSyncing = false; });
+    apply();
+    // Once more after pending updates of the page boxes: a scroll position
+    // beyond the old range would have been cut off.
+    queueMicrotask(apply);
   };
 
   // The pane the cursor/interaction is currently over (side-by-side) or the
@@ -757,7 +937,9 @@ export default function CompareView() {
     if (e.shiftKey) return;
     if (e.ctrlKey || e.metaKey || state.preferences?.wheelZoomWithoutCtrl) {
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const delta = wheelZoomDelta(e.deltaY, state.preferences);
+      if (delta === 0) return;
+      const factor = delta < 0 ? 1.1 : 1 / 1.1;
       zoomAnchored(activePane(e.clientX), e.clientX, e.clientY, factor);
       return;
     }
@@ -804,13 +986,17 @@ export default function CompareView() {
 
   // OLD page placement in split mode: the same dx/dy/rot alignment the change
   // detection applies (bitmap px, rotation about the NEW page centre).
-  const oldSplitTransform = () => splitOldTransform(compareOffset(), splitBase().w, splitBase().h);
+  const oldSplitTransform = () => {
+    const b = splitBase();
+    return alignmentCss(compareOffset(), { width: b.ow, height: b.oh }, { width: b.nw, height: b.nh }, b.v);
+  };
 
   // Labels and handle keep their screen size while the wrapper is CSS-scaled.
   const px = (n) => screenPx(n, cssScale());
 
   // Click outside the change list deselects the focused change.
   const handleBodyClick = () => {
+    setReportMenu(false);
     if (compareFocusedChange()) setFocusedChange(null);
   };
 
@@ -823,7 +1009,7 @@ export default function CompareView() {
       >
         <div
           class="compare-toolbar"
-          style="display:flex; align-items:center; gap:6px; padding:5px 10px; background:linear-gradient(#ffffff, #f5f5f5); border-bottom:1px solid #d4d4d4; color:#222; font-size:12px;"
+          style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:5px 10px; background:linear-gradient(#ffffff, #f5f5f5); border-bottom:1px solid #d4d4d4; color:#222; font-size:12px;"
         >
           {/* Titel + weergavemodus */}
           <strong>{t('compare.title') || 'Compare PDFs'}</strong>
@@ -841,7 +1027,10 @@ export default function CompareView() {
           {/* Paginanavigatie */}
           <span style="color:#555;">{t('compare.page') || 'Page'}</span>
           <button class="pref-btn pref-btn-secondary" disabled={!canPrevPagePair()} title={t('compare.page') || 'Page'} onClick={prevPagePair}>{'‹'}</button>
-          <span style="min-width:58px; text-align:center; font-variant-numeric:tabular-nums;">{compareOldPage()}/{compareOldPageCount()} · {compareNewPage()}/{compareNewPageCount()}</span>
+          <span
+            style="min-width:58px; text-align:center; font-variant-numeric:tabular-nums;"
+            title={compareMatchedCount() ? `${t('compare.pair') || 'Pair'} ${compareMatchedIndex() + 1}/${compareMatchedCount()}` : ''}
+          >{compareOldPage()}/{compareOldPageCount()} · {compareNewPage()}/{compareNewPageCount()}</span>
           <button class="pref-btn pref-btn-secondary" disabled={!canNextPagePair()} title={t('compare.page') || 'Page'} onClick={nextPagePair}>{'›'}</button>
 
           <Sep />
@@ -866,47 +1055,126 @@ export default function CompareView() {
             <input type="checkbox" checked={compareShowContour()} onChange={(e) => setCompareShowContour(e.currentTarget.checked)} />
             {t('compare.contour') || 'Contour'}
           </label>
-
-          {/* Uitlijnen (overlay en scheidingslijn) */}
-          <Show when={singlePane()}>
-            <Sep />
-            <span style="color:#555;">{t('compare.align') || 'Align'}</span>
-            <span style="color:#777;">dx</span>
-            <input
-              type="text" inputmode="decimal" data-getal
-              style="width:56px;"
-              value={compareOffset().dx}
-              onInput={(e) => setCompareOffset({ dx: parseFloat(e.target.value) || 0 })}
-            />
-            <span style="color:#777;">dy</span>
-            <input
-              type="text" inputmode="decimal" data-getal
-              style="width:56px;"
-              value={compareOffset().dy}
-              onInput={(e) => setCompareOffset({ dy: parseFloat(e.target.value) || 0 })}
-            />
-            <span style="color:#777;">rot</span>
-            <input
-              type="text" inputmode="decimal" data-getal
-              step="0.1"
-              style="width:56px;"
-              value={compareOffset().rotation}
-              onInput={(e) => setCompareOffset({ rotation: parseFloat(e.target.value) || 0 })}
-            />
+          {/* Kleuroverlay (#1024): beide tekeningen over elkaar in eigen kleuren. */}
+          <Show when={compareMode() === 'overlay'}>
+            <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title={t('compare.colourOverlayHint') || 'Show both drawings on top of each other, each in its own colour'}>
+              <input type="checkbox" checked={compareColourOverlay()} onChange={(e) => setCompareColourOverlay(e.currentTarget.checked)} />
+              {t('compare.colourOverlay') || 'Colours'}
+            </label>
+            <Show when={compareColourOverlay()}>
+              <label style="display:inline-flex; align-items:center; gap:3px;" title={t('compare.oldDoc') || 'Old'}>
+                {t('compare.oldDoc') || 'Old'}
+                <input type="color" value={compareOldColour()} onChange={(e) => setCompareOldColour(e.currentTarget.value)} style="width:26px; height:20px; padding:0; border:1px solid #999;" />
+              </label>
+              <label style="display:inline-flex; align-items:center; gap:3px;" title={t('compare.newDoc') || 'New'}>
+                {t('compare.newDoc') || 'New'}
+                <input type="color" value={compareNewColour()} onChange={(e) => setCompareNewColour(e.currentTarget.value)} style="width:26px; height:20px; padding:0; border:1px solid #999;" />
+              </label>
+            </Show>
           </Show>
 
-          {/* Markset: sheets of different sizes make the comparison unreliable. */}
-          <Show when={compareSizeMismatch()}>
-            {(m) => (
-              <span
-                role="status"
-                title={t('compare.sizeMismatchHint') || 'Use Align (dx/dy) to line the sheets up, or compare sheets plotted at the same size.'}
-                style="margin-left:8px; padding:2px 8px; border:1px solid #8a6d00; background:#fff7d6; color:#3d3000; font-size:11px; white-space:nowrap;"
+          <Sep />
+
+          {/* Gevoeligheid (#465): drempel, minimale clustergrootte en
+              samenvoegafstand samen. */}
+          <span style="color:#555;">{t('compare.sensitivity') || 'Sensitivity'}</span>
+          <select
+            style="font-size:12px;"
+            title={t('compare.sensitivityHint') || 'Threshold, minimum change size and merge distance'}
+            onChange={(e) => setComparePreset(e.currentTarget.value)}
+          >
+            <For each={Object.keys(SENSITIVITY_PRESETS)}>
+              {(k) => <option value={k} selected={comparePreset() === k}>{t(`compare.preset.${k}`) || k}</option>}
+            </For>
+          </select>
+          {/* Precisie (#1149): hoe klein een verschil nog meetelt. Schaalt de
+              tolerantie en de minimale grootte van de gekozen gevoeligheid;
+              de inktmaskers blijven gelijk, alleen de detectie loopt opnieuw. */}
+          <label
+            style="display:inline-flex; align-items:center; gap:4px;"
+            title={t('compare.precisionHint') || 'Lower: only larger differences. Higher: small differences and line edges count too.'}
+          >
+            <span style="color:#555;">{t('compare.precision') || 'Precision'}</span>
+            <input
+              type="range"
+              min={PRECISION_LEVELS[0]}
+              max={PRECISION_LEVELS[PRECISION_LEVELS.length - 1]}
+              step="1"
+              value={comparePrecision()}
+              style="width:72px; margin:0;"
+              onChange={(e) => setComparePrecision(e.currentTarget.value)}
+            />
+            <span style="min-width:44px;">{t(`compare.precisionLevel.${PRECISION_NAMES[comparePrecision()]}`) || PRECISION_NAMES[comparePrecision()]}</span>
+          </label>
+          <label
+            style="display:inline-flex; align-items:center; gap:3px;"
+            title={t('compare.methodVectorHint') || 'Compare the drawn paths exactly where both pages are vector drawings'}
+          >
+            <input type="checkbox" checked={compareMethod() === 'vector'} onChange={(e) => setCompareMethod(e.currentTarget.checked ? 'vector' : 'pixel')} />
+            {t('compare.methodVector') || 'Vector'}
+            <Show when={compareMethod() === 'vector' && compareMethodUsed() !== 'vector' && !compareDetecting()}>
+              <span style="color:#b45309;">({t('compare.methodPixelFallback') || 'pixels: not a vector page'})</span>
+            </Show>
+          </label>
+
+          <Sep />
+
+          {/* Uitlijnen: automatisch (met betrouwbaarheid) of met de hand. */}
+          <span style="color:#555;">{t('compare.align') || 'Align'}</span>
+          <button
+            class="pref-btn pref-btn-secondary"
+            disabled={compareAlignPending()}
+            title={t('compare.autoAlignHint') || 'Estimate shift, rotation and scale from the drawings'}
+            onClick={requestAutoAlign}
+          >
+            {compareAlignPending() ? '…' : (t('compare.autoAlign') || 'Align automatically')}
+          </button>
+          <label style="display:inline-flex; align-items:center; gap:3px;" title={t('compare.autoAlignEachHint') || 'Align every page pair automatically on first view'}>
+            <input type="checkbox" checked={compareAutoAlign()} onChange={(e) => setCompareAutoAlign(e.currentTarget.checked)} />
+            {t('compare.autoAlignEach') || 'Auto'}
+          </label>
+          <AlignField label="dx" unit="mm" value={() => compareOffset().dx} onSet={(v) => setCompareOffset({ dx: v })} />
+          <AlignField label="dy" unit="mm" value={() => compareOffset().dy} onSet={(v) => setCompareOffset({ dy: v })} />
+          <AlignField label={t('compare.rotation') || 'rot'} unit="°" value={() => compareOffset().rotation} onSet={(v) => setCompareOffset({ rotation: v })} />
+          <AlignField label={t('compare.scale') || 'scale'} unit="%" value={() => normalizeAlignment(compareOffset()).scale * 100}
+            onSet={(v) => { if (v > 0) setCompareOffset({ scale: v / 100 }); }} />
+          <button class="pref-btn pref-btn-secondary" title={t('compare.resetAlignHint') || 'No alignment'} onClick={resetCompareAlignment}>0</button>
+          <ConfidenceBadge t={t} info={compareAlignInfo} pending={compareAlignPending} />
+
+          <Sep />
+
+          {/* Rapport: CSV, PDF-samenvatting, wolken op het nieuwe document. */}
+          <div style="position:relative; display:inline-block;">
+            <button
+              class="pref-btn pref-btn-secondary"
+              disabled={!!reportBusy()}
+              onClick={(e) => { e.stopPropagation(); setReportMenu(!reportMenu()); }}
+            >
+              {reportBusy()
+                ? `${t('compare.report.button') || 'Report'} ${reportBusy().done}/${reportBusy().total}`
+                : `${t('compare.report.button') || 'Report'} ▾`}
+            </button>
+            <Show when={reportMenu()}>
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style="position:absolute; top:100%; left:0; z-index:20; min-width:220px; background:#fff; border:1px solid #d4d4d4; box-shadow:0 2px 6px rgba(0,0,0,.2); padding:2px 0;"
               >
-                ⚠ {(t('compare.sizeMismatch') || 'Sheet sizes differ: {{old}} vs {{new}}').replace('{{old}}', m().old).replace('{{new}}', m().new)}
-              </span>
-            )}
+                <MenuItem onClick={() => runReport('csv')}>{t('compare.report.csv') || 'Export change list (CSV)…'}</MenuItem>
+                <MenuItem onClick={() => runReport('pdf')}>{t('compare.report.pdf') || 'Export PDF summary…'}</MenuItem>
+                <MenuItem
+                  disabled={!canPlaceClouds(compareNewPath()) || checked().size === 0}
+                  title={canPlaceClouds(compareNewPath()) ? '' : (t('compare.report.cloudsNeedTab') || 'The new document must be open in a tab')}
+                  onClick={placeClouds}
+                >
+                  {`${t('compare.report.clouds') || 'Place selected changes as clouds'} (${checked().size})`}
+                </MenuItem>
+              </div>
+            </Show>
+          </div>
+          <Show when={statusMsg()}>
+            <span style="color:#555; white-space:nowrap;">{statusMsg()}</span>
           </Show>
+
           <span style="flex:1;"></span>
           <button
             onClick={exitCompare}
@@ -925,25 +1193,30 @@ export default function CompareView() {
             onPointerDown={(e) => { if (compareMode() !== 'side') startPanDrag(e, bodyRef); }}
             style={compareMode() === 'side'
               ? 'flex:1; overflow:hidden; display:flex; align-items:stretch; padding:0; gap:0;'
-              : 'flex:1; overflow:auto; display:flex; align-items:flex-start; justify-content:center; padding:14px; gap:14px;'}
+              : `flex:1; overflow:auto; overscroll-behavior:contain; display:flex; align-items:flex-start; padding:${PANE_PADDING}px;`}
           >
             <Show
               when={compareMode() === 'side'}
               fallback={
-                <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+                /* The page box: (page size x zoom). `margin:0 auto` centres it
+                    while it fits and lets it start at the left edge once it
+                    is wider than the pane. Centring the flex container
+                    itself pushed the left part of a wide page out of the
+                    scroll area, where it could not be reached (#1149). */
+                <div style={`position:relative; flex:0 0 auto; margin:0 auto; ${boxStyle(natural().new)}`}>
                   {/* Overlay: NEW page rendered normally; diff regions drawn as
                       translucent rectangles on a separate highlight canvas. */}
                   <div
                     ref={overlayWrapRef}
-                    style={`position:relative; background:#ffffff; box-shadow:0 0 0 1px #444; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
+                    style={`position:absolute; left:0; top:0; background:#ffffff; box-shadow:0 0 0 1px #444; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
                   >
                     <canvas ref={overlayNewCanvasRef} style="display:block;"></canvas>
-                    {/* Markset: the OLD sheet (orange) multiplies over NEW (blue), so
-                        unchanged linework reads dark and changes keep their colour. */}
-                    <canvas
-                      ref={overlayOldCanvasRef}
-                      style={`position:absolute; left:0; top:0; pointer-events:none; mix-blend-mode:multiply; display:${compareMode() === 'overlay' ? 'block' : 'none'};`}
-                    ></canvas>
+                    <Show when={compareMode() === 'overlay' && compareColourOverlay()}>
+                      <canvas
+                        ref={overlayOldCanvasRef}
+                        style={`position:absolute; left:0; top:0; display:block; mix-blend-mode:multiply; pointer-events:none; transform:${oldSplitTransform()}; transform-origin:0 0;`}
+                      ></canvas>
+                    </Show>
                     <Show when={compareMode() === 'split'}>
                       {/* OLD left of the line: a clip box as wide as the
                           split, so the alignment transform on the canvas
@@ -1000,14 +1273,16 @@ export default function CompareView() {
                   onScroll={() => syncScroll(oldPaneRef, newPaneRef)}
                   on:mousedown={killMiddleAutoscroll}
                   onPointerDown={(e) => startPanDrag(e, oldPaneRef)}
-                  style="flex:1; overflow:auto;"
+                  style="flex:1; overflow:auto; overscroll-behavior:contain;"
                 >
-                  <div style="padding:14px; display:inline-block; line-height:0;">
-                    {/* Page + diff overlay share a scaled wrapper so the red/
-                        yellow highlights stay pixel-aligned with the render. */}
+                  <div style={`padding:${PANE_PADDING}px; margin:0 auto; width:max-content; line-height:0;`}>
+                    {/* Page box (page size x zoom); inside it the page and its
+                        diff overlay share a scaled wrapper so the red/yellow
+                        highlights stay pixel-aligned with the render. */}
+                    <div style={`position:relative; ${boxStyle(natural().old)}`}>
                     <div
                       ref={oldWrapRef}
-                      style={`position:relative; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
+                      style={`position:absolute; left:0; top:0; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
                     >
                       <canvas
                         ref={oldCanvasRef}
@@ -1017,6 +1292,7 @@ export default function CompareView() {
                         ref={oldHiCanvasRef}
                         style="position:absolute; left:0; top:0; pointer-events:none;"
                       ></canvas>
+                    </div>
                     </div>
                   </div>
                 </div>
@@ -1031,12 +1307,13 @@ export default function CompareView() {
                   onScroll={() => syncScroll(newPaneRef, oldPaneRef)}
                   on:mousedown={killMiddleAutoscroll}
                   onPointerDown={(e) => startPanDrag(e, newPaneRef)}
-                  style="flex:1; overflow:auto;"
+                  style="flex:1; overflow:auto; overscroll-behavior:contain;"
                 >
-                  <div style="padding:14px; display:inline-block; line-height:0;">
+                  <div style={`padding:${PANE_PADDING}px; margin:0 auto; width:max-content; line-height:0;`}>
+                    <div style={`position:relative; ${boxStyle(natural().new)}`}>
                     <div
                       ref={newWrapRef}
-                      style={`position:relative; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
+                      style={`position:absolute; left:0; top:0; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
                     >
                       <canvas
                         ref={newCanvasRef}
@@ -1047,6 +1324,7 @@ export default function CompareView() {
                         style="position:absolute; left:0; top:0; pointer-events:none;"
                       ></canvas>
                     </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1055,15 +1333,93 @@ export default function CompareView() {
           <ChangeListPanel
             t={t}
             changes={allChanges}
-            onFocus={focusOnChange}
+            onPick={pickChange}
             focused={compareFocusedChange}
             onTextFocus={gotoTextChange}
+            checked={checked}
+            order={selectOrder}
+            onSelectAll={selectAllChanges}
+            onClouds={placeClouds}
+            canClouds={() => canPlaceClouds(compareNewPath())}
+            pageInfo={pageInfo}
           />
         </div>
       </div>
     </Show>
   );
 }
+
+// Eén uitlijnwaarde; wordt pas toegepast bij Enter of verlaten van het veld,
+// zodat een half getypt getal ("-") geen detectie start.
+function AlignField(props) {
+  const shown = () => {
+    const v = props.value();
+    return Number.isFinite(v) ? String(Math.round(v * 100) / 100) : '0';
+  };
+  const commit = (e) => {
+    const v = leesGetal(e.currentTarget.value);
+    if (Number.isFinite(v)) props.onSet(v);
+    else e.currentTarget.value = shown();
+  };
+  return (
+    <span style="display:inline-flex; align-items:center; gap:2px;">
+      <span style="color:#777;">{props.label}</span>
+      <input
+        type="text" inputmode="decimal" data-getal
+        style="width:52px;"
+        value={shown()}
+        onChange={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(e); }}
+      />
+      <span style="color:#777;">{props.unit}</span>
+    </span>
+  );
+}
+
+// Betrouwbaarheid van de automatische uitlijning.
+function ConfidenceBadge(props) {
+  const info = () => props.info() || {};
+  const text = () => {
+    if (props.pending()) return '…';
+    const i = info();
+    if (i.source === 'manual') return props.t('compare.alignManual') || 'manual';
+    if (i.source !== 'auto' || !Number.isFinite(i.confidence)) return '';
+    return `${Math.round(i.confidence * 100)}%`;
+  };
+  const color = () => {
+    const c = info().confidence;
+    if (info().source !== 'auto' || !Number.isFinite(c)) return '#555';
+    return c >= 0.8 ? '#15803d' : c >= 0.5 ? '#b45309' : '#b91c1c';
+  };
+  const title = () => {
+    const i = info();
+    if (i.source !== 'auto') return props.t('compare.confidenceHint') || 'Share of the ink that lines up after alignment';
+    const m = i.method === 'measure' ? (props.t('compare.alignByMeasure') || 'scale from the measuring scales')
+      : i.method === 'identity' ? (props.t('compare.alignNone') || 'already aligned') : (props.t('compare.alignByContent') || 'from the drawing content');
+    return `${props.t('compare.confidence') || 'Confidence'}: ${text()} — ${m}`;
+  };
+  return (
+    <Show when={text()}>
+      <span title={title()} style={`padding:1px 6px; border:1px solid ${color()}; color:${color()}; font-variant-numeric:tabular-nums;`}>{text()}</span>
+    </Show>
+  );
+}
+
+function MenuItem(props) {
+  return (
+    <div
+      title={props.title || ''}
+      onClick={() => { if (!props.disabled) props.onClick?.(); }}
+      style={`padding:5px 12px; white-space:nowrap; color:${props.disabled ? '#999' : '#222'};`}
+      onMouseEnter={(e) => { if (!props.disabled) e.currentTarget.style.background = '#e5f1fb'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
+    >
+      {props.children}
+    </div>
+  );
+}
+
+const fmtMm = (pt) => (Math.round(pt * MM_PER_PT * 10) / 10).toString();
 
 function ChangeListPanel(props) {
   const typeLabel = (type) => {
@@ -1073,7 +1429,7 @@ function ChangeListPanel(props) {
     return props.t(k) || (type === 'added' ? 'Toegevoegd' : type === 'removed' ? 'Verwijderd' : 'Gewijzigd');
   };
   const typeIcon = (type) => type === 'added' ? '+' : type === 'removed' ? '−' : 'Δ';
-  const typeColor = changeTypeColor; // Markset: orange / blue / grey
+  const typeColor = (type) => type === 'added' ? '#16a34a' : type === 'removed' ? '#dc2626' : '#ca8a04';
 
   // Per-type collapse state (default: expanded).
   const [collapsed, setCollapsed] = createSignal({ added: false, removed: false, modified: false });
@@ -1118,6 +1474,15 @@ function ChangeListPanel(props) {
 
   const total = () => (props.changes() || []).length;
 
+  // Selectie (#1149). De vakjes volgen de selectie; na een klik zetten we het
+  // vakje zelf goed, omdat de browser het al heeft omgezet voordat de
+  // selectie is bijgewerkt (bij een reeks blijft een aangevinkt vakje aan).
+  const selectedCount = () => props.checked().size;
+  const allState = () => selectionState(props.checked(), props.order());
+  const groupOrder = (type) => groupedByType()[type].map((i) => i.change).filter(isSelectable);
+  const groupState = (type) => selectionState(props.checked(), groupOrder(type));
+  const how = (e, extra = {}) => ({ ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, ...extra });
+
   return (
     <div
       class="compare-change-list"
@@ -1126,7 +1491,7 @@ function ChangeListPanel(props) {
     >
       {/* Tab-strip: visuele wijzigingen vs. tekstvergelijking. */}
       <div style="display:flex; background:linear-gradient(#ffffff, #f5f5f5); border-bottom:1px solid #d4d4d4;">
-        <For each={['changes', 'text']}>
+        <For each={['changes', 'text', 'pages']}>
           {(tab) => (
             <button
               onClick={() => setComparePanelTab(tab)}
@@ -1134,7 +1499,9 @@ function ChangeListPanel(props) {
             >
               {tab === 'changes'
                 ? `${props.t('compare.changes') || 'Wijzigingen'} (${compareDetecting() ? '…' : total()})`
-                : `${props.t('compare.textTab') || 'Tekst'}${compareTextChanges() ? ` (${compareTextChanges().length})` : ''}`}
+                : tab === 'text'
+                  ? `${props.t('compare.textTab') || 'Tekst'}${compareTextChanges() ? ` (${compareTextChanges().length})` : ''}`
+                  : `${props.t('compare.pagesTab') || 'Pages'}${comparePairing() ? ' …' : ''}`}
             </button>
           )}
         </For>
@@ -1142,13 +1509,52 @@ function ChangeListPanel(props) {
       <Show when={comparePanelTab() === 'text'}>
         <TextDiffList t={props.t} onFocus={props.onTextFocus} focused={props.focused} />
       </Show>
+      <Show when={comparePanelTab() === 'pages'}>
+        <PairingList t={props.t} pageInfo={props.pageInfo} />
+      </Show>
       <Show when={comparePanelTab() === 'changes'}>
+      <Show when={compareTruncated()}>
+        <div style="padding:6px 10px; background:#fff4ce; border-bottom:1px solid #d4d4d4; color:#5c4400; font-size:11px;">
+          {props.t('compare.truncated') || 'Too many differences: check the alignment or the sensitivity.'}
+        </div>
+      </Show>
       <div style="display:flex; gap:4px; padding:6px 8px; border-bottom:1px solid #d4d4d4; background:#fafafa;">
         <TypeToggle type="added" count={groupedByType().added.length} />
         <TypeToggle type="removed" count={groupedByType().removed.length} />
         <TypeToggle type="modified" count={groupedByType().modified.length} />
       </div>
-      <div style="flex:1; overflow:auto;">
+      {/* Selectiebalk: alles selecteren, het aantal, en de actie op de hele
+          selectie (één stap voor Ongedaan maken in het nieuwe document). */}
+      <div
+        title={props.t('compare.selectHint') || 'Ctrl+click adds or removes a change, Shift+click selects a range, Ctrl+A selects all'}
+        style="display:flex; align-items:center; gap:6px; padding:3px 8px; border-bottom:1px solid #d4d4d4; background:#fafafa; font-size:11px;"
+      >
+        <label style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
+          <input
+            type="checkbox"
+            disabled={props.order().length === 0}
+            checked={allState() === 'all'}
+            prop:indeterminate={allState() === 'some'}
+            onClick={(e) => {
+              props.onSelectAll(allState() !== 'all');
+              e.currentTarget.checked = allState() === 'all';
+            }}
+          />
+          {props.t('compare.selectAll') || 'Select all'}
+        </label>
+        <span style="flex:1;"></span>
+        <button
+          class="pref-btn pref-btn-secondary"
+          disabled={selectedCount() === 0 || !props.canClouds()}
+          title={props.canClouds()
+            ? (props.t('compare.report.clouds') || 'Place selected changes as clouds')
+            : (props.t('compare.report.cloudsNeedTab') || 'The new document must be open in a tab')}
+          onClick={() => props.onClouds()}
+        >
+          {`${props.t('compare.cloudsButton') || 'Place clouds'} (${selectedCount()})`}
+        </button>
+      </div>
+      <div style="flex:1; overflow:auto; overscroll-behavior:contain;">
         <Show
           when={total() > 0}
           fallback={
@@ -1168,6 +1574,19 @@ function ChangeListPanel(props) {
                     style={`padding:5px 10px; background:#e8e8e8; border-bottom:1px solid #d4d4d4; cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:bold; user-select:none;`}
                   >
                     <span style="width:10px; display:inline-block;">{collapsed()[type] ? '▶' : '▼'}</span>
+                    <Show when={groupOrder(type).length > 0}>
+                      <input
+                        type="checkbox"
+                        title={props.t('compare.selectGroup') || 'Select all of this kind'}
+                        checked={groupState(type) === 'all'}
+                        prop:indeterminate={groupState(type) === 'some'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onSelectAll(groupState(type) !== 'all', groupOrder(type));
+                          e.currentTarget.checked = groupState(type) === 'all';
+                        }}
+                      />
+                    </Show>
                     <span
                       style={`width:10px; height:10px; display:inline-block; background:${typeColor(type)}; border:1px solid #555;`}
                     ></span>
@@ -1178,13 +1597,29 @@ function ChangeListPanel(props) {
                       {(item) => {
                         const c = item.change;
                         const isFocused = () => props.focused() === c;
+                        const isChecked = () => props.checked().has(c);
+                        const rowBg = () => (isFocused() ? '#dbeafe' : isChecked() ? '#e3edfb' : '#ffffff');
+                        // onMouseDown: Shift+klik selecteert een reeks, geen tekst.
                         return (
                           <div
-                            onClick={(e) => { e.stopPropagation(); props.onFocus(c); }}
-                            style={`height:50px; padding:6px 10px; border-bottom:1px solid #e0e0e0; display:flex; align-items:center; gap:8px; cursor:pointer; background:${isFocused() ? '#dbeafe' : '#ffffff'};`}
+                            onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+                            onClick={(e) => { e.stopPropagation(); props.onPick(c, how(e)); }}
+                            style={`height:50px; padding:6px 10px; border-bottom:1px solid #e0e0e0; display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; background:${rowBg()};`}
                             onMouseEnter={(e) => { if (!isFocused()) e.currentTarget.style.background = '#eaf3ff'; }}
-                            onMouseLeave={(e) => { if (!isFocused()) e.currentTarget.style.background = '#ffffff'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = rowBg(); }}
                           >
+                            <Show when={c.source !== 'annotation'}>
+                              <input
+                                type="checkbox"
+                                title={props.t('compare.selectForClouds') || 'Select for clouds on the new document'}
+                                checked={isChecked()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  props.onPick(c, how(e, { checkbox: true }));
+                                  e.currentTarget.checked = isChecked();
+                                }}
+                              />
+                            </Show>
                             <div
                               style={`width:22px; height:22px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; background:${typeColor(c.type)}; color:#fff; font-weight:bold; font-size:13px;`}
                             >
@@ -1197,7 +1632,7 @@ function ChangeListPanel(props) {
                               <div style="color:#666; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                 {c.source === 'annotation'
                                   ? `✎ ${props.t('compare.annotation') || 'Annotatie'}`
-                                  : `~${Math.round(c.width)}×${Math.round(c.height)} px @ (${Math.round(c.x)}, ${Math.round(c.y)})`}
+                                  : `${fmtMm(c.width)} × ${fmtMm(c.height)} mm @ (${fmtMm(c.x)}, ${fmtMm(c.y)}) mm`}
                               </div>
                             </div>
                           </div>
@@ -1220,7 +1655,7 @@ function ChangeListPanel(props) {
 // soort en de tekst oud → nieuw; klik springt naar het betreffende
 // pagina-paar. Bij 'modified' worden de gewijzigde woorden geaccentueerd.
 function TextDiffList(props) {
-  const typeColor = changeTypeColor; // Markset: orange / blue / grey
+  const typeColor = (type) => type === 'added' ? '#16a34a' : type === 'removed' ? '#dc2626' : '#ca8a04';
   const typeIcon = (type) => type === 'added' ? '+' : type === 'removed' ? '−' : 'Δ';
   const typeLabel = (type) => props.t(
     type === 'added' ? 'compare.added' : type === 'removed' ? 'compare.removed' : 'compare.modified'
@@ -1245,8 +1680,27 @@ function TextDiffList(props) {
     </For>
   );
   const textStyle = 'font-size:11px; white-space:pre-wrap; word-break:break-word; max-height:88px; overflow:hidden;';
+  // Filter op soort (#465).
+  const [show, setShow] = createSignal({ added: true, removed: true, modified: true });
+  const countOf = (type) => (compareTextChanges() || []).filter((c) => c.type === type).length;
+  const filtered = () => (compareTextChanges() || []).filter((c) => show()[c.type] !== false);
   return (
-    <div style="flex:1; overflow:auto;">
+    <div style="flex:1; overflow:auto; display:flex; flex-direction:column;">
+      <div style="display:flex; gap:4px; padding:6px 8px; border-bottom:1px solid #d4d4d4; background:#fafafa;">
+        <For each={['added', 'removed', 'modified']}>
+          {(type) => (
+            <button
+              onClick={() => setShow({ ...show(), [type]: !show()[type] })}
+              title={typeLabel(type)}
+              style={`flex:1; display:flex; align-items:center; justify-content:center; gap:4px; padding:4px 6px; border:1px solid #b5b5b5; background:${show()[type] ? '#ffffff' : '#e5e5e5'}; font-size:11px; color:${show()[type] ? '#222' : '#888'};`}
+            >
+              <span style={`width:10px; height:10px; display:inline-block; background:${show()[type] ? typeColor(type) : '#bbb'}; border:1px solid #555;`}></span>
+              {typeLabel(type)} ({countOf(type)})
+            </button>
+          )}
+        </For>
+      </div>
+      <div style="flex:1; overflow:auto; overscroll-behavior:contain;">
       <Show
         when={!compareTextComparing()}
         fallback={<div style="padding:14px; color:#666; font-style:italic;">…</div>}
@@ -1259,7 +1713,7 @@ function TextDiffList(props) {
             </div>
           }
         >
-          <For each={compareTextChanges()}>
+          <For each={filtered()}>
             {(c, i) => {
               const words = () => c.type === 'modified' ? diffWords(c.oldText, c.newText) : null;
               const isFocused = () => props.focused?.() === c;
@@ -1280,9 +1734,9 @@ function TextDiffList(props) {
                     <span style="margin-left:auto; color:#666; font-size:11px;">{pageLabel(c)}</span>
                   </div>
                   <Show when={c.oldText}>
-                    <div style={`${textStyle} color:#8a3a00;`}>
+                    <div style={`${textStyle} color:#991b1b;`}>
                       <Show when={words()} fallback={c.oldText}>
-                        {renderParts(words().oldParts, OLD_HEX)}
+                        {renderParts(words().oldParts, '#dc2626')}
                       </Show>
                     </div>
                   </Show>
@@ -1290,9 +1744,9 @@ function TextDiffList(props) {
                     <div style="color:#888; font-size:10px; line-height:1; padding:1px 0;">↓</div>
                   </Show>
                   <Show when={c.newText}>
-                    <div style={`${textStyle} color:#003a75;`}>
+                    <div style={`${textStyle} color:#14532d;`}>
                       <Show when={words()} fallback={c.newText}>
-                        {renderParts(words().newParts, NEW_HEX)}
+                        {renderParts(words().newParts, '#16a34a')}
                       </Show>
                     </div>
                   </Show>
@@ -1302,6 +1756,77 @@ function TextDiffList(props) {
           </For>
         </Show>
       </Show>
+      </div>
+    </div>
+  );
+}
+
+// Paginakoppeling (#465): de gevonden paren, en pagina's die alleen in het
+// oude of alleen in het nieuwe document staan. Een paar is te corrigeren door
+// een andere pagina te kiezen; "—" ontkoppelt.
+function PairingList(props) {
+  const reasonLabel = (r) => props.t(`compare.pairReason.${r}`) || r;
+  const name = (side, page) => {
+    const info = props.pageInfo()[side].get(page);
+    const extra = info?.sheet || (info?.label && info.label !== String(page) ? info.label : '');
+    return extra ? `${page} (${extra})` : String(page);
+  };
+  const oldPages = () => Array.from({ length: compareOldPageCount() }, (_, i) => i + 1);
+  const newPages = () => Array.from({ length: compareNewPageCount() }, (_, i) => i + 1);
+  const isCurrent = (r) => r.old === compareOldPage() && r.new === compareNewPage();
+  const rows = () => {
+    const list = comparePairs() || [];
+    return list.length ? list : indexPairs(compareOldPageCount(), compareNewPageCount());
+  };
+  const PageSelect = (p) => (
+    <select
+      style="font-size:11px; max-width:96px;"
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        const v = e.currentTarget.value === '' ? null : parseInt(e.currentTarget.value, 10);
+        if (p.side === 'old') assignComparePair(v, p.row.new);
+        else assignComparePair(p.row.old, v);
+      }}
+    >
+      <option value="" selected={p.row[p.side] == null}>—</option>
+      <For each={p.side === 'old' ? oldPages() : newPages()}>
+        {(n) => <option value={n} selected={p.row[p.side] === n}>{name(p.side, n)}</option>}
+      </For>
+    </select>
+  );
+  return (
+    <div style="flex:1; overflow:auto; overscroll-behavior:contain;">
+      <Show when={comparePairing()}>
+        <div style="padding:6px 10px; color:#666; font-style:italic;">{props.t('compare.pairing') || 'Matching pages…'}</div>
+      </Show>
+      <div style="display:flex; gap:6px; padding:4px 10px; color:#555; font-size:11px; border-bottom:1px solid #d4d4d4; background:#fafafa;">
+        <span style="flex:1;">{props.t('compare.oldDoc') || 'Old'}</span>
+        <span style="flex:1;">{props.t('compare.newDoc') || 'New'}</span>
+      </div>
+      <For each={rows()}>
+        {(r) => {
+          const onlyOld = r.new == null;
+          const onlyNew = r.old == null;
+          const bg = () => (isCurrent(r) ? '#dbeafe' : onlyOld ? '#fef2f2' : onlyNew ? '#f0fdf4' : '#ffffff');
+          return (
+            <div
+              onClick={() => { if (!onlyOld && !onlyNew) gotoComparePair(r.old, r.new); }}
+              style={`padding:5px 10px; border-bottom:1px solid #e0e0e0; background:${bg()};`}
+            >
+              <div style="display:flex; gap:6px; align-items:center;">
+                <span style="flex:1;"><PageSelect side="old" row={r} /></span>
+                <span style="color:#888;">↔</span>
+                <span style="flex:1;"><PageSelect side="new" row={r} /></span>
+              </div>
+              <div style={`font-size:10px; margin-top:2px; color:${onlyOld ? '#b91c1c' : onlyNew ? '#15803d' : '#777'};`}>
+                {onlyOld ? (props.t('compare.onlyInOld') || 'Only in old')
+                  : onlyNew ? (props.t('compare.onlyInNew') || 'Only in new')
+                  : reasonLabel(r.reason)}
+              </div>
+            </div>
+          );
+        }}
+      </For>
     </div>
   );
 }

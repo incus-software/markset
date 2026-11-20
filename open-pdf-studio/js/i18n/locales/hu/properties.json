@@ -9,7 +9,9 @@
     "measureTitle": "Valós hossz",
     "measureQuestion": "Mekkora ennek a távolságnak a valós hossza?",
     "measuredOnPaper": "Papíron mérve",
-    "computedScale": "Számított méretarány"
+    "computedScale": "Számított méretarány",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Méretarány",
@@ -17,7 +19,9 @@
     "viewports": "Nézetablakok",
     "noViewports": "Nincsenek definiált nézetablakok",
     "measurements": "Mérések",
-    "noMeasurements": "Még nincsenek mérések"
+    "noMeasurements": "Még nincsenek mérések",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Tulajdonságok",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Beállította: {{author}}, {{date}}",
     "layer": "Réteg",
     "layerMarkupGroup": "Jelölésrétegek",
-    "layerDocumentGroup": "A dokumentum rétegei"
+    "layerDocumentGroup": "A dokumentum rétegei",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Nincs",
   "moreColors": "További színek...",
@@ -248,6 +254,7 @@
     "title": "Cím",
     "author": "Szerző",
     "subject": "Tárgy",
+    "keywords": "Kulcsszavak",
     "creator": "Létrehozó",
     "producer": "Előállító",
     "pdfVersion": "PDF verzió",
@@ -316,7 +323,8 @@
     "redaction": "Kitörlés",
     "scaleBar": "Aránymérték",
     "parametricSymbol": "Paraméteres szimbólum",
-    "fileAttachment": "Fájlmelléklet"
+    "fileAttachment": "Fájlmelléklet",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Panel váltása",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Könyvjelző törlése",
     "findBookmark": "Keresés...",
     "findBookmarkTip": "Gépeljen egy könyvjelzőre ugráshoz. Az Enter megnyitja, újabb Enter a következő találatra lép.",
+    "findPage": "Keresés...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "Melléklet hozzáadása",
     "openAttachment": "Melléklet megnyitása",
     "saveAttachment": "Melléklet mentése",
@@ -452,6 +462,9 @@
     "scaleAuto": "Dokumentum méretaránya",
     "scaleTooltip": "Az annotáció méretarányának felülbírálása (egység pontonként). Hagyja üresen a dokumentum/terület méretarányának használatához.",
     "unit": "Mértékegység",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Pontosság (tizedesjegyek)",
     "dimType": "Típus",
     "dimTypeCustom": "Egyedi",
@@ -473,7 +486,9 @@
     "depthNone": "Nincs",
     "depthTooltip": "Falmagasság, födémvastagság stb. a mérés mértékegységében. Hossz × mélység felületet, terület × mélység térfogatot ad.",
     "surface": "Felület",
-    "volume": "Térfogat"
+    "volume": "Térfogat",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Kimutatások",
@@ -496,7 +511,18 @@
     },
     "preview": "Előnézet",
     "exportCsv": "CSV exportálása",
-    "workbookBindings": "Táblázatkötések"
+    "workbookBindings": "Táblázatkötések",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Kimutatásvarázsló",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Csatlakozás az elején",
     "joinAtEnd": "Csatlakozás a végén",
-    "joinHint": "Ki: a fal ezen vége soha nem kap gérvágást, nem csatlakozik T-kötéssel és nem vágódik le egy másik falhoz; ott marad egyenes vége, ahol megrajzolták."
+    "joinHint": "Ki: a fal ezen vége soha nem kap gérvágást, nem csatlakozik T-kötéssel és nem vágódik le egy másik falhoz; ott marad egyenes vége, ahol megrajzolták.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Rajzbeállítások",
@@ -682,6 +804,7 @@
       "height": "Magasság",
       "location": "Hely",
       "locationSource": "Hely forrása",
+      "layer": "Réteg",
       "rebarMark": "Tételszám",
       "rebarDiameter": "Ø",
       "rebarShape": "Hajlítási forma",
@@ -807,6 +930,24 @@
     "rules": "A hozzárendelés a jelölés befoglaló téglalapjának középpontján alapul, a széleket is beleértve. A legmélyebben beágyazott zóna nyer, utána a legkisebb terület, majd a zónaazonosító. Egyenes oldalú, lyuk nélküli sokszögeket vagy elforgatás nélküli téglalapokat használjon. Az érvénytelen vagy ismétlődő zónaazonosítók kimaradnak.",
     "loading": "Az annotációk betöltése folyamatban: a helyek még változhatnak."
   },
+  "dynamicStamp": {
+    "title": "Bélyegzőmezők",
+    "template": "Sablon",
+    "refresh": "Dátum, felhasználó és oldal frissítése",
+    "lock": "Bélyegző zárolása",
+    "lockConfirm": "Zárolja ezt a bélyegzőt? A mezői ezután nem módosíthatók.",
+    "locked": "Ez a bélyegző zárolva van: a mezői már nem módosíthatók.",
+    "field": {
+      "date": "Dátum",
+      "time": "Idő",
+      "datetime": "Dátum és idő",
+      "user": "Felhasználó",
+      "page": "Oldal",
+      "pages": "Oldalak száma",
+      "filename": "Fájlnév",
+      "title": "Dokumentum címe"
+    }
+  },
   "toolSets": {
     "title": "Eszközkészletek",
     "typeWall": "Fal",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "A fájl túl nagy egy eszközkészlethez.",
     "errorFileInvalid": "Ez a fájl nem érvényes eszközkészlet.",
     "errorFileNewer": "Ez az eszközkészlet az Open PDF Studio egy újabb verziójával készült. Az importáláshoz frissítse az alkalmazást.",
-    "damagedStatus": "A mentett eszközkészletek nem olvashatók. A sérült fájl „{{name}}” néven megmaradt."
+    "damagedStatus": "A mentett eszközkészletek nem olvashatók. A sérült fájl „{{name}}” néven megmaradt.",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Megnyitás",
     "saveAs": "Mentés másként...",
     "noContent": "A fájl tartalma nincs beágyazva a PDF-be."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

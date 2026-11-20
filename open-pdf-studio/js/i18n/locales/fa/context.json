@@ -3,6 +3,7 @@
     "openPopUpNote": "باز کردن یادداشت بازشو",
     "hidePopUpNote": "پنهان کردن یادداشت بازشو",
     "resetPopUpLocation": "بازنشانی موقعیت یادداشت بازشو",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "ویرایش متن...",
     "addReply": "افزودن پاسخ",
     "locked": "قفل شده",
@@ -12,11 +13,13 @@
     "printable": "قابل چاپ",
     "status": "وضعیت",
     "showByStatus": "نمایش بر اساس وضعیت",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "هیچ",
     "statusAccepted": "پذیرفته‌شده",
     "statusCancelled": "لغوشده",
     "statusCompleted": "تکمیل‌شده",
     "statusRejected": "ردشده",
+    "statusReviewed": "بررسی‌شده",
     "reviewHistory": "تاریخچه بررسی...",
     "layer": "لایه:",
     "noLayersAvailable": "هیچ لایه‌ای در دسترس نیست",
@@ -49,6 +52,7 @@
     "dimChainAdd": "افزودن نقاط به زنجیره اندازه",
     "dimChainRemove": "حذف خط رابط از زنجیره",
     "selectRoom": "انتخاب اتاق",
+    "checkScale": "بررسی مقیاس با این خط...",
     "saveToToolSet": "ذخیره در مجموعه ابزار"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "مرکزگذاری عمودی",
     "distributeHorizontally": "توزیع افقی",
     "distributeVertically": "توزیع عمودی",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "تریم گوشه‌های دیوار",
     "deleteAnnotations": "حذف {{count}} حاشیه‌نویسی",
     "deleteConfirm": "آیا {{count}} حاشیه‌نویسی حذف شوند؟",
@@ -109,6 +114,8 @@
     "nestUnderNew": "قرار دادن زیر نشانک جدید...",
     "indent": "افزایش تورفتگی",
     "outdent": "کاهش تورفتگی",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "حذف {{count}} نشانک"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "درج از فایل...",
     "insertFromFileBefore": "پیش از این صفحه...",
     "insertFromFileAfter": "پس از این صفحه...",
-    "pageLabels": "برچسب‌های صفحه (سازنده نام)..."
+    "pageLabels": "برچسب‌های صفحه (سازنده نام)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "برجسته‌سازی انتخاب",
     "strikethroughSelection": "خط‌خوردگی انتخاب",
     "underlineSelection": "زیرخط انتخاب",
-    "curvedLeaderSelection": "افزودن فراخوان منحنی"
+    "curvedLeaderSelection": "افزودن فراخوان منحنی",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "آیا این حاشیه‌نویسی حذف شود؟",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "حذف رأس",
     "insertVertex": "درج رأس در اینجا",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "تبدیل به کمان",
     "convertToLine": "تبدیل به خط"
   },

@@ -13,15 +13,9 @@ import {
 } from '../stores/quantitiesStore.js';
 import QuantitiesProperties from './QuantitiesProperties.jsx';
 
-function formatCell(val, col) {
-  if (val == null || val === '') return '';
-  if (typeof val === 'number') return Number.isFinite(val) ? val.toFixed(col.decimals ?? 0) : '';
-  return String(val);
-}
-function fmtTotal(val, col) {
-  if (val == null) return '';
-  return val.toFixed(col.decimals ?? 2) + (col.unit ? ` ${col.unit}` : '');
-}
+// Dezelfde celopmaak als de geplaatste staat en de CSV (schedule-templates.js),
+// met het decimaalteken van de taal (#629).
+import { formatRowCell, fmtTotal } from '../../quantities/schedule-templates.js';
 
 export default function SchedulePanel() {
   const { t } = useTranslation('properties');
@@ -100,7 +94,7 @@ export default function SchedulePanel() {
     const rows = [];
     for (const g of r.groups) {
       if (g.key !== null) rows.push({ group: true, cells: [`${g.key} (${g.rows.length})`] });
-      if (r.itemize) for (const row of g.rows) rows.push({ cells: r.columns.map(c => formatCell(row.vals[c.key], c)) });
+      if (r.itemize) for (const row of g.rows) rows.push({ cells: r.columns.map(c => formatRowCell(row, c)) });
       rows.push({ total: true, cells: r.columns.map((c, i) => i === 0 ? t('quantities.subtotal') : fmtTotal(g.subtotals[c.key], c)) });
     }
     const ann = createAnnotation({
@@ -166,7 +160,7 @@ export default function SchedulePanel() {
                           {(row, i) => (
                             <tr classList={{ 'q-stripe': appearance().stripe && i % 2 === 1 }}>
                               <Index each={scheduleResult().columns}>
-                                {(col) => <td class={col().align === 'right' ? 'schedule-val' : ''}>{formatCell(row().vals[col().key], col())}</td>}
+                                {(col) => <td class={col().align === 'right' ? 'schedule-val' : ''}>{formatRowCell(row(), col())}</td>}
                               </Index>
                             </tr>
                           )}

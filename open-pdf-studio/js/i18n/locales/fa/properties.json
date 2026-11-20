@@ -9,7 +9,9 @@
     "measureTitle": "طول واقعی",
     "measureQuestion": "طول واقعی این فاصله چقدر است؟",
     "measuredOnPaper": "اندازه‌گیری‌شده روی کاغذ",
-    "computedScale": "مقیاس محاسبه‌شده"
+    "computedScale": "مقیاس محاسبه‌شده",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "مقیاس",
@@ -17,7 +19,9 @@
     "viewports": "دریچه‌های دید",
     "noViewports": "هیچ دریچه دیدی تعریف نشده است",
     "measurements": "اندازه‌گیری‌ها",
-    "noMeasurements": "هنوز اندازه‌گیری‌ای وجود ندارد"
+    "noMeasurements": "هنوز اندازه‌گیری‌ای وجود ندارد",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "ویژگی‌ها",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "تنظیم‌شده توسط {{author}} در {{date}}",
     "layer": "لایه",
     "layerMarkupGroup": "لایه‌های نشانه‌گذاری",
-    "layerDocumentGroup": "لایه‌های سند"
+    "layerDocumentGroup": "لایه‌های سند",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "هیچ",
   "moreColors": "رنگ‌های بیشتر...",
@@ -248,6 +254,7 @@
     "title": "عنوان",
     "author": "نویسنده",
     "subject": "موضوع",
+    "keywords": "کلیدواژه‌ها",
     "creator": "ایجادکننده",
     "producer": "تولیدکننده",
     "pdfVersion": "نسخه PDF",
@@ -316,7 +323,8 @@
     "redaction": "ویرایش محرمانه",
     "scaleBar": "نوار مقیاس",
     "parametricSymbol": "نماد پارامتریک",
-    "fileAttachment": "پیوست فایل"
+    "fileAttachment": "پیوست فایل",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "تغییر وضعیت پنل",
@@ -341,6 +349,8 @@
     "deleteBookmark": "حذف نشانک",
     "findBookmark": "یافتن...",
     "findBookmarkTip": "برای رفتن به یک نشانک تایپ کنید. Enter آن را باز می‌کند و Enter دوباره به مورد بعدی می‌رود.",
+    "findPage": "یافتن...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "افزودن پیوست",
     "openAttachment": "باز کردن پیوست",
     "saveAttachment": "ذخیره پیوست",
@@ -452,6 +462,9 @@
     "scaleAuto": "مقیاس سند",
     "scaleTooltip": "مقیاس این حاشیه‌نویسی را جایگزین کنید (واحد بر هر پوینت). برای استفاده از مقیاس سند/ناحیه خالی بگذارید.",
     "unit": "واحد",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "دقت (اعشار)",
     "dimType": "نوع",
     "dimTypeCustom": "سفارشی",
@@ -473,7 +486,9 @@
     "depthNone": "هیچ",
     "depthTooltip": "ارتفاع دیوار، ضخامت دال و غیره، با واحد اندازه‌گیری. طول × عمق یک سطح و مساحت × عمق یک حجم می‌دهد.",
     "surface": "سطح",
-    "volume": "حجم"
+    "volume": "حجم",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "جدول‌های مقادیر",
@@ -496,7 +511,18 @@
     },
     "preview": "پیش‌نمایش",
     "exportCsv": "صدور CSV",
-    "workbookBindings": "اتصال‌های صفحه‌گسترده"
+    "workbookBindings": "اتصال‌های صفحه‌گسترده",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "راهنمای جدول",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "اتصال در ابتدا",
     "joinAtEnd": "اتصال در انتها",
-    "joinHint": "خاموش: این انتهای دیوار هرگز به‌صورت فارسی‌بُر، T شکل یا با تریم در برابر دیوار دیگر متصل نمی‌شود؛ در همان جایی که رسم شده با انتهای صاف باقی می‌ماند."
+    "joinHint": "خاموش: این انتهای دیوار هرگز به‌صورت فارسی‌بُر، T شکل یا با تریم در برابر دیوار دیگر متصل نمی‌شود؛ در همان جایی که رسم شده با انتهای صاف باقی می‌ماند.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "تنظیمات نقشه",
@@ -682,6 +804,7 @@
       "height": "ارتفاع",
       "location": "مکان",
       "locationSource": "منبع مکان",
+      "layer": "لایه",
       "rebarMark": "شماره میلگرد",
       "rebarDiameter": "Ø",
       "rebarShape": "شکل خم",
@@ -807,6 +930,24 @@
     "rules": "تخصیص از مرکز کادر محصورکننده نشانه‌گذاری، با احتساب لبه‌ها، استفاده می‌کند. عمیق‌ترین ناحیه برنده است، سپس کوچک‌ترین مساحت، سپس شناسه ناحیه. از چندضلعی‌های راست‌خط بدون حفره یا کادرهای بدون چرخش استفاده کنید. هویت‌های ناحیه نامعتبر یا تکراری کنار گذاشته می‌شوند.",
     "loading": "حاشیه‌نویسی‌ها در حال بارگذاری‌اند: مکان‌ها ممکن است هنوز تغییر کنند."
   },
+  "dynamicStamp": {
+    "title": "فیلدهای مهر",
+    "template": "الگو",
+    "refresh": "به‌روزرسانی تاریخ، کاربر و صفحه",
+    "lock": "قفل کردن مهر",
+    "lockConfirm": "این مهر قفل شود؟ فیلدهای آن دیگر قابل تغییر نخواهند بود.",
+    "locked": "این مهر قفل است: فیلدهای آن دیگر قابل تغییر نیستند.",
+    "field": {
+      "date": "تاریخ",
+      "time": "زمان",
+      "datetime": "تاریخ و زمان",
+      "user": "کاربر",
+      "page": "صفحه",
+      "pages": "تعداد صفحات",
+      "filename": "نام فایل",
+      "title": "عنوان سند"
+    }
+  },
   "toolSets": {
     "title": "مجموعه‌های ابزار",
     "typeWall": "دیوار",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "فایل برای یک مجموعه ابزار بیش از حد بزرگ است.",
     "errorFileInvalid": "این فایل یک مجموعه ابزار معتبر نیست.",
     "errorFileNewer": "این مجموعه ابزار با نسخه جدیدتری از Open PDF Studio ساخته شده است. برای ورود آن، برنامه را به‌روزرسانی کنید.",
-    "damagedStatus": "مجموعه‌های ابزار ذخیره‌شده خوانده نشدند. فایل آسیب‌دیده با نام «{{name}}» نگه داشته شد."
+    "damagedStatus": "مجموعه‌های ابزار ذخیره‌شده خوانده نشدند. فایل آسیب‌دیده با نام «{{name}}» نگه داشته شد.",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "باز کردن",
     "saveAs": "ذخیره به عنوان...",
     "noContent": "محتوای این فایل در PDF جاسازی نشده است."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

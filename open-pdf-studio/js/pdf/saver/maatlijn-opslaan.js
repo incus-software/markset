@@ -23,7 +23,7 @@ import { pdfTextString } from './pdf-text.js';
 import { schrijfPlattegrondMeta } from './plattegrond-meta.js';
 import { buildMeasureDistanceAP, buildInlineMaatAP } from './appearance-vectors.js';
 import { attachVectorAP } from './vector-ap.js';
-import { writeDimensionMeasure } from './dimension-measure.js';
+import { writeDimensionMeasure, meetContents } from './dimension-measure.js';
 import { maatlijnTekst, maatLabelRuimte } from '../../annotations/maat-label.js';
 import { maatlijnGeometrie, maatlijnVelden, papierMmNaarPt } from '../../annotations/maatlijn-geometrie.js';
 import { inlineMaatlijn, helveticaBreedte } from '../../annotations/maatlijn-inline.js';
@@ -143,6 +143,9 @@ export function maatlijnAnnotatie({ ann, annRaw = ann, doc, preferences, scaleSo
   // Save custom properties for exact round-trip
   if (ann.headSize && ann.headSize !== 12) mdDict.OPS_HeadSize = ann.headSize;
   if (ann.measurePrecision != null && ann.measurePrecision !== 2) mdDict.OPS_Precision = ann.measurePrecision;
+  // Uitdrukkelijk decimaal (measureFraction 0, core/maat-opmaak.js): een
+  // decimale /D alleen zegt dat niet, die schrijft de app voor elke maat.
+  if (ann.measureFraction === 0) mdDict.OPS_DimDecimal = true;
   // Spot Coord: het label is een coördinaat, geen lengte (spot-coord.js).
   if (ann.dimKind === SPOT_COORD) mdDict.OPS_DimKind = PDFName.of('SpotCoord');
   // User-dragged text position: offset from the dimension-line
@@ -196,7 +199,17 @@ export function maatlijnAnnotatie({ ann, annRaw = ann, doc, preferences, scaleSo
   mdDict.CP = PDFName.of('Inline');
 
   annotDict = context.obj(mdDict);
-  writeDimensionMeasure(annotDict, context, annRaw, doc, preferences, scaleSources);
+  const meting = writeDimensionMeasure(annotDict, context, annRaw, doc, preferences, scaleSources);
+  // /Contents met de eenheid erbij: een maat in mm toont alleen het getal,
+  // een andere lezer ziet "3530 mm". De tekst van de app gaat mee in
+  // OPS_MeasureText (lader: meettekstUitBestand). Een Spot Coord is geen lengte.
+  if (ann.dimKind !== SPOT_COORD) {
+    const { contents, eigen } = meetContents(ann.measureText, meting.unit);
+    if (eigen !== null) {
+      annotDict.set(PDFName.of('Contents'), pdfTextString(contents));
+      annotDict.set(PDFName.of('OPS_MeasureText'), pdfTextString(eigen));
+    }
+  }
 
   annotDict.set(PDFName.of('BS'), buildBorderStyle(context, borderWidth, ann.borderStyle));
   // Vector /AP so the dimension line, extension lines AND the value

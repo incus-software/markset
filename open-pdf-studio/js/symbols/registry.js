@@ -12,8 +12,8 @@ import { peilmaatTemplate } from './templates/peilmaat.js';
 import { wandarceringTemplate } from './templates/wandarcering.js';
 import { wapeningVerdelingTemplate } from './templates/wapening-verdeling.js';
 import { beugelTemplate } from './templates/beugel.js';
-import { heaTemplate, hebTemplate, ipeTemplate, unpTemplate, kokerTemplate, hoeklijnTemplate } from './templates/staalprofiel.js';
-import { vloerTemplates } from './templates/vloer-dxf.js';
+import { heaTemplate, hebTemplate, ipeTemplate, unpTemplate, kokerTemplate, hoeklijnTemplate, buisTemplate } from './templates/staalprofiel.js';
+import { vloerTemplates, bijVloerGeometrieGeladen } from './templates/vloer-dxf.js';
 import { ifcSpaceTemplate } from './templates/ifc-space.js';
 import { ruimteTagTemplate } from './templates/ruimtetag.js';
 import { houtBalkTemplate } from './templates/hout-balk.js';
@@ -45,6 +45,9 @@ import {
 import { SANITAIR_TEMPLATES } from './templates/sanitair.js';
 import { KEUKEN_TEMPLATES } from './templates/keuken.js';
 import { vliesgevelTemplate, kozijnTemplate } from './templates/gevelelement.js';
+import { gdtKenmerkkaderTemplate } from './templates/gdt.js';
+import { rondeDoorsnedeTemplate } from './templates/ronde-doorsnede.js';
+import { paalpositieTemplate } from './templates/paalpositie.js';
 
 const templates = new Map();
 
@@ -67,6 +70,7 @@ register(ipeTemplate);
 register(unpTemplate);
 register(kokerTemplate);
 register(hoeklijnTemplate);
+register(buisTemplate);
 for (const t of vloerTemplates) register(t);
 register(ifcSpaceTemplate);
 register(ruimteTagTemplate);
@@ -108,6 +112,11 @@ for (const t of KEUKEN_TEMPLATES) register(t);
 // Gevelelement (#475): vliesgevel en kozijn, één object met twee voorinstellingen.
 register(vliesgevelTemplate);
 register(kozijnTemplate);
+// Ronde doorsnede (beton/hout) en paalpositie voor het palenplan (#936).
+register(rondeDoorsnedeTemplate);
+register(paalpositieTemplate);
+// GD&T (#971): kenmerkkader met bewerkbare cellen.
+register(gdtKenmerkkaderTemplate);
 
 // Runtime registration for catalog-driven templates (downloaded steel
 // catalogs from the online symbol library — see symbols/steel-catalog-store.js).
@@ -123,6 +132,31 @@ export function unregisterTemplate(id) {
 
 export function getTemplate(id) {
   return templates.get(id) || null;
+}
+
+/**
+ * Templates met data die pas bij het eerste gebruik laadt (#454, de
+ * vloerdoorsneden): `laadData()` geeft een belofte, `dataGeladen()` zegt of
+ * hij er al is. Tot dan tekent render() een vereenvoudigde vorm. Wie een
+ * blijvende uitvoer maakt (opslaan, exporteren, afdrukken) wacht hier eerst
+ * op, voor de symbolen in `annotaties`.
+ */
+export async function laadTemplateDataVoor(annotaties) {
+  const ids = new Set();
+  for (const a of annotaties || []) {
+    if (a?.type === 'parametricSymbol' && a.symbolId) ids.add(a.symbolId);
+  }
+  const ladingen = [];
+  for (const id of ids) {
+    const tpl = templates.get(id);
+    if (tpl && typeof tpl.laadData === 'function' && !(tpl.dataGeladen?.() === true)) ladingen.push(tpl.laadData());
+  }
+  if (ladingen.length) await Promise.all(ladingen);
+}
+
+/** Laat `fn` lopen zodra late templatedata geladen is (hertekenen). */
+export function bijTemplateDataGeladen(fn) {
+  return bijVloerGeometrieGeladen(fn);
 }
 
 export function listTemplates(category) {

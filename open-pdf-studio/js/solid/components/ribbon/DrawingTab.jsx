@@ -33,15 +33,23 @@ import {
   measureDistanceIcon, measureAngleIcon, measurePerimeterIcon, measureAreaIcon,
   alignLeftIcon, alignTopIcon, alignBottomIcon,
   flipHIcon, flipVIcon, rotateCwIcon,
-  clearAllIcon
+  clearAllIcon, calibrateIcon
 } from '../../data/ribbonIcons.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { createFullPageScaleRegion, invalidateScaleRegionCache } from '../../../annotations/scale-region.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
 import { openDialog } from '../../../bridge.js';
+import CountGroupRibbonControls from './CountGroupRibbonControls.jsx';
+import { startNewCount } from '../../stores/countStore.js';
+
+// Nieuwe telling (#1004): het telpictogram met een plusteken.
+const countNewIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-linecap="round" stroke-width="2"><path d="M3 6v12M7 6v12M11 6v12M1 15.5L14 9"/><path d="M18.5 12v8M14.5 16h8"/></svg>`;
+
+// Schaalcontrole (#629): een maatlijn met een vinkje.
+const scaleCheckIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h12M3 6v6M15 6v6"/><path d="M12 18l3 3 6-7" stroke-width="2"/></svg>`;
 
 // Generic placeholder icons for buttons without a dedicated icon
-const placeholderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="0" stroke-dasharray="3 2"/><path d="M9 9 L15 15 M15 9 L9 15" stroke-width="1"/></svg>`;
+const placeholderIcon = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="0" stroke-dasharray="3 2"/><path d="M9 9 L15 15 M15 9 L9 15" stroke-width="1"/></svg>`;
 const wallIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h18v8H3zM3 14l6-6M7 16l8-8M13 16l8-8M19 16l2-2"/></svg>`;
 const arcIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20 Q 12 4 20 20"/></svg>`;
 const splineIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17 C 7 2, 13 2, 12 12 S 17 22 21 7"/></svg>`;
@@ -146,21 +154,25 @@ function rotateSelected() {
   recordBulkModify(anns, originals);
 }
 
-// Eén snap-vinkje in de lintgroep 'Snap'. Schakelt de bijbehorende
-// voorkeur en bewaart ze meteen (net als de voorkeuren-dialog).
+// Pictogrammen van de snapmodi: de lijn of vorm in de lijnkleur, de
+// snapmarkering erop zoals die bij het tekenen verschijnt.
+const snapMasterIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h4v9a2 2 0 0 0 4 0V3h4v9a6 6 0 0 1-12 0z"/><path d="M6 7h4M14 7h4"/><path d="M4 19l-1.5 1.5M12 21.5v2M20 19l1.5 1.5" stroke-width="1.2"/></svg>`;
+const snapEndpointIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21L14 10"/><rect x="13" y="4" width="7" height="7" stroke-width="1.8"/></svg>`;
+const snapMidpointIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20L8.5 15.2M15.5 10L22 5"/><path d="M12 7.5l4.5 8h-9z" stroke-width="1.8"/></svg>`;
+const snapVertexIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l6-9M15 12l6 9"/><path d="M12 5l4 4-4 4-4-4z" stroke-width="1.8"/></svg>`;
+const snapStartPointIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14L21 3"/><circle cx="7" cy="17" r="3.6" stroke-width="1.8"/><circle cx="7" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>`;
+const snapCenterIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3 2.4" stroke-width="1.2"/><circle cx="12" cy="12" r="3.4" stroke-width="1.8"/><path d="M12 6.5v11M6.5 12h11" stroke-width="1"/></svg>`;
+
+// Eén snapmodus in de lintgroep 'Snap': een aan/uit-knop die de
+// bijbehorende voorkeur schakelt en meteen bewaart (net als de
+// voorkeuren-dialog). Zonder de hoofdschakelaar staat de knop uit.
 function SnapOption(props) {
   const on = () => state.preferences[props.prefKey] !== false && state.preferences.enableObjectSnap === true;
-  const set = (checked) => { state.preferences[props.prefKey] = checked; savePreferences(); };
+  const toggle = () => { state.preferences[props.prefKey] = !on(); savePreferences(); };
   return (
-    <label class="ribbon-checkbox-option" title={props.label}>
-      <input
-        type="checkbox"
-        checked={on()}
-        disabled={state.preferences.enableObjectSnap !== true}
-        onChange={(e) => set(e.currentTarget.checked)}
-      />
-      <span>{props.label}</span>
-    </label>
+    <RibbonButton size="small" id={props.id} title={props.label} label={props.label} icon={props.icon}
+      extraClass="snap-knop" active={on()} pressed={on() ? 'true' : 'false'}
+      disabled={state.preferences.enableObjectSnap !== true} onClick={toggle} />
   );
 }
 
@@ -202,7 +214,7 @@ export function DrawingGroups() {
         {/* SELECTION */}
         <RibbonGroup label={t('drawing.selection')}>
           <RibbonButton id="dr-select" title={t('home.select')} icon={selectCommentsIcon} label={t('home.select')}
-            disabled={noPdf()} active={state.currentTool === 'select'} onClick={() => setTool('select')} />
+            disabled={noPdf()} active={state.currentTool === 'select' && !state.textHighlightMode} onClick={() => setTool('select')} />
           <RibbonButton id="dr-pan" title={t('home.handTool')} icon={handIcon} label={t('home.hand')}
             disabled={noPdf()} active={state.currentTool === 'hand'} onClick={() => setTool('hand')} />
           <RibbonButtonStack>
@@ -281,20 +293,16 @@ export function DrawingGroups() {
             Zelfde voorkeuren als het Voorkeuren-dialog, zodat het engine-
             gedeelte (snap-engine.js) ze bij elke muisbeweging leest. */}
         <RibbonGroup label={t('drawing.snapGroup')}>
+          <RibbonButton id="dr-snap-master" title={t('drawing.snapObjectSnapTip')} label={t('drawing.snapObjectSnap')}
+            icon={snapMasterIcon} extraClass="snap-knop" active={state.preferences.enableObjectSnap === true}
+            pressed={state.preferences.enableObjectSnap === true ? 'true' : 'false'}
+            onClick={() => { state.preferences.enableObjectSnap = state.preferences.enableObjectSnap !== true; savePreferences(); }} />
           <div class="ribbon-snap-options">
-            <label class="ribbon-checkbox-option snap-master" title={t('drawing.snapObjectSnapTip')}>
-              <input
-                type="checkbox"
-                checked={state.preferences.enableObjectSnap === true}
-                onChange={(e) => { state.preferences.enableObjectSnap = e.currentTarget.checked; savePreferences(); }}
-              />
-              <span>{t('drawing.snapObjectSnap')}</span>
-            </label>
-            <SnapOption prefKey="snapToEndpoints" label={t('drawing.snapEndpoint')} />
-            <SnapOption prefKey="snapToMidpoints" label={t('drawing.snapMidpoint')} />
-            <SnapOption prefKey="snapToVertices" label={t('drawing.snapVertex')} />
-            <SnapOption prefKey="snapToStartPoints" label={t('drawing.snapStartPoint')} />
-            <SnapOption prefKey="snapToCenters" label={t('drawing.snapCenter')} />
+            <SnapOption id="dr-snap-endpoint" prefKey="snapToEndpoints" label={t('drawing.snapEndpoint')} icon={snapEndpointIcon} />
+            <SnapOption id="dr-snap-midpoint" prefKey="snapToMidpoints" label={t('drawing.snapMidpoint')} icon={snapMidpointIcon} />
+            <SnapOption id="dr-snap-vertex" prefKey="snapToVertices" label={t('drawing.snapVertex')} icon={snapVertexIcon} />
+            <SnapOption id="dr-snap-startpoint" prefKey="snapToStartPoints" label={t('drawing.snapStartPoint')} icon={snapStartPointIcon} />
+            <SnapOption id="dr-snap-center" prefKey="snapToCenters" label={t('drawing.snapCenter')} icon={snapCenterIcon} />
           </div>
         </RibbonGroup>
 
@@ -312,6 +320,19 @@ export function DrawingGroups() {
               />
               <span>{t('drawing.lineContinue') || 'Doorlopend'}</span>
             </label>
+          </RibbonGroup>
+        </Show>
+
+        {/* TELGROEP — alleen bij het telgereedschap (#935): de groep waar
+            nieuwe markeringen in komen, met het totaal per groep, de kleur
+            van de hele groep en een nieuwe groep aanmaken. Nieuwe telling
+            (#1004) begint met één klik een volgende groep (eigen naam en
+            kleur, nummering weer vanaf 1); Enter doet hetzelfde. */}
+        <Show when={state.currentTool === 'count'}>
+          <RibbonGroup label={t('drawing.countGroup')}>
+            <RibbonButton id="dr-count-new" title={t('drawing.countNewTip')} icon={countNewIcon}
+              label={t('drawing.countNew')} disabled={ro()} onClick={() => startNewCount()} />
+            <CountGroupRibbonControls />
           </RibbonGroup>
         </Show>
 
@@ -349,6 +370,15 @@ export function DrawingGroups() {
         {/* SCHAAL — moved here from the Opmerkingen tab: full labelled buttons
             for Schaalgebied + Schaalgebied op pagina. */}
         <RibbonGroup label={t('measure.scaleGroup') || 'Schaal'}>
+          {/* Documentschaal: referentielijn of een standaardschaal, metrisch
+              en imperiaal (#972). Was alleen via het contextmenu van een
+              meting bereikbaar. */}
+          <RibbonButton id="btn-calibrate-scale"
+            title={t('comment.calibrateTitle') || 'Scale Calibration'}
+            icon={calibrateIcon}
+            label={t('comment.calibrate') || 'Calibrate'}
+            disabled={ro()}
+            onClick={() => openDialog('calibration', { referencePixelLength: null })} />
           <RibbonButton id="btn-create-scale-region"
             title={t('comment.scaleRegion') || 'Draw a scale region with its own calibration'}
             icon={scaleRegionIcon}
@@ -370,6 +400,13 @@ export function DrawingGroups() {
               else redrawAnnotations();
               openDialog('scale-region', { annotationId: ann.id, pageNum: ann.page, isNew: true });
             }} />
+          {/* Schaalcontrole (#629): een tweede bekende maat nameten. */}
+          <RibbonButton id="btn-scale-check"
+            title={t('measure.scaleCheckTitle')}
+            icon={scaleCheckIcon}
+            label={t('measure.scaleCheck')}
+            disabled={ro()}
+            onClick={() => openDialog('scale-check', {})} />
         </RibbonGroup>
 
         {/* De stavenreeks staat bewust NIET op de ribbon maar in het

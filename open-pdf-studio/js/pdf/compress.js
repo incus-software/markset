@@ -14,15 +14,18 @@
 // becomes non-searchable and vector line-work is baked into the JPEG. That is
 // the accepted behaviour for a "make this scan smaller" action and mirrors the
 // existing raster-PDF export. Font subsetting is therefore not applicable to
-// this path (there are no fonts left to subset); a text-preserving optimiser
-// that only recompresses embedded image XObjects is noted as a follow-up.
+// this path (there are no fonts left to subset).
+//
+// The second mode, compressPDFLossless() (#902), keeps everything: it only
+// re-encodes black/white image XObjects losslessly (monochrome-document.js)
+// and leaves text, OCR, vectors, annotations and forms as they are.
 //
 // The result is always written to a NEW file via a save-as dialog, so the
 // original document on disk is never touched.
 import { getActiveDocument, state, getPageRotation } from '../core/state.js';
-import { isTauri, saveFileDialog, writeBinaryFile } from '../core/platform.js';
+import { isTauri, saveFileDialog, writeBinaryFile, writeBinaryFileAtomic } from '../core/platform.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
-import { renderPageOffscreen, canvasToBytes } from './exporter.js';
+import { renderUitvoerPagina, canvasToBytes } from './exporter.js';
 import { getCachedPdfBytes } from './loader.js';
 import { getCacheKey } from './page-manager.js';
 import { PDFDocument } from 'pdf-lib';
@@ -103,7 +106,7 @@ export async function compressPDF({ level = 'medium', dpi, quality } = {}) {
 
       // Re-render the page (with any annotations baked in) at the target DPI,
       // then re-encode as JPEG — this is where the downsampling happens.
-      const canvas = await renderPageOffscreen(pageNum, exportScale);
+      const canvas = await renderUitvoerPagina(pageNum, exportScale);
       const jpegBytes = await canvasToBytes(canvas, 'jpeg', jpegQuality);
       const jpegImage = await newPdf.embedJpg(jpegBytes);
 
@@ -140,4 +143,84 @@ export async function compressPDF({ level = 'medium', dpi, quality } = {}) {
   } finally {
     hideLoading();
   }
+}
+
+/**
+ * De bytes zoals opslaan ze zou schrijven: met de annotaties uit de app als het
+ * document gewijzigd is, anders de bytes zoals ze geladen zijn.
+ */
+async function currentDocumentBytes(doc) {
+  if (doc.modified) {
+    const { bouwAnnotatieDocument } = await import('./saver.js');
+    const { pdfDocLib } = await bouwAnnotatieDocument(doc);
+    return new Uint8Array(await pdfDocLib.save({ useObjectStreams: false, updateFieldAppearances: false }));
+  }
+  const cached = getCachedPdfBytes(doc.filePath) || getCachedPdfBytes(`__memory__${doc.id}`) || getCachedPdfBytes(getCacheKey());
+  if (cached) return new Uint8Array(cached).slice();
+  return new Uint8Array(await doc.pdfDoc.getData());
+}
+
+/**
+ * Verliesloze monochroomoptimalisatie (#902). Optimaliseert eerst (met
+ * voortgang en Annuleren); alleen een kleiner resultaat wordt, na de
+ * opslaan-als-keuze, atomisch naar een nieuw bestand geschreven.
+ *
+ * @returns {Promise<null | {mode: 'lossless', outputPath: string|null, cancelled?: boolean,
+ *          bytes?: Uint8Array|null, reason?: string|null, origSize?: number, newSize?: number,
+ *          replaced?: number, images?: Array<object>}>}
+ *          null bij geen document of een geannuleerde opslaan-als-keuze;
+ *          outputPath null als er niets geschreven is (geen winst of geweigerd).
+ */
+export async function compressPDFLossless() {
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return null;
+  if (!isTauri()) return null;
+
+  const t = (key, opts = {}) => i18next.t(key, { ns: 'dialogs', ...opts });
+  const { heeftBeveiligdeInhoud } = await import('./wachtwoord-pdf.js');
+  if (heeftBeveiligdeInhoud(doc)) {
+    return { mode: 'lossless', outputPath: null, bytes: null, reason: 'encrypted', images: [] };
+  }
+
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  const progress = (message, voortgang = null) => showLoading(message, { voortgang, annuleren: cancel });
+  let result;
+  try {
+    progress(t('compress.progressPreparing'));
+    const source = await currentDocumentBytes(doc);
+    const { optimizeMonochromeDocument } = await import('./monochrome-document.js');
+    const { getMonochromeNative } = await import('./monochrome-rust.js');
+    result = await optimizeMonochromeDocument(source, {
+      signal: controller.signal,
+      native: await getMonochromeNative(),
+      onProgress: ({ done, total }) => progress(
+        t('compress.progressImage', { image: Math.min(done + 1, total), total }),
+        total ? done / total : null,
+      ),
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') return { mode: 'lossless', outputPath: null, cancelled: true };
+    throw e;
+  } finally {
+    hideLoading();
+  }
+  if (!result.bytes) return { mode: 'lossless', outputPath: null, ...result };
+
+  const suffix = t('compress.fileSuffix');
+  const outputPath = await saveFileDialog(`${getPdfBaseName()}${suffix}.pdf`, [
+    { name: 'PDF Files', extensions: ['pdf'] },
+  ]);
+  if (!outputPath) return null;
+  // Het geopende bronbestand wordt nooit overschreven.
+  if (doc.filePath && outputPath.toLowerCase() === String(doc.filePath).toLowerCase()) {
+    throw new Error(t('compress.samePath'));
+  }
+  showLoading(t('compress.progressWriting'));
+  try {
+    await writeBinaryFileAtomic(outputPath, result.bytes);
+  } finally {
+    hideLoading();
+  }
+  return { mode: 'lossless', outputPath, ...result };
 }

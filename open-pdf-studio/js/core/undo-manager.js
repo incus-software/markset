@@ -4,11 +4,14 @@ import { cloneAnnotation } from '../annotations/factory.js';
 import { stampRasterStale } from '../annotations/stamp-appearance-sync.js';
 import { applyOcrShift } from '../pdf/shift-page-geometry.js';
 import { toonOrigineelInTekstlaag, toonBewerkingInTekstlaag } from '../text/tekstlaag-bewerking.js';
+import { voegWijzigingenSamen } from './undo-samenvoegen.js';
 const MAX_UNDO_STACK = 100;
 let undoTransactionDepth = 0;
 let undoTransactionCommands = null;
 let undoTransactionDocumentId = null;
 let undoTransactionBeforeSelectionIds = null;
+// Een getal wordt gesleept (#1168): alles tot het loslaten is één stap.
+let waardeSleepActief = false;
 
 function clonePlainValue(value) {
   if (value == null) return value;
@@ -124,6 +127,9 @@ function pagesForCommand(cmd) {
     'ocrWord', 'ocrPage', 'ocrPages',
     'addWatermark', 'removeWatermark', 'modifyWatermark',
     'addBookmark', 'removeBookmark', 'modifyBookmark', 'setBookmarks',
+    'setDocumentInfo',
+    // Een verwijderde staat (#1130) staat niet op een pagina.
+    'removeSchedule',
     // pageStructure (insert/delete/reorder pages) shifts page numbers and is
     // handled by restorePageState → clearThumbnailCache + generateThumbnails,
     // which regenerates every thumbnail. A per-page hook here would be wrong.
@@ -161,7 +167,8 @@ function scheduleThumbnailRefresh(cmd) {
 function commandPreservesSelection(cmd) {
   if (!cmd) return false;
   if (cmd.type === 'modifyAnnotation' || cmd.type === 'bulkModify' ||
-      cmd.type === 'reorderAnnotations' || cmd.type === 'modifyMeasureScale') {
+      cmd.type === 'reorderAnnotations' || cmd.type === 'modifyMeasureScale' || cmd.type === 'modifyPageScales' ||
+      cmd.type === 'modifyScaleChecks') {
     return true;
   }
   if (cmd.type !== 'compound') return false;
@@ -198,6 +205,34 @@ async function persistMeasureScaleIfNeeded(cmd) {
   saveDocumentScale();
 }
 
+function commandChangesPageScales(cmd) {
+  if (!cmd) return false;
+  if (cmd.type === 'modifyPageScales') return true;
+  return cmd.type === 'compound' && cmd.commands.some(commandChangesPageScales);
+}
+
+// A page scale holds for every measurement on its page: after undo or redo
+// of a page scale change their values follow, as after setting it.
+async function recalculateIfPageScalesChanged(cmd) {
+  if (!commandChangesPageScales(cmd)) return;
+  const { recalculateAllMeasurements } = await import('../annotations/measurement.js');
+  recalculateAllMeasurements();
+}
+
+// Page scales (pagina-schalen.js) belong to page numbers. A page operation
+// moves them (schalenNaHerladen) but undo and redo reload without a page
+// mapping, so the step keeps the scales from before and after the operation.
+// reloadFromBytes leaves the scales from before in
+// doc._paginaSchalenVoorHerladen; recordPageStructure takes them from there.
+function zetPaginaSchalenVanStructuur(doc, cmd, kant) {
+  if (!doc || !cmd.pageScales) return;
+  doc.pageScales = clonePlainValue(cmd.pageScales[kant]) ?? null;
+}
+
+function vergeetPaginaSchalenVoorHerladen(doc) {
+  if (doc) delete doc._paginaSchalenVoorHerladen;
+}
+
 // Execute a command: push to undo, clear redo, sync modified state
 export function execute(cmd) {
   if (pendingPropertyChange) flushPropertyChange();
@@ -230,7 +265,9 @@ export async function undo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
+    zetPaginaSchalenVanStructuur(getActiveDocument(), cmd, 'old');
     await restorePageState(cmd.oldBytes, cmd.oldAnnotations, cmd.oldRotations, cmd.oldPage, { bookmarks: cmd.bookmarks?.old });
+    vergeetPaginaSchalenVoorHerladen(getActiveDocument());
     applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, -1);
     syncModifiedState();
     updateButtons();
@@ -248,6 +285,7 @@ export async function undo() {
   }
   await rerasterizeStaleStamps();
   await persistMeasureScaleIfNeeded(cmd);
+  await recalculateIfPageScalesChanged(cmd);
   syncModifiedState();
 
   // For modify operations, keep selection intact and refresh properties.
@@ -284,7 +322,9 @@ export async function redo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
+    zetPaginaSchalenVanStructuur(getActiveDocument(), cmd, 'new');
     await restorePageState(cmd.newBytes, cmd.newAnnotations, cmd.newRotations, cmd.newPage, { bookmarks: cmd.bookmarks?.new });
+    vergeetPaginaSchalenVoorHerladen(getActiveDocument());
     applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, 1);
     syncModifiedState();
     updateButtons();
@@ -298,6 +338,7 @@ export async function redo() {
   }
   await rerasterizeStaleStamps();
   await persistMeasureScaleIfNeeded(cmd);
+  await recalculateIfPageScalesChanged(cmd);
   syncModifiedState();
 
   // For modify operations, keep selection intact and refresh properties.
@@ -498,6 +539,14 @@ function applyUndo(cmd, lookup) {
       doc.measureScale = clonePlainValue(cmd.oldState);
       break;
     }
+    case 'modifyPageScales': {
+      doc.pageScales = clonePlainValue(cmd.oldState);
+      break;
+    }
+    case 'modifyScaleChecks': {
+      doc.scaleChecks = clonePlainValue(cmd.oldState);
+      break;
+    }
     case 'bulkModify': {
       for (const item of cmd.items) restoreById(lookup, item.id, item.oldState);
       break;
@@ -598,6 +647,15 @@ function applyUndo(cmd, lookup) {
       doc.bookmarks = cmd.oldBookmarks.map(b => ({ ...b }));
       break;
     }
+    case 'setDocumentInfo': {
+      // Documentgegevens (#1017): de hele overlay terug, in één toewijzing.
+      doc.documentgegevens = cmd.oldInfo ? { ...cmd.oldInfo } : null;
+      break;
+    }
+    default: {
+      _undoHandlers?.get(cmd.type)?.undo?.(cmd);
+      break;
+    }
   }
 }
 
@@ -650,6 +708,14 @@ function applyRedo(cmd, lookup) {
     }
     case 'modifyMeasureScale': {
       doc.measureScale = clonePlainValue(cmd.newState);
+      break;
+    }
+    case 'modifyPageScales': {
+      doc.pageScales = clonePlainValue(cmd.newState);
+      break;
+    }
+    case 'modifyScaleChecks': {
+      doc.scaleChecks = clonePlainValue(cmd.newState);
       break;
     }
     case 'bulkModify': {
@@ -738,7 +804,29 @@ function applyRedo(cmd, lookup) {
       doc.bookmarks = cmd.newBookmarks.map(b => ({ ...b }));
       break;
     }
+    case 'setDocumentInfo': {
+      doc.documentgegevens = cmd.newInfo ? { ...cmd.newInfo } : null;
+      break;
+    }
+    default: {
+      _undoHandlers?.get(cmd.type)?.redo?.(cmd);
+      break;
+    }
   }
+}
+
+// ---- Stappen van buiten deze module ----
+// Een stap die iets terugzet dat niet in het document zelf staat (#1130: een
+// staat die samen met zijn geplaatste tabellen is verwijderd) meldt hier per
+// opdrachtsoort hoe hij ongedaan gemaakt en opnieuw uitgevoerd wordt. Zo kan
+// hij in één stap met annotatie-opdrachten mee (compound), zonder dat deze
+// module de store erachter hoeft te kennen. `var` zonder beginwaarde: een
+// module die zich bij het laden al aanmeldt mag dat ook doen als deze module
+// (in een importkring) zelf nog niet is doorlopen.
+var _undoHandlers;
+export function registerUndoHandler(type, handler) {
+  if (typeof type !== 'string' || !type || !handler) return;
+  (_undoHandlers ||= new Map()).set(type, handler);
 }
 
 async function refresh() {
@@ -911,6 +999,46 @@ export function recordMeasureScale(oldState, newState) {
   });
 }
 
+// Page scales (pagina-schalen.js): set on the thumbnails or detected; one
+// step per change, undoable like the document scale. Detection can finish
+// after the user switched tabs: the step goes on `doc`, never on another
+// document. Returns whether a step was recorded.
+export function recordPageScales(doc, oldState, newState) {
+  if (!doc) return false;
+  if (JSON.stringify(oldState ?? null) === JSON.stringify(newState ?? null)) return false;
+  const cmd = {
+    type: 'modifyPageScales',
+    oldState: clonePlainValue(oldState ?? null),
+    newState: clonePlainValue(newState ?? null),
+  };
+  if (getActiveDocument() === doc) {
+    execute(cmd);
+    return true;
+  }
+  if (!doc.undoStack) doc.undoStack = [];
+  if (doc.savedUndoStackLength > doc.undoStack.length) doc.savedUndoStackLength = -1;
+  doc.undoStack.push(cmd);
+  if (doc.undoStack.length > MAX_UNDO_STACK) {
+    doc.undoStack.shift();
+    if (doc.savedUndoStackLength >= 0) doc.savedUndoStackLength--;
+  }
+  doc.redoStack = [];
+  verhoogInhoudRevisie(doc);
+  doc.modified = !(doc.savedUndoStackLength >= 0 && doc.undoStack.length === doc.savedUndoStackLength);
+  return true;
+}
+
+// De schaalcontroles per blad (#629): een controle maakt het document
+// gewijzigd (ze gaat het bestand in) en is ongedaan te maken.
+export function recordScaleChecks(oldState, newState) {
+  if (JSON.stringify(oldState) === JSON.stringify(newState)) return;
+  execute({
+    type: 'modifyScaleChecks',
+    oldState: clonePlainValue(oldState),
+    newState: clonePlainValue(newState),
+  });
+}
+
 export function beginUndoTransaction() {
   if (undoTransactionDepth === 0) {
     const doc = getActiveDocument();
@@ -937,6 +1065,52 @@ export function endUndoTransaction() {
     beforeSelectionIds.some((id, index) => id !== afterSelectionIds[index]);
   if (commands.length === 1 && !selectionChanged) execute(commands[0]);
   else execute({ type: 'compound', commands, beforeSelectionIds, afterSelectionIds });
+}
+
+/**
+ * Een getal wordt gesleept (ui/getal-slepen.js): tot eindeWaardeSleep komt
+ * elke wijziging in één ongedaan-stap, hoe lang de sleep ook duurt.
+ */
+export function beginWaardeSleep() {
+  if (waardeSleepActief) return;
+  flushPropertyChange();
+  beginUndoTransaction();
+  waardeSleepActief = true;
+}
+
+/**
+ * Sluit de sleep af als één stap. Met `annuleer` (Escape) gaat alles terug
+ * naar de toestand van vóór de sleep en blijft de geschiedenis zoals ze was.
+ * @param {{annuleer?: boolean}} [opties]
+ */
+export async function eindeWaardeSleep({ annuleer = false } = {}) {
+  if (!waardeSleepActief) return;
+  flushPropertyChange();
+  waardeSleepActief = false;
+  const buitenste = undoTransactionDepth === 1;
+  if (buitenste && undoTransactionCommands) {
+    undoTransactionCommands = voegWijzigingenSamen(undoTransactionCommands);
+  }
+  const doc = getActiveDocument();
+  const isDoc = !!doc && doc.id === undoTransactionDocumentId;
+  const stappen = (undoTransactionCommands || []).length;
+  const redo = doc?.redoStack;
+  const bewaard = doc?.savedUndoStackLength;
+  const lengte = (doc?.undoStack || []).length;
+  const top = (doc?.undoStack || [])[lengte - 1];
+  endUndoTransaction();
+  if (!annuleer || !buitenste || !isDoc || stappen === 0) return;
+  const nu = doc.undoStack || [];
+  if (nu.length === 0 || nu[nu.length - 1] === top) return;
+  // Een volle geschiedenis schoof één stap op: dan klopt het oude bewaarpunt niet meer.
+  const verschoven = nu.length !== lengte + 1;
+  // Terug via dezelfde weg als Ongedaan maken (paneel, tekenen, stempels),
+  // maar zonder spoor: de stap verdwijnt en Opnieuw blijft wat het was.
+  await undo();
+  if (getActiveDocument() !== doc && getActiveDocument()?.id !== doc.id) return;
+  doc.redoStack = redo || [];
+  if (!verschoven) doc.savedUndoStackLength = bewaard;
+  syncModifiedState();
 }
 
 // Debounced property change recording (for rapid slider/input changes)
@@ -992,6 +1166,13 @@ export function flushPropertyChange() {
       oldState: pendingPropertyChange.oldState,
       newState: pendingPropertyChange.newState || cloneAnnotation(current)
     };
+    if (waardeSleepActief && undoTransactionDepth > 0) {
+      // Tijdens het slepen van een getal hoort ook deze stap bij de sleep.
+      undoTransactionCommands.push(cmd);
+      pendingPropertyChange = null;
+      clearTimeout(propertyChangeTimer);
+      return;
+    }
     if (!targetDoc.undoStack) targetDoc.undoStack = [];
     // If clean point was beyond current position, it's now unreachable
     if (targetDoc.savedUndoStackLength > targetDoc.undoStack.length) {
@@ -1067,10 +1248,25 @@ export function recordBookmarksChange(oldBookmarks, newBookmarks) {
   });
 }
 
+// Documentgegevens (#1017): de overlay van titel, auteur enz. ervoor en
+// erna. Zet het document op gewijzigd; Ctrl+Z zet de vorige waarden terug.
+export function recordDocumentInfoChange(oldInfo, newInfo) {
+  if (JSON.stringify(oldInfo || null) === JSON.stringify(newInfo || null)) return;
+  execute({
+    type: 'setDocumentInfo',
+    oldInfo: oldInfo ? { ...oldInfo } : null,
+    newInfo: newInfo ? { ...newInfo } : null,
+  });
+}
+
 // Record a page structure change (insert, delete, reorder) for undo/redo.
 // `extra.ocrShift` ({pages, dx, dy}) is set by Shift Page: the pending OCR word
 // boxes of those pages moved with the content and move back on undo.
 export function recordPageStructure(oldBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, newPage, extra = {}) {
+  const doc = getActiveDocument();
+  const naSchalen = doc?.pageScales ?? null;
+  const voorSchalen = doc && '_paginaSchalenVoorHerladen' in doc ? doc._paginaSchalenVoorHerladen : naSchalen;
+  vergeetPaginaSchalenVoorHerladen(doc);
   execute({
     type: 'pageStructure',
     oldBytes: oldBytes,
@@ -1081,6 +1277,7 @@ export function recordPageStructure(oldBytes, oldAnnotations, oldRotations, oldP
     newAnnotations: newAnnotations.map(a => ({ ...a })),
     newRotations: { ...newRotations },
     newPage: newPage,
+    pageScales: { old: clonePlainValue(voorSchalen) ?? null, new: clonePlainValue(naSchalen) ?? null },
     ...(extra.ocrShift ? { ocrShift: { ...extra.ocrShift, pages: [...extra.ocrShift.pages] } } : {}),
     // Bladwijzers vóór en na (samenvoegen): de bewerking verandert ze.
     ...(extra.bookmarks ? { bookmarks: {

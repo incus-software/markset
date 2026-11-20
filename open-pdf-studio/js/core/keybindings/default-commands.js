@@ -25,6 +25,8 @@ export const CORE_COMMANDS = Object.freeze([
   { id: 'file.saveAs', category: 'file', labelKey: 'appMenu:saveAs', label: 'Save As...', defaults: ['Ctrl+Shift+S'] },
   { id: 'file.print', category: 'file', labelKey: 'appMenu:print', label: 'Print', defaults: ['Ctrl+P'] },
   { id: 'file.close', category: 'file', labelKey: 'common:tabs.closeTab', label: 'Close tab', defaults: ['Ctrl+W'] },
+  // Close all tabs (#1156): deliberately no default key.
+  { id: 'file.closeAll', category: 'file', labelKey: 'common:tabs.closeAllTabs', label: 'Close all tabs' },
   { id: 'file.properties', category: 'file', labelKey: 'appMenu:docProperties', label: 'Document Properties', defaults: ['Ctrl+D'] },
   { id: 'app.preferences', category: 'file', labelKey: 'appMenu:preferences', label: 'Preferences', defaults: ['Ctrl+,'] },
 
@@ -39,6 +41,11 @@ export const CORE_COMMANDS = Object.freeze([
   { id: 'edit.delete', category: 'edit', labelKey: 'context:deleteAnnotation.title', label: 'Delete Annotation', defaults: ['Delete'] },
   { id: 'edit.clearPage', category: 'edit', labelKey: 'ribbon:comment.clearPageAnnotations', label: 'Clear Page Annotations', defaults: ['Ctrl+Shift+C'] },
 
+  // Style commands are deliberately unassigned (#1082).
+  { id: 'edit.copyStyle', category: 'edit', labelKey: 'properties:stylePresets.copyStyle', label: 'Copy style' },
+  { id: 'edit.pasteStyle', category: 'edit', labelKey: 'properties:stylePresets.pasteStyle', label: 'Paste style' },
+  { id: 'edit.setDefaultStyle', category: 'edit', labelKey: 'context:annotation.setAsDefaultStyle', label: 'Set as default style' },
+
   // View
   { id: 'view.zoomIn', category: 'view', labelKey: 'ribbon:home.zoomIn', label: 'Zoom In', defaults: ['Ctrl+='] },
   { id: 'view.zoomOut', category: 'view', labelKey: 'ribbon:home.zoomOut', label: 'Zoom Out', defaults: ['Ctrl+-'] },
@@ -46,7 +53,7 @@ export const CORE_COMMANDS = Object.freeze([
   { id: 'view.fitWidth', category: 'view', labelKey: 'ribbon:home.fitWidth', label: 'Fit Width', defaults: ['Ctrl+1'] },
   { id: 'view.fitPage', category: 'view', labelKey: 'ribbon:home.fitPageLabel', label: 'Fit Page', defaults: ['Ctrl+2'] },
   { id: 'view.thinLines', category: 'view', labelKey: 'ribbon:view.thinLines', label: 'Thin Lines', defaults: ['Ctrl+5'] },
-  { id: 'view.fullscreen', category: 'view', labelKey: 'ribbon:view.fullscreen', label: 'Fullscreen', defaults: ['Ctrl+L'] },
+  { id: 'view.fullscreen', category: 'view', labelKey: 'ribbon:view.fullscreen', label: 'Fullscreen', defaults: ['Ctrl+L', 'Alt+Enter'] },
   { id: 'view.rotatePageRight', category: 'view', labelKey: 'ribbon:home.rotateRight', label: 'Rotate Right', defaults: ['Ctrl+Shift+=', 'Ctrl+Shift+NumpadAdd'] },
   { id: 'view.rotatePageLeft', category: 'view', labelKey: 'ribbon:home.rotateLeft', label: 'Rotate Left', defaults: ['Ctrl+Shift+-', 'Ctrl+Shift+NumpadSubtract'] },
   { id: 'view.nextPage', category: 'view', labelKey: 'common:pageNav.nextPage', label: 'Next Page', defaults: ['PageDown'] },
@@ -67,7 +74,8 @@ export const CORE_COMMANDS = Object.freeze([
   { id: 'tool.hand', category: 'tools', labelKey: 'ribbon:home.handTool', label: 'Hand Tool', defaults: ['H'] },
   { id: 'tool.highlight', category: 'tools', labelKey: 'ribbon:comment.highlight', label: 'Highlight', defaults: ['1'] },
   { id: 'tool.draw', category: 'tools', labelKey: 'ribbon:comment.freehand', label: 'Freehand', defaults: ['2'] },
-  { id: 'tool.line', category: 'tools', labelKey: 'ribbon:comment.line', label: 'Line', defaults: ['3'] },
+  // "D L": D, then L - a key sequence like a CAD command alias (sequences.js).
+  { id: 'tool.line', category: 'tools', labelKey: 'ribbon:comment.line', label: 'Line', defaults: ['3', 'D L'] },
   { id: 'tool.box', category: 'tools', labelKey: 'ribbon:comment.rectangle', label: 'Rectangle', defaults: ['4'] },
   { id: 'tool.circle', category: 'tools', labelKey: 'ribbon:comment.ellipse', label: 'Ellipse', defaults: ['5'] },
   { id: 'tool.textbox', category: 'tools', labelKey: 'ribbon:comment.textBox', label: 'Text Box', defaults: ['T'] },

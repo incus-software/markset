@@ -15,7 +15,6 @@ const STUBS = {
   'js/core/undo-manager.js': ['recordPageStructure'],
   'js/pdf/loader.js': ['getCachedPdfBytes', 'setCachedPdfBytes', 'clearCachedPdfBytes', 'cancelAnnotationLoading', 'markAllAnnotationPagesLoaded', 'laadAnnotatiesVoorPaginas', 'loadPDF'],
   // Wat document-release.js per pad vrijgeeft voordat een werkbestand weg mag.
-  'js/pdf/vector-renderer.js': ['invalidateDocumentCache'],
   'js/pdf/page-bitmap-cache.js': ['invalidateDocumentBitmaps'],
   'js/pdf/progressive-render.js': ['forgetContentBytes'],
   'js/pdf/tile-cache.js': ['tileCacheClearForFile'],
@@ -53,6 +52,28 @@ export async function resolve(specifier, context, nextResolve) {
   const doel = new URL(specifier, context.parentURL).href;
   if (doel.endsWith('/js/i18n/config.js')) {
     return { url: dataUrl('export default { t: (sleutel) => sleutel };'), shortCircuit: true };
+  }
+  // Paginakeuze bij invoegen/vervangen (#963): zonder eigen impl kiest de
+  // test alle bronpagina's, zoals een gebruiker die meteen OK geeft. De
+  // rekenhulpen van die module blijven echt.
+  if (doel.endsWith('/js/pdf/bron-paginas-kiezen.js')) {
+    return {
+      url: dataUrl(`export * from ${JSON.stringify(doel)};
+export const kiesBronPaginas = async (bytes, naam, aantal, doel) => {
+  const impl = globalThis.__pmTest?.impl?.kiesBronPaginas;
+  return impl ? impl(bytes, naam, aantal, doel) : Array.from({ length: aantal }, (_, i) => i);
+};`),
+      shortCircuit: true,
+    };
+  }
+  // Het wachtwoordvenster voor een beveiligd bronbestand (#1134): zonder eigen
+  // impl annuleert de test, zoals een gebruiker die geen wachtwoord heeft.
+  if (doel.endsWith('/js/solid/stores/wachtwoordDialoogStore.js')) {
+    return {
+      url: dataUrl(`export const metWachtwoordDialoog = (fn) => fn();
+export const vraagWachtwoord = async (v) => (await globalThis.__pmTest?.impl?.vraagWachtwoord?.(v)) ?? null;`),
+      shortCircuit: true,
+    };
   }
   for (const [pad, namen] of Object.entries(STUBS)) {
     if (!doel.endsWith(`/${pad}`)) continue;

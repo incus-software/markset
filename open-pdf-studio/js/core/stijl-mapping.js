@@ -8,6 +8,14 @@
 // app (en zonder de import-kringloop via bridge.ts) de tabel kan lezen.
 
 import { PLAIN_TEXT_TOOL, PLAIN_TEXT_STYLE_MAPPING } from '../../markset/plain-text.js'; // Markset
+// Teken- en alineastijl van de tekstgereedschappen (#1150): vet, cursief,
+// onderstrepen, doorhalen, uitlijning (horizontaal en verticaal) en
+// regelafstand horen net als lettertype en grootte bij de standaardstijl.
+const TEKSTSTIJL = Object.freeze({
+  fontBold: 'FontBold', fontItalic: 'FontItalic', fontUnderline: 'FontUnderline',
+  fontStrikethrough: 'FontStrikethrough', textAlign: 'TextAlign', textVAlign: 'TextVAlign',
+  lineSpacing: 'LineSpacing',
+});
 
 export function getStyleMapping(type) {
   if (type === PLAIN_TEXT_TOOL) return { ...PLAIN_TEXT_STYLE_MAPPING }; // Markset: plain text (Text tool)
@@ -29,9 +37,9 @@ export function getStyleMapping(type) {
       return { prefix: 'circle', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fillOpacity: 'FillOpacity', hatch: hasHatch };
     // fontFamily: het gekozen lettertype gaat mee in de standaardstijl (#765).
     case 'textbox':
-      return { prefix: 'textbox', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fontSize: 'FontSize', fontFamily: 'FontFamily' };
+      return { prefix: 'textbox', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fontSize: 'FontSize', fontFamily: 'FontFamily', textColor: 'TextColor', ...TEKSTSTIJL };
     case 'callout':
-      return { prefix: 'callout', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fontSize: 'FontSize', fontFamily: 'FontFamily' };
+      return { prefix: 'callout', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'BorderWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fontSize: 'FontSize', fontFamily: 'FontFamily', textColor: 'TextColor', ...TEKSTSTIJL };
     case 'polygon':
       return { prefix: 'polygon', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', fillOpacity: 'FillOpacity', hatch: hasHatch };
     case 'cloud':
@@ -53,7 +61,7 @@ export function getStyleMapping(type) {
     // hoort bij dat ene vlak en mag niet via de standaardstijl naar een
     // ander vlak (#536).
     case 'measureArea':
-      return { prefix: 'measureArea', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', dimension: true, noDimScale: true, edgeLengths: 'ShowEdgeLengths' };
+      return { prefix: 'measureArea', stroke: 'StrokeColor', fill: 'FillColor', fillNone: 'FillNone', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', dimension: true, noDimScale: true, edgeLengths: 'ShowEdgeLengths', areaUnit: 'DisplayUnit' };
     case 'measurePerimeter':
       return { prefix: 'measurePerim', stroke: 'StrokeColor', width: 'LineWidth', borderStyle: 'BorderStyle', opacity: 'Opacity', startHead: 'StartHead', endHead: 'EndHead', headSize: 'HeadSize', dimension: true };
     default:

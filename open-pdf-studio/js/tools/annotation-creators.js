@@ -8,8 +8,10 @@ import { textStyleDefault } from '../../markset/text-defaults.js'; // Markset
 import { PLAIN_TEXT_TOOL, plainTextAnnotation } from '../../markset/plain-text.js'; // Markset
 import { getColorPickerValue, getLineWidthValue } from '../bridge.js';
 import { createAnnotation } from '../annotations/factory.js';
+import { metLabelVooraf } from '../annotations/label-vooraf.js';
 import { snapAngle } from '../utils/helpers.js';
-import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement, snapDistanceTo10 } from '../annotations/measurement.js';
+import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement, snapDistanceTo10, vlakTekst } from '../annotations/measurement.js';
+import { oppervlakteEenheid } from '../annotations/oppervlakte-eenheid.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { applyDynamicScaling } from '../annotations/dynamic-scaling.js';
 import { getTemplate } from '../symbols/registry.js';
@@ -27,9 +29,11 @@ import { getEffectiveScale } from './effective-scale.js';
 import { randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
 import { rechtopRotatie, paginaMaat } from '../pdf/weergave-ruimte.js';
 import { smartPlacementBox, smartColors, smartTwoPointSize } from '../../markset/smart/index.js'; // Markset
+import { tekststijlUitVoorkeur } from '../core/style-prefs.js';
 import { vulDekkingUitVoorkeur } from '../annotations/vul-dekking.js';
 import { rechtopVak, nieuweMaatHoekVast } from '../pdf/weergave-rotatie.js';
 import { documentHeeftSchaal } from '../annotations/schaal-op-punt.js';
+import { handmatigeSchaal } from '../annotations/eenhedenstelsel.js';
 import { veelhoekUitPunten, regelmatigeVeelhoekPunten } from '../annotations/veelhoek-punten.js';
 
 /**
@@ -375,10 +379,13 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         text: '',
         ...randkleurenUitVoorkeur(prefs, 'textbox', 'textbox'),
         fillColor: prefs.textboxFillNone ? 'none' : prefs.textboxFillColor,
-        textColor: '#000000',
+        textColor: prefs.textboxTextColor || '#000000',
         fontSize: prefs.textboxFontSize,
         // Het lettertype uit de standaardstijl (#765); eerder altijd Arial.
         fontFamily: prefs.textboxFontFamily || 'Arial',
+        // Vet/cursief/onderstrepen/doorhalen, uitlijning en regelafstand uit
+        // de standaardstijl (#1150); eerder altijd gewoon, links en boven.
+        ...tekststijlUitVoorkeur(prefs, 'textbox'),
         ...textStyleDefault(prefs, 'textbox'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.textboxBorderWidth,
         borderStyle: prefs.textboxBorderStyle,
@@ -409,10 +416,12 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         text: '',
         ...randkleurenUitVoorkeur(prefs, 'callout', 'callout'),
         fillColor: prefs.calloutFillNone ? 'none' : prefs.calloutFillColor,
-        textColor: '#000000',
+        textColor: prefs.calloutTextColor || '#000000',
         fontSize: prefs.calloutFontSize,
         // Het lettertype uit de standaardstijl (#765); eerder altijd Arial.
         fontFamily: prefs.calloutFontFamily || 'Arial',
+        // Teken- en alineastijl uit de standaardstijl (#1150).
+        ...tekststijlUitVoorkeur(prefs, 'callout'),
         ...textStyleDefault(prefs, 'callout'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.calloutBorderWidth,
         borderStyle: prefs.calloutBorderStyle,
@@ -613,6 +622,9 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         page: getActiveDocument()?.currentPage || 1,
         x: startX, y: startY,
         categoryId: cat?.id || null,
+        // Groepsnaam op de markering zelf: zo komt de groep na opslaan en
+        // heropenen terug (#935).
+        ...(cat?.name ? { categoryName: cat.name } : {}),
         number: n,
         markerStyle: cat?.markerStyle || 'dot',
         symbolId: cat?.symbolId,
@@ -691,7 +703,7 @@ function finalizeAnnotation(tool, props) {
   const annY = props.y ?? props.startY ?? 0;
   applyDynamicScaling(props, pageNum, annX, annY);
 
-  return createAnnotation(props);
+  return createAnnotation(metLabelVooraf(props));
 }
 
 // Weergave draaien (#200): een tekstvak dat de gebruiker tekent, staat rechtop
@@ -741,14 +753,18 @@ export function createMeasureAreaAnnotation(points, holes) {
   // followed by formatMeasurement (which auto-converts mm² → m²).
   const currentPage = getActiveDocument()?.currentPage || 1;
   const area = calculateArea(points, holes, currentPage);
-  annProps.measureText = formatMeasurement(area);
+  // Weergave-eenheid van nieuwe meetvlakken (#1129): acres, hectares, ... De
+  // waarde en eenheid zelf blijven in het kwadraat van de schaal-eenheid.
+  const weergave = oppervlakteEenheid(mPrefs.measureAreaDisplayUnit);
+  if (weergave) annProps.measureAreaUnit = weergave;
+  annProps.measureText = vlakTekst(annProps, area);
   annProps.measureValue = area.value;
   annProps.measureUnit = area.unit;
   if (mPrefs.measureAreaDimPrecision != null) {
     annProps.measurePrecision = mPrefs.measureAreaDimPrecision;
   }
   applyDynamicScaling(annProps, currentPage, points[0]?.x || 0, points[0]?.y || 0);
-  return createAnnotation(annProps);
+  return createAnnotation(metLabelVooraf(annProps));
 }
 
 export function createMeasurePerimeterAnnotation(points) {
@@ -772,13 +788,17 @@ export function createMeasurePerimeterAnnotation(points) {
   // gaat voor de handmatige voorkeursschaal; dezelfde regel als de maatlijn.
   const hasScaleSource = documentHeeftSchaal(getActiveDocument())
     || docHasScale(getActiveDocument()); // Markset: per-sheet calibrations count too
-  if (!hasScaleSource && mPrefs.measurePerimDimScale && typeof mPrefs.measurePerimDimScale === 'number') {
-    perimProps.measureScale = mPrefs.measurePerimDimScale;
-    perimProps.measureUnit = mPrefs.measurePerimDimUnit || 'mm';
+  // Imperiaal telt de onaangeroerde standaard (1 per punt, mm) niet als
+  // handmatige schaal (#1158): dan de maat op papier in inches.
+  const handmatig = hasScaleSource || typeof mPrefs.measurePerimDimScale !== 'number'
+    ? null : handmatigeSchaal(mPrefs, 'measurePerim');
+  if (handmatig) {
+    perimProps.measureScale = handmatig.scale;
+    perimProps.measureUnit = handmatig.unit;
     perimProps.measurePrecision = mPrefs.measurePerimDimPrecision ?? 2;
     const pixelPerim = calculatePerimeter(points, currentPage).pixels;
-    const scaledPerim = pixelPerim * mPrefs.measurePerimDimScale;
-    const unit = mPrefs.measurePerimDimUnit || 'mm';
+    const scaledPerim = pixelPerim * handmatig.scale;
+    const unit = handmatig.unit;
     const prec = mPrefs.measurePerimDimPrecision ?? 2;
     perimProps.measureText = imperialOr(scaledPerim, unit, state.preferences, `${scaledPerim.toFixed(prec)} ${unit}`); // Markset
     perimProps.measureValue = scaledPerim;
@@ -790,5 +810,5 @@ export function createMeasurePerimeterAnnotation(points) {
     perimProps.measureUnit = perim.unit;
   }
   applyDynamicScaling(perimProps, currentPage, points[0]?.x || 0, points[0]?.y || 0);
-  return createAnnotation(perimProps);
+  return createAnnotation(metLabelVooraf(perimProps));
 }

@@ -42,6 +42,10 @@ use axum::{
 };
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_fs::FsExt;
+
+#[path = "mcp_capture_result.rs"]
+mod capture_result;
 
 use crate::mcp_app_bridge::{self, McpAppBridge};
 use crate::mcp_extensie_tools::{self, ExtensieTools};
@@ -99,8 +103,8 @@ pub fn resolve_test_pdfs_dir(override_dir: Option<PathBuf>) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
             .join("..")
-            .join("test pdf-bestanden")
-            .join("Originele bestanden")
+            .join("fixtures")
+            .join("pdf")
     })
 }
 
@@ -264,6 +268,7 @@ fn export_ifcx_tool() -> Value {
 /// instelling.js, PAPIERFORMATEN) en als js/pdf/print-opdracht.js.
 const PRINT_PAPIERFORMATEN: &[&str] = &[
     "A0", "A1", "A2", "A3", "A4", "A5", "A0L", "A1L", "A2L", "A3L", "Letter", "Legal", "Tabloid",
+    "ARCH A", "ARCH B", "ARCH C", "ARCH D", "ARCH E", "ARCH E1", "ANSI C", "ANSI D", "ANSI E",
 ];
 
 /// De papierkeuzes van een printgereedschap: de formaten plus één keuze die
@@ -936,7 +941,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_screenshot_view",
-                "description": "Capture the LIVE app as a base64 PNG. scope 'document' (default) composites the PDF canvas with the annotation/highlight overlays, without the surrounding interface. scope 'window' captures the whole app window as it is shown: ribbon (including extension tabs), side panels such as an extension's workspace panel, the document view and the status bar. scope 'element' crops that window capture to the element matched by `selector`. The longer side is scaled down to `width`. Returns { png_base64, width, height, scope, bounds: { x, y, width, height } (the captured area in CSS px), devicePixelRatio }. 'window' and 'element' use a native capture of the web view and are available on Windows only for now; on other platforms they return an error.",
+                "description": "Capture the LIVE app as a base64 PNG. scope 'document' (default) composites the PDF canvas with the annotation/highlight overlays, without the surrounding interface. scope 'window' captures the whole app window as it is shown: ribbon (including extension tabs), side panels such as an extension's workspace panel, the document view and the status bar. scope 'element' crops that window capture to the element matched by `selector`. The longer side is scaled down to `width`. Returns { png_base64, width, height, scope, bounds: { x, y, width, height } (the captured area in CSS px), devicePixelRatio }. 'window' and 'element' use a native capture of the web view and are available on Windows only for now; on other platforms they return an error. Inline results also include an MCP image content item (image/png); the first text item retains the complete legacy JSON including png_base64. This tool has no path parameter; use app_capture_region for file export.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -949,7 +954,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_capture_region",
-                "description": "Render an area of a page (or the whole page) of the active document as an image at a chosen resolution, the way Home > Screenshot does: the page is rendered again at `dpi` (not the screen pixels enlarged), with the annotations as printed (no selection frames), in the view rotation the user sees. Coordinates are app points (page space, top-left origin, 100% zoom); leave x, y, width and height out for the whole page. Very large images are scaled down to at most 16384 px per side and 64 megapixels (`limited` is then true and `dpi` the resolution used). Returns { page, rect, width, height, dpi, limited, mime } plus image_base64, or with `path` the image is written to that file and { path, bytes } is returned instead of the base64. Nothing is put on the clipboard.",
+                "description": "Render an area of a page (or the whole page) of the active document as an image at a chosen resolution, the way Home > Screenshot does: the page is rendered again at `dpi` (not the screen pixels enlarged), with the annotations as printed (no selection frames), in the view rotation the user sees. Coordinates are app points (page space, top-left origin, 100% zoom); leave x, y, width and height out for the whole page. Very large images are scaled down to at most 16384 px per side and 64 megapixels (`limited` is then true and `dpi` the resolution used). Returns { page, rect, width, height, dpi, limited, mime } plus image_base64, or with `path` the image is written to that file and { path, bytes } is returned instead of the base64. Nothing is put on the clipboard. Inline results also include an MCP image content item with the actual PNG/JPEG MIME type; the first text item retains the complete legacy JSON. With path, the result stays file metadata only. Export requires an already granted filesystem path and OS write permission; TEMP, Pictures and Documents are not automatically granted. Select a destination through Home > Screenshot > Save, reuse an already granted export location, or omit path. A forbidden-path error lists current allowed and denied path patterns; window permissions and denied paths still apply.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -961,7 +966,7 @@ fn handle_tools_list() -> Value {
                         "dpi":     { "type": "number", "minimum": 10, "maximum": 2400, "default": 150, "description": "Resolution in pixels per inch of paper." },
                         "format":  { "type": "string", "enum": ["png", "jpeg"], "default": "png" },
                         "quality": { "type": "integer", "minimum": 1, "maximum": 100, "default": 90, "description": "JPEG quality." },
-                        "path":    { "type": "string", "description": "Absolute file path to write the image to, instead of returning it as base64." }
+                        "path":    { "type": "string", "description": "Absolute file path in an already granted filesystem location. Writes the image instead of returning inline image content. No automatic access to TEMP, Pictures or Documents; omit path to receive an image without writing a file." }
                     },
                     "additionalProperties": false
                 }
@@ -1190,7 +1195,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_merge_pdf",
-                "description": "Merge one or more PDF files into the active document at the given position. The user's original file is not modified; the merged result opens as a working copy until saved. Returns { ok, position, mergedFiles, pagesInserted, pagesBefore, pagesAfter, filePath }; mergedFiles counts the files that really went in. A file that stays out makes ok false: a preview PDF of the CAD import is refused (reason preview-pdf), a file without pages is refused (no-pages), an unreadable file fails. Then error names the files, refused [{ file, reason }] and failed [{ file, error }] list them, and mergedFiles and pagesAfter show what did go in.",
+                "description": "Merge one or more PDF files into the active document at the given position. The user's original file is not modified; the merged result opens as a working copy until saved. Returns { ok, position, mergedFiles, pagesInserted, pagesBefore, pagesAfter, filePath }; mergedFiles counts the files that really went in. A file that stays out makes ok false: a preview PDF of the CAD import is refused (reason preview-pdf), a file without pages is refused (no-pages), a protected file that could not be unlocked is refused (protected), an unreadable file fails. Then error names the files, refused [{ file, reason }] and failed [{ file, error }] list them, and mergedFiles and pagesAfter show what did go in.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1225,13 +1230,13 @@ fn handle_tools_list() -> Value {
             agent_task_result_tool(),
             {
                 "name": "app_create_annotation",
-                "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input. Builds the same object the interactive tool would, pushes it onto the document, records an undo step and redraws. Geometry goes in `props` (page coordinates at 100% zoom): line/arrow/measureDistance need startX/startY/endX/endY; box/circle/highlight/cloud/textbox/callout/scaleRegion need x/y/width/height; polygon takes its corners as points:[{x,y},...] (>= 3), or x/y/width/height (+ optional sides, default 6) for a regular polygon in that box; polyline/filledArea/measureArea/measurePerimeter need points:[{x,y},...]; spline needs controlPoints; draw needs path; comment needs x/y. Optional style props (color, strokeColor, fillColor, lineWidth, opacity, text, fontSize, scaleString, units, leaderStartX/Y, leaderEndX/Y, dimShowUnit (measureDistance: false shows the number only), dimLineOvershootMm / dimExtGapMm / dimExtOvershootMm (measureDistance: overshoot of the dimension line, gap and overshoot of the extension lines, in paper mm), measureShowLabel (measureArea: false hides its own label), ...) override the tool defaults. measure* annotations get measureText computed from the document scale automatically. Returns the new annotation id.",
+                "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input. Builds the same object the interactive tool would, pushes it onto the document, records an undo step and redraws. Geometry goes in `props` (page coordinates at 100% zoom): line/arrow/measureDistance need startX/startY/endX/endY; box/circle/highlight/cloud/textbox/callout/scaleRegion need x/y/width/height (highlight is an area highlight; optional rotation in degrees turns it about its centre); textHighlight is a real text highlight and needs quads:[[ul,ur,ll,lr],...], one quad per piece of text with {x,y} corners in the order upper left, upper right, lower left, lower right, turned along angled text (the same object as a text highlight made by selecting text; default color #FFFF00, opacity 0.3; its box comes from the quads, a passed x/y/width/height is ignored; invalid quads give an error and create nothing); polygon takes its corners as points:[{x,y},...] (>= 3), or x/y/width/height (+ optional sides, default 6) for a regular polygon in that box; polyline/filledArea/measureArea/measurePerimeter need points:[{x,y},...]; polyline and polygon (given as points) also take optional curves: one entry per segment (segment i runs from point i to point i+1; a polygon has one more, back to the first point), null for a straight segment or {c1x,c1y,c2x,c2y} for a cubic Bezier curve, with the first control point relative to the start point of the segment and the second relative to its end point (app_get_annotation returns the same field; a shape without curves has none; the measure tools do not take curves); measurePerimeter follows the supplied open point sequence by default; on creation, optional closed:true (boolean, >= 3 points) appends the first point if needed and includes the closing edge in the measurement; already repeated endpoints are not duplicated, and closed:false or omission leaves the supplied sequence unchanged; spline needs controlPoints; draw needs path; comment needs x/y; link makes the same hyperlink as the Link tool and needs a target, either uri (web or e-mail address: http, https, mailto, tel or ftp) or page (target page in this document, 1-based; then the annotation itself goes on the top-level page) with optional view \"XYZ\" (default, top of the page), \"Fit\" or {type:\"XYZ\",left,top,zoom} (left/top in PDF points), plus x/y/width/height for the click box or quads:[[ul,ur,ll,lr],...] for one box per text line (written as /QuadPoints), optional border \"none\" (default) | \"solid\" | \"underline\" with color and lineWidth; a link to a page follows that page when pages are moved, inserted or deleted, and becomes broken when its target page is deleted. Optional style props (color, strokeColor, fillColor, lineWidth, opacity, text, fontSize, scaleString, units, leaderStartX/Y, leaderEndX/Y, dimShowUnit (measureDistance: false shows the number only), dimLineOvershootMm / dimExtGapMm / dimExtOvershootMm (measureDistance: overshoot of the dimension line, gap and overshoot of the extension lines, in paper mm), measureShowLabel (measureArea: false hides its own label), ...) override the tool defaults. measure* annotations get measureText computed from the document scale automatically; the app does every unit conversion. measureArea: `units` (or `measureAreaUnit`) sets the unit its area is reported in: ac (acres, 1 ac = 43,560 ft2), ha (hectares, 1 ha = 10,000 m2), m2, ft2, yd2, ... (\"acres\", \"sq ft\" and the superscript forms are understood, a length unit such as ft means ft2, \"auto\" follows the scale again). measureText then reads e.g. \"2.296 ac\" and the result carries `area: {value, unit}` with the number in that unit; measureValue / measureUnit stay in the square of the scale unit, as the lengths, edge lengths and perimeter do. Without `units` the area is in the square of the scale unit (mm2 is shown as m2). An unknown unit, or an area unit on a sheet without a real-world scale, is an error and nothing is created. measureDistance / measurePerimeter are reported in the unit of the scale; a different `units` is an error instead of being ignored. scaleRegion `units` is mm, cm, m, in or ft. Returns the new annotation id.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["line", "arrow", "wall", "box", "mask", "redaction", "viewport", "circle", "highlight", "cloud", "polygon", "polyline", "cloudPolyline", "spline", "draw", "filledArea", "textbox", "callout", "comment", "stamp", "signature", "image", "parametricSymbol", "measureDistance", "measureArea", "measurePerimeter", "scaleRegion", "count"]
+                            "enum": ["line", "arrow", "wall", "box", "mask", "redaction", "viewport", "circle", "highlight", "textHighlight", "link", "cloud", "polygon", "polyline", "cloudPolyline", "spline", "draw", "filledArea", "textbox", "callout", "comment", "stamp", "signature", "image", "parametricSymbol", "measureDistance", "measureArea", "measurePerimeter", "scaleRegion", "count"]
                         },
                         "page":  { "type": "integer", "minimum": 1, "description": "1-based target page. Defaults to the current page." },
                         "props": { "type": "object", "description": "Geometry + style properties for the annotation." },
@@ -1243,7 +1248,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_list_annotations",
-                "description": "List the active document's annotations as compact JSON (id, type, page, core geometry, colors, text/measureText, and the markup layer when it is not the default layer). Optionally filter to one page or one layer.",
+                "description": "List the active document's annotations as compact JSON (id, type, page, core geometry, colors, text/measureText, for a measureArea `area: {value, unit}` with the area as a number in the unit it is shown in (acres, hectares, m2, ft2, ...), and the markup layer when it is not the default layer). Optionally filter to one page or one layer.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1255,7 +1260,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_get_annotation",
-                "description": "Return the full JSON-safe property set of one annotation by id (functions/DOM refs stripped). A grid line also reports `gridAlignment`: per end its group, whether it is locked, the number of linked ends and whether it can be locked.",
+                "description": "Return the full JSON-safe property set of one annotation by id (functions/DOM refs stripped). A measureArea also reports `area: {value, unit}`: its area as a number in the unit it is shown in (`measureAreaUnit`: ac, ha, m2, ft2, ...; otherwise the square of the scale unit), computed by the app. A grid line also reports `gridAlignment`: per end its group, whether it is locked, the number of linked ends and whether it can be locked.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1267,7 +1272,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_update_annotation",
-                "description": "Merge `props` onto an existing annotation (geometry, color, lineWidth, text, ...). Records a modify-undo step, recomputes measureText when measurement geometry changed, and redraws. `id` and `type` are immutable. `layer` moves the annotation to another markup layer; `props` may then be empty. Grid line (parametricSymbol `stramien`): `alignStart` / `alignEnd` true couples that end with the aligned ends of the other grid lines (dragging one end then moves them all), false unlocks it.",
+                "description": "Merge `props` onto an existing annotation (geometry, color, lineWidth, text, ...). Records a modify-undo step, recomputes measureText when measurement geometry changed, and redraws. `id` and `type` are immutable. polyline / polygon: `curves` (one entry per segment, null or {c1x,c1y,c2x,c2y}, see app_create_annotation) sets the Bezier segments, in the coordinates of `points`; `curves: null` makes every segment straight, and new `points` without `curves` also give straight segments. measureArea: `units` (or `measureAreaUnit`) changes the unit its area is reported in (ac, ha, m2, ft2, yd2, ...; `auto` follows the scale again), the app converts and the result carries `area: {value, unit}`; an unknown unit, or an area unit on a sheet without a real-world scale, is an error and changes nothing. measureDistance / measurePerimeter keep the unit of the scale: a different `units` is an error. scaleRegion `units` is mm, cm, m, in or ft. `layer` moves the annotation to another markup layer; `props` may then be empty. Grid line (parametricSymbol `stramien`): `alignStart` / `alignEnd` true couples that end with the aligned ends of the other grid lines (dragging one end then moves them all), false unlocks it.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1663,7 +1668,7 @@ fn handle_tools_list() -> Value {
 },
 {
     "name": "app_search_symbols",
-    "description": "Search page artwork for a selected symbol rectangle in current page-view coordinates at scale 1. Review candidates before accept, which creates undoable standard count annotations without duplicating same-category counts at the same location. Search bounded to 20 pages, 1200 pixels per edge and 1000 results. Similarity is not certainty. Results expire after 20 minutes or source changes. navigate reveals a result.",
+    "description": "Search page artwork for a selected symbol rectangle in current page-view coordinates at scale 1. Those are points with the origin top left of the page as shown, rotation included; match bounds, excludeRegions and withinRegion use them too. Candidates whose centre lies inside an excludeRegions rectangle or outside withinRegion are dropped and counted in summary.excluded; a region without page applies to every searched page. Nothing else is dropped. Every match has review, and reviewReasons when true: belowMinScore (score under the optional minScore), legend or titleBlock (centre inside a legend or title block found in the page text, listed in detectedRegions; a text-layer heuristic that finds nothing on scans, off with detectRegions false). A legend shows each symbol once and title block text can resemble one, so summary.safe, the matches without a review flag, is the count to start from. Review candidates before accept, which creates undoable standard count annotations without duplicating same-category counts at the same location. Search bounded to 20 pages, 1200 pixels per edge and 1000 results. Similarity is not certainty. Results expire after 20 minutes or source changes. navigate reveals a result.",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -1740,6 +1745,78 @@ fn handle_tools_list() -> Value {
                     "maximum": 2
                 },
                 "maxItems": 3
+            },
+            "excludeRegions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "page": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "x": {
+                            "type": "number"
+                        },
+                        "y": {
+                            "type": "number"
+                        },
+                        "width": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                        },
+                        "height": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                        }
+                    },
+                    "required": [
+                        "x",
+                        "y",
+                        "width",
+                        "height"
+                    ],
+                    "additionalProperties": false
+                },
+                "maxItems": 50
+            },
+            "withinRegion": {
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "x": {
+                        "type": "number"
+                    },
+                    "y": {
+                        "type": "number"
+                    },
+                    "width": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    },
+                    "height": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    }
+                },
+                "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                ],
+                "additionalProperties": false
+            },
+            "minScore": {
+                "type": "number",
+                "minimum": 0.5,
+                "maximum": 1
+            },
+            "detectRegions": {
+                "type": "boolean"
             },
             "queryId": {
                 "type": "string"
@@ -2429,12 +2506,12 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_set_measure_scale",
-                "description": "Set the active document's measurement scale calibration (pixels per unit + unit, e.g. ~2.835 px/mm for 1:1 at 72 dpi) and recalculate every measurement annotation.",
+                "description": "Set the active document's measurement scale calibration (pixels per unit + unit, e.g. ~2.835 px/mm for 1:1 at 72 dpi) and recalculate every measurement annotation. The unit is a LENGTH unit (mm, cm, dm, m, km, in, ft, yd, pt, px); anything else is an error. Acres and hectares are area units: set them per measureArea with `units` in app_create_annotation / app_update_annotation, or per schedule column.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "pixelsPerUnit": { "type": "number", "exclusiveMinimum": 0 },
-                        "unit":          { "type": "string", "description": "Unit name, e.g. mm, cm, m, in, ft." }
+                        "unit":          { "type": "string", "description": "Length unit: mm, cm, dm, m, km, in, ft, yd, pt or px. An area unit (ac, ha) or an unknown unit is rejected." }
                     },
                     "required": ["pixelsPerUnit", "unit"],
                     "additionalProperties": false
@@ -2442,29 +2519,56 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_get_takeoff",
-                "description": "Return take-off totals for the user's named schedules (Staten): per schedule the element count, the numeric column grand totals (e.g. area m2, length m, count), and per-group subtotals. Optionally target one schedule by id or name; otherwise all schedules are returned. Image/thumbnail columns are reported as counts, never as data-URLs.",
+                "description": "Return take-off totals for the user's named schedules (Staten): per schedule the element count, the numeric column grand totals (e.g. area m2, length m, count), and per-group subtotals. Optionally target one schedule by id or name; otherwise all schedules are returned. `areaUnit` reports every area column in that unit (ac, ha, m2, ft2, ...), converted by the app without changing the schedule; each column states its unit. Image/thumbnail columns are reported as counts, never as data-URLs. Schedules are definitions shared by the whole app, not part of one document: the totals are always computed from the annotations of the ACTIVE document (named in `document`), so the same schedule gives other numbers on another tab.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "scheduleId": { "type": "string", "description": "Target one schedule by its id." },
-                        "name":       { "type": "string", "description": "Target one schedule by its display name." }
+                        "name":       { "type": "string", "description": "Target one schedule by its display name." },
+                        "areaUnit":   { "type": "string", "description": "Report the area columns in this unit: ac (acres), ha (hectares), m2, ft2, yd2, ... An unknown unit is an error." }
                     },
                     "additionalProperties": false
                 }
             },
             {
                 "name": "app_place_schedule",
-                "description": "Build a quantities schedule (Staat) from the annotations in the open document and place it on the page as a table annotation. Without scheduleId a new schedule is created from a template (default 'area'); `config` then overrides its categories/fields/sort. The table contents are computed by the app from the live annotations - the caller supplies no cell values.",
+                "description": "Build a quantities schedule (Staat) from the annotations in the active document and place it on the page as a table annotation. Without scheduleId a new schedule is created from a template (default 'area'); `config` is merged over the template (or over the existing schedule). The config is checked BEFORE anything is created: with an unknown category, field or filter operator, or a result without columns, no schedule is left behind and the error lists the valid values. A column converts its rows to one unit: `config.format.<field>.unit`, e.g. {\"format\": {\"area\": {\"unit\": \"ac\"}}} totals the areas in acres (ha, m2, ft2, ... work the same way). The table contents are computed by the app from the live annotations - the caller supplies no cell values. Schedules are definitions shared by the whole app (kept in the user's preferences), not part of one document: the numbers always come from the document that is active at that moment (named in `document`), and a placed table is a snapshot inside the document it was placed in. Rename or edit a schedule with app_update_schedule, remove it with app_delete_schedule.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "scheduleId": { "type": "string", "description": "Reuse an existing schedule instead of creating one." },
                         "templateId": { "type": "string", "description": "Template for a new schedule: area, length, count, symbol, text, image, full, buigstaat (rebar bending schedule) or wapeningsstaat (rebar weight per diameter). Default: area." },
                         "name":       { "type": "string", "description": "Display name for the schedule." },
-                        "config":     { "type": "object", "description": "Schedule config: categories, fields, filters, sort, itemize, format. Overrides the template.", "additionalProperties": true },
+                        "config":     { "type": "object", "description": "Schedule config; every key is optional and replaces that key of the template (or of the existing schedule), the other keys are kept. categories: which elements, any of area, line-based, count, reinforcement, text-annotation, text-built-in, symbol, image, other. fields: the column keys, in order. Every category has category, type, page, label, location, locationSource, layer, color, ifcCategory, count; area adds area, length (the perimeter), dakhoek, realArea; line-based adds length, barCount, barDiameter, barLength, totalBarLength; count adds countCat; text-annotation adds text, fontSize, fontFamily; text-built-in adds text, fontSize; symbol adds thumbnail, symbolId; image adds thumbnail, imageName, width, height; reinforcement adds rebarMark, rebarDiameter, rebarShape, rebarGrade, rebarCount, rebarLength, rebarTotalLength, rebarMassPerM, rebarMass. filters: [{ field, op, value }] with op one of =, !=, >, >=, <, <=, has, none (has/none take no value); all filters must hold; = and != compare the text exactly (case-sensitive). sort: [{ field, dir: asc|desc, group, header, footer }]; the first level with group:true groups the rows and gives each group a subtotal. itemize: false leaves out the row per element and keeps the subtotals. format: { <field>: { heading, decimals, align: left|right, total, unit } }. The `layer` field holds the name of the markup layer as app_list_layers reports it. Example - lengths of everything on the layer 'Walls', grouped by type: {\"categories\":[\"line-based\"],\"fields\":[\"type\",\"label\",\"layer\",\"length\"],\"filters\":[{\"field\":\"layer\",\"op\":\"=\",\"value\":\"Walls\"}],\"sort\":[{\"field\":\"type\",\"dir\":\"asc\",\"group\":true}]}.", "additionalProperties": true },
                         "page":       { "type": "number", "description": "Page to place the table on (default: current page)." },
                         "x":          { "type": "number", "description": "Left edge in page points (default 40)." },
                         "y":          { "type": "number", "description": "Top edge in page points (default 40)." }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_update_schedule",
+                "description": "Rename a quantities schedule (Staat) and/or change its config, without placing a table. Target it by scheduleId or by name (app_get_takeoff lists both). `config` is merged over the schedule's current config and checked first, exactly as in app_place_schedule (see there for the keys and an example); on an error nothing changes. Schedules are shared by the whole app. Tables that were already placed are snapshots and keep their contents: place the schedule again for an up-to-date table.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "scheduleId": { "type": "string", "description": "The schedule to change, by its id." },
+                        "name":       { "type": "string", "description": "The schedule to change, by its display name (when scheduleId is not given)." },
+                        "newName":    { "type": "string", "description": "New display name." },
+                        "config":     { "type": "object", "description": "Config keys to replace: categories, fields, filters, sort, itemize, format. See app_place_schedule.", "additionalProperties": true }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_delete_schedule",
+                "description": "Delete a quantities schedule (Staat) together with the tables that were placed from it in the active document. Target it by scheduleId or by name (app_get_takeoff lists both); a name that several schedules share is refused with their ids. The tables and the schedule go in ONE undo step: app_undo brings both back. Without placed tables the document does not change and there is no undo step; the answer always carries the removed definition (`schedule`) so it can be recreated. Schedules are shared by the whole app, so the schedule disappears for every document; tables placed from it in other open documents stay where they are (counted in tablesInOtherDocuments).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "scheduleId": { "type": "string", "description": "The schedule to delete, by its id." },
+                        "name":       { "type": "string", "description": "The schedule to delete, by its display name (when scheduleId is not given)." }
                     },
                     "additionalProperties": false
                 }
@@ -2696,17 +2800,50 @@ pub fn tools_list_voor(profiel: Profiel) -> Value {
     v
 }
 
+/// Het voorvoegsel van Open PDF Studio in de OpenAEC SuperCloud (#977): daar
+/// heten de tools `pdf_*` (js/core/werkplek-app.js), zodat ze niet botsen met
+/// die van andere tools in hetzelfde gesprek. De desktop aanvaardt dezelfde
+/// namen als alias van `app_*`; tools/list blijft alleen `app_*` noemen.
+pub const WERKPLEK_VOORVOEGSEL: &str = "pdf_";
+/// De stand in één klein antwoord (`pdf_stand`), samengesteld uit dezelfde
+/// handlers als de werkplek (`mcp:stand` in js/mcp-bridge.js).
+pub const STAND_TOOL: &str = "pdf_stand";
+
+/// `pdf_go_to_page` -> `app_go_to_page`. `pdf_stand` en alle andere namen
+/// blijven zoals ze zijn.
+pub fn canonieke_toolnaam(naam: &str) -> std::borrow::Cow<'_, str> {
+    match naam.strip_prefix(WERKPLEK_VOORVOEGSEL) {
+        Some(rest) if !rest.is_empty() && naam != STAND_TOOL => std::borrow::Cow::Owned(format!("app_{rest}")),
+        _ => std::borrow::Cow::Borrowed(naam),
+    }
+}
+
+/// Mag deze (canonieke) naam in dit profiel worden aangeroepen? `pdf_stand`
+/// staat niet in tools/list, maar leest alleen wat app_list_tabs en
+/// app_get_current_tool ook geven.
+fn aanroep_beschikbaar(naam: &str, profiel: Profiel) -> bool {
+    if naam == STAND_TOOL {
+        return beschikbaar("app_list_tabs", profiel) && beschikbaar("app_get_current_tool", profiel);
+    }
+    beschikbaar(naam, profiel)
+}
+
 /// Dispatch a `tools/call` request to the matching tool handler. Returns
 /// the tool's MCP-shaped result (`content[]` + `isError`) on success, or a
 /// `(code, message)` pair that the caller wraps in a JSON-RPC error
 /// response. Tasks 7-9 add new arms to the inner `match`.
 async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i32, String)> {
-    let name = params
+    let gevraagd = params
         .get("name")
         .and_then(|v| v.as_str())
         .unwrap_or("<missing>");
+    // De namen van de werkplek (`pdf_go_to_page`) zijn aliassen van `app_*`.
+    let canoniek = canonieke_toolnaam(gevraagd);
+    let name: &str = &canoniek;
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
     match name {
+        // De stand in één klein antwoord (#977), net als in de werkplek.
+        STAND_TOOL => tool_app_request(state, "mcp:stand", &arguments, Duration::from_secs(10)).await,
         "list_test_pdfs" => tool_list_test_pdfs(state).await,
         "screenshot_page" => tool_screenshot_page(state, &arguments).await,
         "get_pdf_metadata" => tool_get_pdf_metadata(state, &arguments).await,
@@ -2787,6 +2924,8 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_set_measure_scale"  => tool_app_request(state, "mcp:set-measure-scale",  &arguments, Duration::from_secs(15)).await,
         "app_get_takeoff"        => tool_app_request(state, "mcp:get-takeoff",        &arguments, Duration::from_secs(10)).await,
         "app_place_schedule"     => tool_app_request(state, "mcp:place-schedule",     &arguments, Duration::from_secs(15)).await,
+        "app_update_schedule"    => tool_app_request(state, "mcp:update-schedule",    &arguments, Duration::from_secs(10)).await,
+        "app_delete_schedule"    => tool_app_request(state, "mcp:delete-schedule",    &arguments, Duration::from_secs(15)).await,
         "app_structural_layout"  => tool_app_request(state, "mcp:structural-layout",  &arguments, Duration::from_secs(60)).await,
         "app_list_commands"      => tool_app_request(state, "mcp:list-commands",      &arguments, Duration::from_secs(30)).await,
         "app_run_command"        => tool_app_request(state, "mcp:run-command",        &arguments, Duration::from_secs(20)).await,
@@ -2926,17 +3065,19 @@ async fn tool_app_request(
             "AppHandle unavailable — MCP server not started from inside Tauri::setup()".to_string(),
         ))?;
     let bridge = app.state::<McpAppBridge>();
-    let response = mcp_app_bridge::request(app, &bridge, event_name, arguments.clone(), timeout)
+    let mut response = mcp_app_bridge::request(app, &bridge, event_name, arguments.clone(), timeout)
         .await
         .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?;
 
-    Ok(json!({
-        "content": [{
-            "type": "text",
-            "text": response.to_string(),
-        }],
-        "isError": false,
-    }))
+    if capture_result::needs_scope_help(event_name, arguments, &response) {
+        let scope = app.fs_scope();
+        capture_result::add_scope_help(
+            &mut response,
+            scope.allowed_patterns().iter().map(|pattern| pattern.as_str().to_owned()).collect(),
+            scope.forbidden_patterns().iter().map(|pattern| pattern.as_str().to_owned()).collect(),
+        );
+    }
+    Ok(capture_result::format_result(event_name, response))
 }
 
 /// `list_test_pdfs` tool — enumerates every `*.pdf` under
@@ -3348,7 +3489,7 @@ async fn mcp_handler(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(body): Json<Value>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     // Pull out the request id; default to null so error responses are still
     // well-formed if the client omitted it.
     let id = body.get("id").cloned().unwrap_or(Value::Null);
@@ -3361,7 +3502,8 @@ async fn mcp_handler(
         return (
             StatusCode::FORBIDDEN,
             Json(rpc_error(id, jsonrpc_error::INVALID_REQUEST, melding)),
-        );
+        )
+        .into_response();
     }
 
     let method = match body.get("method").and_then(|v| v.as_str()) {
@@ -3374,7 +3516,8 @@ async fn mcp_handler(
                     jsonrpc_error::INVALID_REQUEST,
                     "missing 'method' field",
                 )),
-            );
+            )
+            .into_response();
         }
     };
 
@@ -3398,7 +3541,10 @@ async fn mcp_handler(
         "tools/call" => {
             let empty = Value::Null;
             let params = body.get("params").unwrap_or(&empty);
-            let naam = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let gevraagd = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            // `pdf_*` van de werkplek (#977) telt als de `app_*` die hij noemt.
+            let canoniek = canonieke_toolnaam(gevraagd);
+            let naam: &str = &canoniek;
             if naam.starts_with(mcp_extensie_tools::VOORVOEGSEL) {
                 // Opdracht van een extensie (#575): alleen als een geladen
                 // extensie hem registreert.
@@ -3419,11 +3565,11 @@ async fn mcp_handler(
                     Ok(value) => rpc_result(id, value),
                     Err((code, msg)) => rpc_error(id, code, msg),
                 }
-            } else if !beschikbaar(naam, state.profiel) {
+            } else if !aanroep_beschikbaar(naam, state.profiel) {
                 rpc_error(
                     id,
                     jsonrpc_error::INVALID_PARAMS,
-                    format!("tool '{naam}' is not available in this Open PDF Studio configuration"),
+                    format!("tool '{gevraagd}' is not available in this Open PDF Studio configuration"),
                 )
             } else {
                 match handle_tools_call(&state, params).await {
@@ -3432,9 +3578,7 @@ async fn mcp_handler(
                 }
             }
         }
-        // `notifications/initialized` and other notification methods carry no
-        // id and expect no response. We still send back an empty result for
-        // robustness; the harness ignores unknown ids.
+        // Acknowledge initialization; notification responses are suppressed below.
         "notifications/initialized" | "initialized" => rpc_result(id, json!({})),
         // Een client breekt een lopende aanroep af (#575): alleen opdrachten
         // van extensies zijn af te breken; die krijgen hun AbortSignal.
@@ -3455,7 +3599,14 @@ async fn mcp_handler(
         ),
     };
 
-    (StatusCode::OK, Json(response))
+    // JSON-RPC notifications omit the id member (an explicit null id is
+    // still a request). Dispatch first so cancellation keeps its side effect.
+    // Streamable HTTP requires accepted notifications to have no JSON body.
+    if body.get("id").is_none() {
+        StatusCode::ACCEPTED.into_response()
+    } else {
+        (StatusCode::OK, Json(response)).into_response()
+    }
 }
 
 /// Start the MCP server. This is an async function that runs forever (until
@@ -3606,6 +3757,31 @@ mod tests {
     }
 
     #[test]
+    fn werkplek_namen_zijn_aliassen_van_app_tools() {
+        assert_eq!(canonieke_toolnaam("pdf_go_to_page"), "app_go_to_page");
+        assert_eq!(canonieke_toolnaam("app_go_to_page"), "app_go_to_page", "app_* blijft werken");
+        assert_eq!(canonieke_toolnaam(STAND_TOOL), STAND_TOOL);
+        assert_eq!(canonieke_toolnaam("pdf_"), "pdf_");
+        assert_eq!(canonieke_toolnaam("get_pdf_metadata"), "get_pdf_metadata");
+        assert_eq!(canonieke_toolnaam("ext_a__x"), "ext_a__x");
+        // Elke app_* van de publieke lijst is ook als pdf_* aan te roepen, en
+        // de lijst noemt geen pdf_-dubbelen.
+        let publiek = tools_list_voor(Profiel::Publiek);
+        let namen: Vec<&str> = publiek["tools"].as_array().unwrap().iter()
+            .map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(!namen.iter().any(|n| n.starts_with(WERKPLEK_VOORVOEGSEL)), "geen pdf_* in tools/list");
+        for n in namen.iter().filter(|n| n.starts_with("app_")) {
+            let alias = format!("{WERKPLEK_VOORVOEGSEL}{}", &n["app_".len()..]);
+            assert_eq!(canonieke_toolnaam(&alias), *n);
+            assert!(aanroep_beschikbaar(&canonieke_toolnaam(&alias), Profiel::Publiek), "{alias}");
+        }
+        // pdf_stand mag in het publieke profiel; een alias van ontwikkelgereedschap niet.
+        assert!(aanroep_beschikbaar(STAND_TOOL, Profiel::Publiek));
+        assert!(!aanroep_beschikbaar(&canonieke_toolnaam("pdf_get_recent_console"), Profiel::Publiek));
+        assert!(aanroep_beschikbaar(&canonieke_toolnaam("pdf_get_recent_console"), Profiel::Ontwikkeling));
+    }
+
+    #[test]
     fn publieke_catalogus_is_gelijk_aan_verpakte_tools() {
         let publiek = tools_list_voor(Profiel::Publiek);
         let verpakt: Value = serde_json::from_str(include_str!("../../../mcp-stdio/tools.json"))
@@ -3618,7 +3794,7 @@ mod tests {
         use crate::mcp_tool_meta::Profiel;
         let publiek = tools_list_voor(Profiel::Publiek);
         let arr = publiek["tools"].as_array().unwrap();
-        assert_eq!(arr.len(), 94);
+        assert_eq!(arr.len(), 96);
         for t in arr {
             let a = &t["annotations"];
             assert!(a["title"].as_str().map_or(false, |s| !s.is_empty()), "{} zonder titel", t["name"]);
@@ -3934,15 +4110,15 @@ mod tests {
         let expected = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
             .join("..")
-            .join("test pdf-bestanden")
-            .join("Originele bestanden");
+            .join("fixtures")
+            .join("pdf");
 
         assert_eq!(resolve_test_pdfs_dir(None), expected);
     }
 
     /// Exercises the real `tool_list_test_pdfs` over a fixture directory.
     /// We point `AppState.test_pdfs_dir` at the repo's actual test corpus
-    /// (`../../test pdf-bestanden/Originele bestanden`) so this also serves
+    /// (`../../fixtures/pdf`) so this also serves
     /// as a smoke test when the GUI binary cannot be launched.
     #[test]
     fn tool_list_test_pdfs_returns_corpus_entries() {
@@ -3951,8 +4127,8 @@ mod tests {
         let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
             .join("..")
-            .join("test pdf-bestanden")
-            .join("Originele bestanden");
+            .join("fixtures")
+            .join("pdf");
         if !corpus.is_dir() {
             // Skip gracefully if the corpus isn't checked in on this clone.
             eprintln!("skipping: corpus dir not found at {:?}", corpus);
@@ -4019,13 +4195,13 @@ mod tests {
         use std::path::PathBuf;
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         // CARGO_MANIFEST_DIR is `<repo>/open-pdf-studio/src-tauri`. The corpus
-        // sits at `<repo>/test pdf-bestanden/Originele bestanden/`.
+        // sits at `<repo>/fixtures/pdf/`.
         let corpus = manifest_dir
             .ancestors()
             .nth(2)
             .unwrap()
-            .join("test pdf-bestanden")
-            .join("Originele bestanden");
+            .join("fixtures")
+            .join("pdf");
         if !corpus.exists() {
             eprintln!("[skip] corpus dir missing at {:?}", corpus);
             return;
@@ -4074,8 +4250,8 @@ mod tests {
             .ancestors()
             .nth(2)
             .unwrap()
-            .join("test pdf-bestanden")
-            .join("Originele bestanden");
+            .join("fixtures")
+            .join("pdf");
         if !corpus.exists() {
             eprintln!("[skip] corpus dir missing at {:?}", corpus);
             return;
@@ -4128,8 +4304,8 @@ mod tests {
             .ancestors()
             .nth(2)
             .unwrap()
-            .join("test pdf-bestanden")
-            .join("Originele bestanden");
+            .join("fixtures")
+            .join("pdf");
         if !corpus.exists() {
             eprintln!("[skip] corpus dir missing");
             return;
@@ -4229,6 +4405,8 @@ mod tests {
             "app_set_measure_scale",
             "app_get_takeoff",
             "app_place_schedule",
+            "app_update_schedule",
+            "app_delete_schedule",
             "app_structural_layout",
             "app_list_commands",
             "app_run_command",
@@ -4300,5 +4478,214 @@ mod tests {
                 "{name} message should explain missing AppHandle, got: {msg}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod http_notification_tests {
+    use super::*;
+
+    struct Server {
+        url: String,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for Server {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn server(access: Toegang) -> Server {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut state = AppState::nieuw(Profiel::Publiek, address.port(), None);
+        state.toegang = access;
+        let app = Router::new()
+            .route("/mcp", post(mcp_handler))
+            .with_state(state);
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        Server {
+            url: format!("http://{address}/mcp"),
+            task,
+        }
+    }
+
+    async fn assert_empty_accepted(response: reqwest::Response) {
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert!(response.headers().get("content-type").is_none());
+        assert!(response.bytes().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn strict_client_can_initialize_then_list_tools() {
+        let server = server(Toegang::Lokaal).await;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let initialized = client
+            .post(&server.url)
+            .json(&json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": { "protocolVersion": "2025-03-26", "capabilities": {},
+                    "clientInfo": { "name": "strict-regression-client", "version": "1" } }
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(initialized.status(), StatusCode::OK);
+        let initialized: Value = initialized.json().await.unwrap();
+        assert_eq!(initialized["id"], 1);
+        assert!(initialized["result"]["capabilities"]["tools"].is_object());
+        assert_empty_accepted(
+            client
+                .post(&server.url)
+                .json(&json!({
+                    "jsonrpc": "2.0", "method": "notifications/initialized"
+                }))
+                .send()
+                .await
+                .unwrap(),
+        )
+        .await;
+        let tools = client
+            .post(&server.url)
+            .json(&json!({
+                "jsonrpc": "2.0", "id": "tools-after-notification", "method": "tools/list"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(tools.status(), StatusCode::OK);
+        assert_eq!(tools.headers()["content-type"], "application/json");
+        let tools: Value = tools.json().await.unwrap();
+        assert_eq!(tools["id"], "tools-after-notification");
+        assert!(!tools["result"]["tools"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn all_notifications_are_bodyless_including_unknown_methods() {
+        let server = server(Toegang::Lokaal).await;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        for method in [
+            "notifications/initialized",
+            "initialized",
+            "notifications/cancelled",
+            "notifications/progress",
+            "notifications/future-extension",
+            "tools/list",
+        ] {
+            assert_empty_accepted(
+                client
+                    .post(&server.url)
+                    .json(&json!({
+                        "jsonrpc": "2.0", "method": method, "params": { "requestId": "cancel-me" }
+                    }))
+                    .send()
+                    .await
+                    .unwrap(),
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_ids_keep_json_results_and_errors() {
+        let server = server(Toegang::Lokaal).await;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        for id in [json!(0), json!(""), json!("request"), Value::Null] {
+            for method in ["tools/list", "notifications/initialized", "unknown/method"] {
+                let response = client
+                    .post(&server.url)
+                    .json(&json!({
+                        "jsonrpc": "2.0", "id": id, "method": method
+                    }))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                assert_eq!(response.headers()["content-type"], "application/json");
+                let response: Value = response.json().await.unwrap();
+                assert_eq!(response["id"], id);
+                if method == "unknown/method" {
+                    assert_eq!(response["error"]["code"], jsonrpc_error::METHOD_NOT_FOUND);
+                } else {
+                    assert!(response.get("result").is_some());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn notifications_still_require_local_origin_or_bearer_access() {
+        let local = server(Toegang::Lokaal).await;
+        let managed = server(Toegang::Geheim(Arc::from("test-secret"))).await;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let body = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+        for request in [
+            client
+                .post(&local.url)
+                .header("Origin", "https://untrusted.example"),
+            client.post(&local.url).header("Host", "untrusted.example"),
+            client.post(&managed.url),
+            client.post(&managed.url).bearer_auth("wrong-secret"),
+            client
+                .post(&managed.url)
+                .bearer_auth("test-secret")
+                .header("Origin", "http://localhost"),
+        ] {
+            assert_eq!(
+                request.json(&body).send().await.unwrap().status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        assert_empty_accepted(
+            client
+                .post(&managed.url)
+                .bearer_auth("test-secret")
+                .json(&body)
+                .send()
+                .await
+                .unwrap(),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn malformed_messages_are_not_accepted_as_notifications() {
+        let server = server(Toegang::Lokaal).await;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        for body in [json!({}), json!({ "method": 1 }), json!([])] {
+            let response = client.post(&server.url).json(&body).send().await.unwrap();
+            assert_ne!(response.status(), StatusCode::ACCEPTED);
+            let response: Value = response.json().await.unwrap();
+            assert_eq!(response["error"]["code"], jsonrpc_error::INVALID_REQUEST);
+        }
+        let response = client
+            .post(&server.url)
+            .header("content-type", "application/json")
+            .body("{")
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error());
     }
 }

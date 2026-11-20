@@ -3,6 +3,13 @@ import { annotProps, sectionVis, updateAnnotProp, cycleSelectNext, getCurrentAnn
 import { depthQuantity, formatDepthQuantity } from '../../../annotations/measure-depth.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { BREUK_PRECISIES, isImperialeLengte } from '../../../core/voet-inch.js';
+import { maatEenheid } from '../../../core/maat-opmaak.js';
+import { OPPERVLAKTE_KEUZES } from '../../../annotations/oppervlakte-eenheid.js';
+import { state, getActiveDocument } from '../../../core/state.js';
+import { openDialog } from '../../stores/dialogStore.js';
+import { documentHeeftSchaal } from '../../../annotations/schaal-op-punt.js';
+import { meetZonderSchaal } from '../../../annotations/eenhedenstelsel.js';
 
 // Uitloop van de maatlijn en de hulplijnen, in millimeters op papier
 // (maatlijn-geometrie.js). Leeg = automatisch.
@@ -11,6 +18,9 @@ const PAPIER_MM_VELDEN = [
   ['dimExtGapMm', 'measurement.extGap'],
   ['dimExtOvershootMm', 'measurement.extOvershoot'],
 ];
+
+// Het type van een maat (lengtemaat); de precisie kent daar drie standen.
+const MAAT_TYPE = 'measureDistance';
 
 function papierMm(waarde) {
   if (waarde === '' || waarde === null || waarde === undefined) return undefined;
@@ -21,6 +31,20 @@ function papierMm(waarde) {
 export default function MeasurementSection() {
   const { t } = useTranslation('properties');
   const isLocked = () => annotProps.locked === true || annotProps.locked === 'mixed';
+
+  // Geen schaal op het document (#1158): de maat is dan de maat op papier.
+  // Het paneel zegt dat en biedt Kalibreren aan. Een maat met een eigen
+  // schaal heeft de documentschaal niet nodig.
+  const zonderSchaal = () => {
+    void annotProps.measureText; void annotProps.measureUnit; void annotProps.measureScale;
+    const ann = getCurrentAnnotation();
+    const standaarden = !ann || ann.id === '__tool-defaults__';
+    if (!standaarden && Number(ann.measureScale) > 0) return false;
+    return meetZonderSchaal({
+      heeftSchaalbron: documentHeeftSchaal(getActiveDocument()),
+      legacySchaal: state.preferences?.measureScale,
+    });
+  };
 
   // Oppervlak (lengte × diepte) of inhoud (vlak × diepte), #311. Leest de
   // velden van het paneel zodat het meerekent bij een andere diepte/eenheid.
@@ -33,6 +57,26 @@ export default function MeasurementSection() {
     return depthQuantity(ann);
   };
   const depthUnit = () => String(annotProps.measureUnit || '').replace(/²$/, '');
+
+  // Precisie: bij een maat drie standen (automatisch, breuk, decimalen); bij
+  // een meetvlak of omtrek alleen decimalen, zoals voorheen.
+  const isMaat = () => annotProps.type === MAAT_TYPE;
+  const precisieWaarde = () => {
+    if (!isMaat()) return String(annotProps.measurePrecision);
+    const f = Number(annotProps.measureFraction);
+    if (annotProps.measureFraction === '' || annotProps.measureFraction === 'auto' || annotProps.measureFraction == null) return 'auto';
+    if (!(f > 0)) return String(annotProps.measurePrecision);
+    // Alleen inches: uitdrukkelijk gekozen, of een maat in inches.
+    return annotProps.measureInchOnly || maatEenheid(annotProps.measureUnit) === 'in' ? `i${f}` : `f${f}`;
+  };
+  const inVoet = () => maatEenheid(annotProps.measureUnit) === 'ft';
+
+  // Weergave-eenheid van de oppervlakte (#1129). Een eenheid buiten de lijst
+  // (via MCP of een bestand gezet, zoals yd²) blijft kiesbaar.
+  const vlakEenheden = () => {
+    const huidig = annotProps.measureAreaUnit;
+    return huidig && !OPPERVLAKTE_KEUZES.includes(huidig) ? [...OPPERVLAKTE_KEUZES, huidig] : OPPERVLAKTE_KEUZES;
+  };
 
   return (
     <Show when={sectionVis.measurement}>
@@ -137,6 +181,33 @@ export default function MeasurementSection() {
           </select>
         </div>
 
+        <Show when={zonderSchaal()}>
+          <div class="property-group">
+            <span class="prop-hint-text">{t('measurement.noScaleHint')}</span>
+          </div>
+          <div class="property-group">
+            <button type="button" class="prop-action-btn"
+              onClick={() => openDialog('calibration', { referencePixelLength: null })}>
+              {t('measurement.noScaleCalibrate')}
+            </button>
+          </div>
+        </Show>
+
+        {/* Oppervlakte in acres, hectares, ... (#1129): alleen de weergave van
+            de oppervlakte; lengtes en zijdematen houden de eenheid hierboven. */}
+        <Show when={annotProps.type === 'measureArea'}>
+          <div class="property-group">
+            <label>{t('measurement.areaUnit')}</label>
+            <select value={annotProps.measureAreaUnit || ''} disabled={isLocked()}
+              title={t('measurement.areaUnitTooltip')}
+              onDblClick={cycleSelectNext}
+              onChange={(e) => updateAnnotProp('measureAreaUnit', e.target.value)}>
+              <option value="">{t('measurement.areaUnitAuto')}</option>
+              <For each={vlakEenheden()}>{(u) => <option value={u}>{u}</option>}</For>
+            </select>
+          </div>
+        </Show>
+
         {/* Diepte (#311): hoogte van een wand, dikte van een vloer, … in de
             eenheid van de meting. Maakt van een lengte een oppervlak en van
             een vlak een inhoud. */}
@@ -159,9 +230,33 @@ export default function MeasurementSection() {
 
         <div class="property-group">
           <label>{t('measurement.precision')}</label>
-          <select value={annotProps.measurePrecision} disabled={isLocked()}
+          {/* Getalopmaak van een maat (core/maat-opmaak.js): "auto" volgt de
+              viewport van de pagina of de voorkeur, "f16" = 1/16" (voet en
+              inch), een getal = uitdrukkelijk zoveel decimalen. */}
+          <select value={precisieWaarde()}
+            disabled={isLocked()}
             onDblClick={cycleSelectNext}
-            onChange={(e) => updateAnnotProp('measurePrecision', e.target.value)}>
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === 'auto') updateAnnotProp('measureFraction', 'auto');
+              else if (v.startsWith('f') || v.startsWith('i')) updateAnnotProp('measureFraction', v);
+              else updateAnnotProp('measurePrecision', v);
+            }}>
+            <Show when={isMaat()}>
+              <option value="auto">{t('measurement.auto')}</option>
+            </Show>
+            {/* Voet-inch (alleen bij een maat in voet) en alleen inches; het
+                label toont de kleinste stap: 0'-0 1/16" of 1/16". */}
+            <Show when={isMaat() && inVoet()}>
+              <For each={BREUK_PRECISIES}>
+                {(n) => <option value={`f${n}`}>{n === 1 ? `0'-1"` : `0'-0 1/${n}"`}</option>}
+              </For>
+            </Show>
+            <Show when={isMaat() && isImperialeLengte(maatEenheid(annotProps.measureUnit))}>
+              <For each={BREUK_PRECISIES}>
+                {(n) => <option value={`i${n}`}>{n === 1 ? `1"` : `1/${n}"`}</option>}
+              </For>
+            </Show>
             <option value="0">1</option>
             <option value="1">0.1</option>
             <option value="2">0.01</option>

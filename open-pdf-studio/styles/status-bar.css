@@ -72,6 +72,26 @@
   font-weight: 500;
 }
 
+/* Actieve telgroep naast het telgereedschap (#1004): kleurvlakje + naam. */
+.status-count-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.status-count-group::before {
+  content: '—';
+  color: var(--theme-status-text-label);
+}
+
+.status-count-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--theme-status-text-label);
+}
+
 /* Status bar navigation controls */
 .status-nav-btn {
   background: transparent;
@@ -282,4 +302,9 @@
 .status-zoom-input::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+/* Gedeelde beoordeling (#237): vet zolang er ongeziene wijzigingen zijn. */
+.status-review-new span {
+  font-weight: 600;
 }

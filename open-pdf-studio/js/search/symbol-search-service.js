@@ -6,6 +6,23 @@ import { applyAnnotationBatch } from '../plugins/annotation-batch.js';
 import { isLayerLocked, layerForNewAnnotation } from '../annotations/annotatie-lagen.js';
 import { countCategories } from '../solid/stores/countStore.js';
 import { binaryImage, cropTemplate, matchSymbols, planSymbolCounts } from './symbol-matcher.js';
+import { normaliseFilters, reviewMatches, reviewSummary, detectReviewRegions, textBoxesFromItems } from './symbol-review.js';
+import { createRasterScan, searchSymbolsInWorker } from '../pdf/raster-scan-rust.js';
+import { isTauri, isMobile, invoke } from '../core/platform.js';
+
+// Matching in Rust on the desktop (docs/rust-stappen.md): the raster is the
+// one pdf.js draws below, so the matches are those of the JS matcher, which
+// stays as the fallback. `window.__opdsSymbolRender = 'pdfium'` also lets the
+// PDFium worker render the pages (faster on heavy sheets; its raster differs
+// by about a pixel along edges, which moves matches across the threshold).
+let _scan = null;
+async function rasterScan() {
+  if (!_scan) {
+    const { getCachedPdfBytes } = await import('../pdf/loader.js');
+    _scan = createRasterScan({ inTauri: isTauri, mobile: isMobile, call: invoke, cachedBytes: getCachedPdfBytes });
+  }
+  return _scan;
+}
 
 const queries = new Map();
 
@@ -29,8 +46,23 @@ export async function openSymbolSearch(documentId) {
     rotations.set(pageNumber, extra);
     return {
       page,
+      extra,
       rotation: (page.rotate + extra) % 360,
       base: page.getViewport({ scale: 1, rotation: (page.rotate + extra) % 360 })
+    };
+  }
+  // The raster that render() would draw, described for the worker: same size,
+  // the view rotation on top of /Rotate.
+  async function rasterFor(file, pageNumber, scale) {
+    const g = await geometry(pageNumber);
+    const viewport = g.page.getViewport({ scale, rotation: g.rotation });
+    return {
+      path: file.path,
+      page_index: pageNumber - 1,
+      width: Math.ceil(viewport.width),
+      height: Math.ceil(viewport.height),
+      rotation: ((g.extra % 360) + 360) % 360,
+      expect_len: file.expectLen
     };
   }
   async function render(pageNumber, canvas, scale, signal) {
@@ -56,11 +88,24 @@ export async function openSymbolSearch(documentId) {
       signal?.removeEventListener('abort', abort);
     }
   }
+  // Legend and title block of a page, read from its text layer in the same
+  // page-view coordinates as the matches. No text, no regions: detection
+  // only ever adds a review flag, so a failure here must not fail the search.
+  async function reviewRegions(pageNumber) {
+    try {
+      const g = await geometry(pageNumber),
+        text = await g.page.getTextContent();
+      return detectReviewRegions(textBoxesFromItems(text.items, g.base), g.base).map(r => ({ page: pageNumber, ...r }));
+    } catch (e) {
+      if (e?.message === 'DOCUMENT_CHANGED') throw e;
+      return [];
+    }
+  }
   return {
     check,
     render,
     pageCount: pdf.numPages,
-    async search({ templatePage, rect, pages, threshold = .75, rotations: angles = [0], scales = [1] }, options = {}) {
+    async search({ templatePage, rect, pages, threshold = .75, rotations: angles = [0], scales = [1], excludeRegions, withinRegion, minScore, detectRegions }, options = {}) {
       if (!Number.isInteger(templatePage)
         || templatePage < 1
         || templatePage > pdf.numPages
@@ -68,42 +113,80 @@ export async function openSymbolSearch(documentId) {
         || !pages.length
         || pages.length > 20
         || pages.some(p => !Number.isInteger(p) || p < 1 || p > pdf.numPages)) throw new Error('INVALID_PAGES');
+      const filters = normaliseFilters({ excludeRegions, withinRegion, minScore, detectRegions });
       check();
       let scale = 2;
       for (const p of new Set([templatePage, ...pages])) {
         const g = await geometry(p);
         scale = Math.min(scale, 1200 / Math.max(g.base.width, g.base.height));
       }
+      const scan = isTauri() ? await rasterScan() : null,
+        file = scan?.usable() ? scan.file(doc.filePath) : null;
+      check();
+      let done = 0;
+      const inWorker = file && rect && globalThis.__opdsSymbolRender === 'pdfium' ? await searchSymbolsInWorker(scan, {
+        rasterFor: p => rasterFor(file, p, scale),
+        templatePage,
+        crop: [rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale],
+        pages,
+        threshold,
+        rotations: angles,
+        scales,
+        signal: options.signal,
+        onPage: page => options.onProgress?.({ page, fraction: ++done / pages.length })
+      }) : null;
+      check();
       const canvas = document.createElement('canvas');
-      const matches = [];
-      let truncated = false;
+      const matches = [],
+        detectedRegions = [];
+      let truncated = false,
+        excluded = 0;
       try {
-        await render(templatePage, canvas, scale, options.signal);
-        const template = cropTemplate(binaryImage(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)), { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale });
+        let template = null;
+        if (!inWorker) {
+          await render(templatePage, canvas, scale, options.signal);
+          template = cropTemplate(binaryImage(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)), { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale });
+        }
         for (const [index, page] of [...new Set(pages)].entries()) {
-          await render(page, canvas, scale, options.signal);
-          const found = await matchSymbols(binaryImage(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)), template, {
-            threshold,
-            rotations: angles,
-            scales,
-            signal: options.signal,
-            onProgress: f => options.onProgress?.({ page, fraction: (index + f) / pages.length })
-          });
+          let found = inWorker?.get(page);
+          if (!found) {
+            await render(page, canvas, scale, options.signal);
+            const image = binaryImage(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height));
+            found = scan?.usable() ? await scan.match(image, template, { threshold, rotations: angles, scales }) : null;
+            if (found) {
+              if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+              options.onProgress?.({ page, fraction: (index + 1) / pages.length });
+            } else {
+              found = await matchSymbols(image, template, {
+                threshold,
+                rotations: angles,
+                scales,
+                signal: options.signal,
+                onProgress: f => options.onProgress?.({ page, fraction: (index + f) / pages.length })
+              });
+            }
+          }
           check();
           truncated ||= found.truncated;
-          for (const m of found.matches) {
+          const regions = filters.detect && found.matches.length ? await reviewRegions(page) : [];
+          check();
+          detectedRegions.push(...regions);
+          // Regions the caller ruled out go first, so they do not use up the
+          // result limit; everything else stays and is at most flagged.
+          const reviewed = reviewMatches(found.matches.map(m => ({
+            page,
+            bounds: { x: m.x / scale, y: m.y / scale, width: m.width / scale, height: m.height / scale },
+            score: m.score,
+            rotation: m.rotation,
+            scale: m.scale
+          })), filters, regions);
+          excluded += reviewed.excluded;
+          for (const m of reviewed.matches) {
             if (matches.length >= 1000) {
               truncated = true;
               break;
             }
-            matches.push({
-              id: crypto.randomUUID(),
-              page,
-              bounds: { x: m.x / scale, y: m.y / scale, width: m.width / scale, height: m.height / scale },
-              score: m.score,
-              rotation: m.rotation,
-              scale: m.scale
-            });
+            matches.push({ id: crypto.randomUUID(), ...m });
           }
         }
         const queryId = crypto.randomUUID(),
@@ -112,6 +195,8 @@ export async function openSymbolSearch(documentId) {
             documentId,
             revision,
             matches,
+            summary: reviewSummary(matches, excluded),
+            detectedRegions,
             truncated,
             categories: countCategories().map(c => ({ ...c }))
           };

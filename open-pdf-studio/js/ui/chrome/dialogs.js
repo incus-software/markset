@@ -9,6 +9,9 @@ import {
   setLoadingCancelDisabled as setCancelDisabled,
 } from '../../bridge.js';
 import i18next from '../../i18n/config.js';
+import { magPrinten, beschrijfBeveiliging } from '../../pdf/document-beveiliging.js';
+import { bronPad } from '../../pdf/wachtwoord-pdf.js';
+import { zichtbareWaarden } from '../../pdf/documentgegevens.js';
 
 // Show loading overlay. Met `voortgang` (0..1) een voortgangsbalk, met
 // `annuleren` (functie) een knop Annuleren (ook Esc); zonder opties alleen de
@@ -59,7 +62,8 @@ export function hideDocPropertiesDialog() {
 
 async function gatherDocProperties() {
   const doc = getActiveDocument();
-  const filePath = doc?.filePath || '-';
+  // Het bestand van de gebruiker, niet een (ontsleutelde) werkkopie.
+  const filePath = doc?.saveTargetPath || bronPad(doc) || '-';
   const fileName = filePath !== '-' ? filePath.split(/[\\/]/).pop() : '-';
 
   let fileSize = '-';
@@ -79,11 +83,13 @@ async function gatherDocProperties() {
   try {
     const metadata = await doc.pdfDoc.getMetadata();
     const info = metadata.info || {};
-    title = info.Title || '-';
-    author = info.Author || '-';
-    subject = info.Subject || '-';
-    keywords = info.Keywords || '-';
-    creator = info.Creator || '-';
+    // Met wat in het eigenschappen-paneel is ingevuld (#1017).
+    const zichtbaar = zichtbareWaarden(info, doc.documentgegevens);
+    title = zichtbaar.title || '-';
+    author = zichtbaar.author || '-';
+    subject = zichtbaar.subject || '-';
+    keywords = zichtbaar.keywords || '-';
+    creator = zichtbaar.creator || '-';
     producer = info.Producer || '-';
     pdfVersion = info.PDFFormatVersion || '-';
     created = formatPdfDate(info.CreationDate) || '-';
@@ -109,6 +115,8 @@ async function gatherDocProperties() {
     fileName, filePath, fileSize,
     title, author, subject, keywords, creator, producer,
     pdfVersion, pageCount, pageSize, created, modified,
+    // Documentbeveiliging (#378): wat opslaan schrijft.
+    security: beschrijfBeveiliging(doc?.beveiliging || null),
   };
 }
 
@@ -220,7 +228,27 @@ export function showPrintDialog() {
     showMessage(i18next.t('noDocumentOpen'));
     return;
   }
+  // De rechten van een beveiligd document (#378) staan printen niet toe.
+  if (!magPrinten(getActiveDocument())) {
+    showMessage(i18next.t('protectedPdfNoPrint'));
+    return;
+  }
   openDialog('print', { currentPage: getActiveDocument()?.currentPage || 1 });
+}
+
+// Documentbeveiliging (#378): wachtwoorden en rechten, alleen op het bureaublad
+// (Rust versleutelt). Ook voor een alleen-lezen beveiligd document: daar
+// wordt de beveiliging juist vervangen of verwijderd.
+export function showSecurityDialog() {
+  if (!isTauri()) {
+    showMessage(meldingTekst(i18next.t.bind(i18next), i18next.t('dialogs:protectPdf.title')));
+    return;
+  }
+  if (!getActiveDocument()?.pdfDoc) {
+    showMessage(i18next.t('noDocumentOpen'));
+    return;
+  }
+  openDialog('protect-pdf');
 }
 
 export function hidePrintDialog() {

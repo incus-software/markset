@@ -42,6 +42,8 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1' # 1.100 breaks tauri-build 2.6.2 (build-dir layout)
 
       - name: Install Rust targets (macOS universal)
         if: matrix.platform == 'macos-26'
@@ -83,6 +85,9 @@ jobs:
           OPS_UNICODE_FONT_DIR: ${{ runner.temp }}/ops-unicode-fonts
         run: node scripts/prepare-unicode-fonts.mjs
 
+      - name: Test native PNG embedding
+        run: cargo test --locked -p open-pdf-image
+
       - name: Run unit tests
         env:
           OPS_UNICODE_FONT_DIR: ${{ runner.temp }}/ops-unicode-fonts
@@ -100,6 +105,107 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           npm run test:hosted-bridge
+
+      - name: Install Chromium for PDF regression tests (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: npx playwright install chromium
+
+      - name: Test overlapping zoom renders and saved annotation dates
+        run: |
+          node scripts/test-pdfjs-zoom-browser.mjs
+          node scripts/test-annotation-dates-browser.mjs
+
+      - name: Test embedded PDF scale override (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-pdf-scale-override-browser.mjs
+
+      - name: Test pdf-lib XRef rejection and save recovery (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/pdf-lib-xref-browser.mjs
+
+      - name: Test textbox colour and defaults (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-text-color-browser.mjs
+
+      - name: Test high-contrast palette and feedback (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-high-contrast-browser.mjs
+
+      - name: Test MCP closed perimeter and PDF save (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-mcp-perimeter-browser.mjs
+
+      - name: Test MCP document screenshot in both views (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-mcp-screenshot-browser.mjs
+
+      - name: Test new document from a blank page and from a template (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-blank-template-browser.mjs
+
+      - name: Test merging PDFs through the Merge dialog (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-merge-pdfs-browser.mjs
+
+      - name: Test parametric symbol picker (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-parametric-picker-browser.mjs
+
+      - name: Test PDF link views and delayed navigation (Linux)
+        if: runner.os == 'Linux'
+        working-directory: open-pdf-studio
+        run: node scripts/test-link-view-browser.mjs
+
+      - name: Test Space pan and Ctrl-wheel zoom (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-space-pan-browser.mjs
+
+      - name: Test startup tool preference (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-startup-tool-browser.mjs
+
+      - name: Test presentation view (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-presentation-browser.mjs
+
+      - name: Test Hand tool click and rectangle zoom (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-hand-zoom-browser.mjs
+
+      - name: Test dragging on a number field (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-drag-number-browser.mjs
+
+      - name: Test Bezier segments on polylines and polygons (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-bezier-editing-browser.mjs
+
+      - name: Test compare wheel isolation (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-compare-wheel-browser.mjs
+
+      - name: Test tab switch across view modes (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-tab-view-mode-browser.mjs
+
+      - name: Text highlight blending regression
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-highlight-blending-browser.mjs
+
+      - name: Test deleted comment popup lifecycle (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-comment-popup-browser.mjs
+
+      - name: Test compact save and print controls (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-save-print-ui-browser.mjs
+
+      - name: Test reverse font substitutions and save roundtrip (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/test-fontkit-reverse-browser.mjs
+
+      - name: Test Windows user updater configuration
+        run: node --test scripts/windows-user-update.test.mjs
 
       - name: Run Linux release regression tests
         run: node --test scripts/linux-release-config.test.mjs
@@ -155,12 +261,19 @@ jobs:
         run: |
           mkdir -p src-tauri/binaries/linux-x64
           curl -L "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8076/pdfium-linux-x64.tgz" -o /tmp/pdfium-linux.tgz
+          # Checksum and revision: src-tauri/binaries/pdfium-runtime.json (#635).
+          echo "d9d67bc40af03aef4fe28a60b19b1086f28ace019c8c9caf19cb7fe3d14ceca3  /tmp/pdfium-linux.tgz" | sha256sum -c -
           tar xzf /tmp/pdfium-linux.tgz -C /tmp lib/libpdfium.so
           cp /tmp/lib/libpdfium.so src-tauri/binaries/linux-x64/libpdfium.so
 
       - name: Build Tauri app
         if: matrix.platform == 'windows-latest'
         run: npm run tauri build -- --no-bundle
+
+      - name: Test Windows duplex buffer handling (no print jobs)
+        if: matrix.platform == 'windows-latest'
+        working-directory: .
+        run: cargo test --locked --manifest-path open-pdf-studio/scripts/print-native-tests/Cargo.toml print_devmode::tests::duplex_keeps_paper_orientation_copies_and_driver_data -- --exact
 
       # Tauri 2.10 downloads its own, older linuxdeploy build, which ignores
       # LINUXDEPLOY_EXCLUDED_LIBRARIES, so the display stack ended up in the
@@ -185,6 +298,28 @@ jobs:
 
       # The binary must not need a distro-specific libtesseract/liblept soname:
       # the .deb, the AppImage and repackagers such as the AUR use it as is (#620).
+      - name: Test duplex IPP and portal settings (no print jobs)
+        if: matrix.platform == 'ubuntu-22.04'
+        working-directory: .
+        run: cargo test --release -p open-pdf-studio --lib duplex_reaches_ipp_and_portal_settings
+
+      - name: Test HTTP MCP notification responses (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        working-directory: .
+        run: cargo test --release --locked -p open-pdf-studio --lib mcp_server::http_notification_tests
+
+      - name: Test MCP capture content and path diagnostics (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        working-directory: .
+        run: cargo test --release -p open-pdf-studio --lib mcp_server::capture_result::tests
+
+      - name: Test interactive form background ownership (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        working-directory: .
+        run: |
+          cargo test --release -p pdfium-worker render::tests -- --test-threads=1
+          cargo test --release -p open-pdf-studio --lib form_display_tests -- --test-threads=1
+
       - name: Verify no system OCR library dependency (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: bash scripts/linux-ocr-linkage-check.sh ../target/release/open-pdf-studio
@@ -270,6 +405,57 @@ jobs:
   # werkplek (#704: opaque sandbox, geen 'self', subpad): openen, tekenen,
   # annoteren en opslaan in headless Chromium, met nul overtredingen. Los van
   # de desktop-builds; lokaal: npm run test:hosted-csp.
+  flatpak-lint:
+    # Flathub readiness (#389): validates the desktop file and the metainfo and
+    # lints the manifest as it would be submitted (flatpak-builder-lint). Runs
+    # only when the Flatpak changes or the lockfiles its offline sources are
+    # generated from (flatpak/**, Cargo.lock, package-lock.json).
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect Flatpak changes
+        id: changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            changed=true
+          elif git diff --name-only "$base" HEAD \
+              | grep -qE '^(flatpak/|Cargo\.lock$|open-pdf-studio/package-lock\.json$|open-pdf-studio/scripts/flatpak-flathub\.test\.mjs$|\.github/workflows/ci\.yml$)'; then
+            changed=true
+          else
+            changed=false
+          fi
+          echo "flatpak=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.flatpak == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install Flatpak tooling
+        if: steps.changes.outputs.flatpak == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak appstream desktop-file-utils
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          # flatpak-builder, flathub-build and flatpak-builder-lint, the same
+          # tools the Flathub builders use.
+          flatpak install --user -y --noninteractive flathub org.flatpak.Builder
+
+      - name: Validate and lint the Flatpak
+        if: steps.changes.outputs.flatpak == 'true'
+        run: bash flatpak/ci-check.sh lint
+
   hosted-csp:
     # Vast op 24.04: Playwright 1.59 kent het nieuwere ubuntu-latest (26.04) niet.
     runs-on: ubuntu-24.04
@@ -293,3 +479,124 @@ jobs:
 
       - name: Hosted bundle under a strict CSP
         run: npm run test:hosted-csp
+
+      - name: Central review dialog lifecycle and access controls
+        run: node scripts/test-central-review-browser.mjs
+
+      - name: Central PDF snapshot and PDF/XFDF export
+        run: node scripts/test-central-review-pdf-browser.mjs
+
+  # De Python-bibliotheek (#518): de gegenereerde laag loopt gelijk met
+  # mcp-stdio/tools.json, de tests (tegen een nep-MCP-server, zonder app) slagen
+  # op elk platform en sdist + wheel bouwen.
+  python-library:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: '3.10' }
+          - { os: ubuntu-latest, python: '3.13' }
+          - { os: windows-latest, python: '3.12' }
+          - { os: macos-latest, python: '3.12' }
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Generated tool layer is up to date
+        run: node python/scripts/generate-tools.mjs --check
+
+      - name: Test
+        working-directory: python
+        run: python -m unittest discover -s tests -t tests -v
+
+      - name: Install collaboration storage SDK
+        run: python -m pip install -r collaboration-server/requirements.txt
+
+      - name: Collaboration storage and HTTP tests
+        working-directory: collaboration-server
+        run: python -m unittest discover -s tests -v
+
+      - name: Collaboration event compatibility with Tauri
+        run: node collaboration-server/tests/review-compatibility.mjs
+
+      - name: Test production JS clients against SQLite
+        env:
+          PYTHON: python
+        run: node --test open-pdf-studio/js/review/central-review-integration.test.mjs
+
+      - name: Build sdist and wheel
+        shell: bash
+        run: |
+          cp LICENSE.md python/LICENSE.md
+          python -m pip install --upgrade build
+          python -m build python --outdir python/dist
+
+  collaboration-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build collaboration image locally (no publication)
+        run: docker build -t opds-review-test collaboration-server
+      - name: Smoke test production server and persistent volume
+        run: python3 collaboration-server/tests/container_smoke.py opds-review-test
+
+  collaboration-objectstore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: minio/minio
+          ref: 7aac2a2c5b7c882e68c1ce017d8256be2feea27f
+          path: .ci-minio
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.8'
+          cache-dependency-path: .ci-minio/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install collaboration dependencies
+        run: python -m pip install -r collaboration-server/requirements.txt
+      - name: Build pinned objectstore for local tests only
+        env:
+          GOTOOLCHAIN: local
+          GOMAXPROCS: '2'
+        run: go build -C .ci-minio -p 2 -o "$RUNNER_TEMP/opds-minio-test" .
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Build production native transport probe
+        run: cargo build --locked --manifest-path open-pdf-studio/scripts/review-native-tests/Cargo.toml
+      - name: Qualify real S3, native transport and joint offline restore
+        run: python collaboration-server/tests/objectstore_integration.py "$RUNNER_TEMP/opds-minio-test" open-pdf-studio/scripts/review-native-tests/target/debug/opds-review-native-tests
+
+
+  collaboration-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Test production central review transport
+        run: cargo test --locked --manifest-path open-pdf-studio/scripts/review-native-tests/Cargo.toml

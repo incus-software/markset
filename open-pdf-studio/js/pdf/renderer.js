@@ -1,3 +1,4 @@
+import { renderPdfJsCanvas } from './pdfjs-canvas-render.js';
 import { paginaViewport } from './pagina-viewport.js';
 import { meld as meldSplit } from './split-view/split-haken.js';
 import { cssPxPerPtAt100, nextScaleStep } from '../core/zoom-display.js';
@@ -14,9 +15,10 @@ import { redrawAnnotations, renderAnnotationsForPage, updateContinuousSharpOverl
 import { ensureAnnotationsForPage, hidePdfABar } from './loader.js';
 import { updateAllStatus } from '../ui/chrome/status-bar.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
-import { updateActiveThumbnail, pauseThumbnails, resumeThumbnails, isThumbnailPipelineIdle } from '../ui/panels/left-panel.js';
-import { createSinglePageTextLayer, clearSinglePageTextLayer, createTextLayer, clearTextLayers, createTextLayerFromRust } from '../text/text-layer.js';
+import { updateActiveThumbnail, pauseThumbnails, resumeThumbnails } from '../ui/panels/left-panel.js';
+import { createSinglePageTextLayer, clearSinglePageTextLayer, createTextLayer, clearTextLayers } from '../text/text-layer.js';
 import { createSinglePageLinkLayer, clearSinglePageLinkLayer, createLinkLayer, clearLinkLayers, applyOverlayPointerEvents } from './link-layer.js';
+import { pasCanvasLagenToe, pasGereedschapLagenToe } from '../tools/gereedschap-lagen.js';
 import { createSinglePageFormLayer, clearSinglePageFormLayer, createFormLayer, clearFormLayers, hideFormFieldsBar } from './form-layer.js';
 import { clearPdfVectorCache, prefetchPdfVectorGeometry } from '../tools/pdf-snap-extractor.js';
 import { clearDetectionCache } from '../tools/pdf-element-detector.js';
@@ -24,17 +26,24 @@ import { onPageRendered, clearHighlights } from '../search/find-bar.js';
 import { anchorScrollCorrection, pickAnchorPageIndex } from './continuous-zoom-anchor.js';
 import { createRerenderGate } from './continuous-rerender-gate.js';
 import { continuousRenderScale } from './continuous-render-scale.js';
+import { eenmaalPerElement } from './doorlopend-pagina-events.js';
 import { weergaveRotatie, weergaveTransform } from './weergave-ruimte.js';
 import { normaliseerRotatie, isKwartslag } from './weergave-rotatie.js';
 import { voorvertoningSleutel, voorvertoningRotatie, maakVoorvertoningLus } from './voorvertoning-sleutel.js';
 import { rotateTextDir } from '../annotations/corrections/geometry.js';
 import { isTextAnchored } from '../annotations/corrections/model.js';
 import { stopAlleWielScrollers } from './wiel-scroll.js';
+import { scrollGedrag } from '../core/vloeiend-scrollen.js';
 import { werkelijkeGrootteZoom, kalibratieVoor } from './schermkalibratie.js';
 import { thinLinesKey, thinLinesOn } from './thin-lines.js';
 import { isRenderCancelled } from './render-queue.js';
 import { voerZoomAllesUit, centreerCorrectie } from './zoom-alles.js';
 import { annotatieUitsnede, naScrollen } from './annotatie-uitsnede.js';
+import {
+  scherpeUitsnedeNodig, zichtbaarDeel, scherpeUitsnede, uitsnedeVolstaat, uitsnedeAanvraag,
+  draaiTransform, schaalUitsnede, beeldPastBijAanvraag, uitsnedeSleutel, achtergrondMaat, overlapOppervlak,
+} from './doorlopend-scherp.js';
+import { isGemengd } from '../annotations/blend-modes.js';
 // Hi-DPI support: render canvases at device pixel ratio for sharp text
 export function getCanvasDPR() { return window.devicePixelRatio || 1; }
 
@@ -81,6 +90,8 @@ export function clearBitmapJSCacheForFile(filePath) {
       _BITMAP_JS_CACHE.delete(k);
     }
   }
+  // De achtergrondbeelden van de scherpe uitsnedes (#1163) tonen dezelfde pixels.
+  _vergeetAchtergronden(filePath + '|');
 }
 /** Wipe every entry in the JS-side ImageBitmap cache. Exposed for the MCP
  *  `app_clear_caches` test tool so an AI-driven debug loop can rule out
@@ -91,13 +102,13 @@ export function _clearJSBitmapCache() {
     try { e?.bitmap?.close?.(); } catch {}
     _BITMAP_JS_CACHE.delete(k);
   }
+  _vergeetAchtergronden();
 }
 
 // NOTE: an earlier prototype embedded MuPDF WASM rendering helpers here
 // (loadMupdf / isMupdfAvailable / getMupdfDocument / renderPageWithMupdf).
-// They were never wired up — the active path is the Rust vector renderer
-// via `extract_draw_commands` + `vector-renderer.js`, with PDF.js as the
-// fallback for raster-only pages. The unused helpers have been removed.
+// They were never wired up — pages render through the PDFium worker pool,
+// with PDF.js where there is no backend. The unused helpers have been removed.
 // Markset: the last `mupdf-renderer.js` import (a no-op cleanup call) was
 // removed together with the AGPL-licensed `mupdf` package.
 
@@ -233,7 +244,7 @@ function _startJankDetector() {
 _startJankDetector();
 
 // Render PDF page (single page mode)
-export async function renderPage(pageNum) {
+export async function renderPage(pageNum, onPageResize = null) {
   // In-flight counter exposed for MCP test harness — `waitForRenderIdle()`
   // polls `window.__pdfRenderInFlight === 0` to know when a synthetic zoom
   // event has fully settled (bitmap painted, tile rendered, state updated).
@@ -241,7 +252,7 @@ export async function renderPage(pageNum) {
     window.__pdfRenderInFlight = (window.__pdfRenderInFlight || 0) + 1;
   }
   try {
-    return await _renderPageImpl(pageNum);
+    return await _renderPageImpl(pageNum, onPageResize);
   } finally {
     if (typeof window !== 'undefined') {
       window.__pdfRenderInFlight = Math.max(0, (window.__pdfRenderInFlight || 1) - 1);
@@ -252,7 +263,7 @@ export async function renderPage(pageNum) {
   }
 }
 
-async function _renderPageImpl(pageNum) {
+async function _renderPageImpl(pageNum, onPageResize) {
   const _rp0 = performance.now();
   console.log(`[PERF] renderPage(${pageNum}) START`);
   // Clear search highlights immediately to prevent stale highlights
@@ -350,123 +361,7 @@ async function _renderPageImpl(pageNum) {
     try {
       // Pause thumbnail rendering so Rust backend is free for page rendering
       pauseThumbnails();
-      console.log(`[PERF] renderPage(${pageNum}) trying vector path: ${(performance.now() - _rp0).toFixed(0)}ms`);
-      const vr = await import('./vector-renderer.js');
-      if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
       const userRotation = getPageRotation(pageNum);
-
-      // Engine-override gate: vector path only runs in Auto mode (override===null).
-      // If user picked 'pdfium' or 'rust-skia' in the status-bar dropdown,
-      // skip Vector entirely — even for pages whose draw-commands are already
-      // cached from a previous render. Without this gate, the override only
-      // affected the raster engine (PDFium vs Rust-Skia at the worker-pool
-      // level) but vector-classified pages still went through the Vector
-      // engine, making "Engine: PDFium" appear to do nothing for those pages.
-      // BELEID (2026-07-06): PDFium is de basis-engine; het vector-pad
-      // (AEC-PDF v1) draait alléén nog met de expliciete diagnose-vlag
-      // window.__aecVectorPath. Een null-override uit oude persisted
-      // voorkeuren (dropdown-tijdperk) mag het pad niet meer aanzetten —
-      // dat gaf o.a. een witte pagina op geroteerde vector-bladen.
-      const _vectorAllowed = window.__aecVectorPath === true && state.renderEngineOverride == null;
-      if (_vectorAllowed && !vr.hasCachedCommands(doc.filePath, pageNum, userRotation)) {
-        console.log(`[PERF] renderPage(${pageNum}) analyze_page_type START: ${(performance.now() - _rp0).toFixed(0)}ms`);
-        // JS-side cache check FIRST — populated by analyze_page_type_batch
-        // at cold-open. Skips the IPC roundtrip (which can be 1+ second
-        // queued behind thumbnail invokes during cold-open) for any page
-        // the batch has classified. The Rust cache remains authoritative
-        // for the rare cold-miss path below.
-        const ptcMod = await import('./page-type-cache.js');
-        let pageType = ptcMod.getCachedPageType(doc.filePath, pageNum - 1);
-        if (pageType) {
-          console.log(`[PERF] renderPage(${pageNum}) analyze_page_type=${pageType} (js-cache): ${(performance.now() - _rp0).toFixed(0)}ms`);
-        } else {
-          pageType = await invoke('analyze_page_type', { path: doc.filePath, pageIndex: pageNum - 1 });
-          if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
-          ptcMod.cachePageType(doc.filePath, pageNum - 1, pageType);
-          console.log(`[PERF] renderPage(${pageNum}) analyze_page_type=${pageType}: ${(performance.now() - _rp0).toFixed(0)}ms`);
-        }
-        // BELEID (2026-07-06): PDFium is de basis-engine voor álle weergaven.
-        // Het eigen vector-replay-pad (AEC-PDF v1) staat uit tot het per
-        // bladklasse bewezen is via de corpus-benchmark — het veroorzaakte
-        // o.a. een witte pagina en gedraaide weergave op geroteerde bladen
-        // (Originele bestanden/Technische tekening.pdf p1, /Rotate-blad).
-        // Diagnose/ontwikkeling: window.__aecVectorPath = true heractiveert.
-        if (pageType === 'vector' && !window.__aecVectorPath) {
-          pageType = 'raster';
-        }
-        if (pageType === 'vector') {
-          console.log(`[PERF] renderPage(${pageNum}) extract_draw_commands START: ${(performance.now() - _rp0).toFixed(0)}ms`);
-          const cmdData = await invoke('extract_draw_commands', {
-            path: doc.filePath,
-            pageIndex: pageNum - 1,
-            rotation: userRotation,
-          });
-          if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
-          const cmdBytes = cmdData instanceof Uint8Array ? cmdData : new Uint8Array(cmdData);
-          console.log(`[PERF] renderPage(${pageNum}) extract_draw_commands DONE (${cmdBytes.length} bytes): ${(performance.now() - _rp0).toFixed(0)}ms`);
-          vr.cacheCommands(doc.filePath, pageNum, cmdBytes, userRotation);
-          // Pre-decode any images in the command buffer (async, must complete before render)
-          console.log(`[PERF] renderPage(${pageNum}) prepareImages START: ${(performance.now() - _rp0).toFixed(0)}ms`);
-          await vr.prepareImages(doc.filePath, pageNum, userRotation);
-          if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
-          console.log(`[PERF] renderPage(${pageNum}) prepareImages DONE: ${(performance.now() - _rp0).toFixed(0)}ms`);
-        }
-      }
-
-      if (_vectorAllowed && vr.hasCachedCommands(doc.filePath, pageNum, userRotation)) {
-        const dims = vr.getCachedPageDimensions(doc.filePath, pageNum, userRotation);
-        if (dims) {
-          const { initViewport, setPage, wireEvents, viewport: pdfVP } = await import('./pdf-viewport.js');
-          // CRITICAL: don't write a stale doc's filePath into the viewport
-          // singleton. If we do, the RAF render loop will then draw the OLD
-          // doc's content on the SHARED #pdf-canvas — that's the ghost the
-          // user reports when switching tabs rapidly across multiple PDFs.
-          if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
-
-          // Initialize viewport (idempotent — safe to call multiple times).
-          // Call redrawAnnotations SYNCHRONOUSLY inside the viewport's RAF tick
-          // (a dynamic import().then() would defer to a microtask, lagging
-          // annotations one frame behind the PDF during zoom/pan). Use the
-          // lightweight=true path so per-frame zoom skips the heavy SolidJS
-          // status-bar / list / ribbon updates that would stall the frame.
-          initViewport(pdfCanvas, () => redrawAnnotations(true), tekenTekstBewerkingenOpPagina);
-          if (!pdfCanvas._vpEventsWired) {
-            wireEvents(pdfCanvas);
-            pdfCanvas._vpEventsWired = true;
-          }
-          const container = document.getElementById('pdf-container');
-          if (container) container.style.overflow = 'hidden';
-
-          // Load page into viewport (triggers fitToViewport + first render)
-          setPage(doc.filePath, pageNum, dims.w, dims.h, dims.x0 || 0, dims.y0 || 0, userRotation, weergaveRot);
-
-          // Create text layer for text selection + search
-          // Try Rust-extracted text spans first (faster, no PDF.js dependency),
-          // fall back to PDF.js text layer if Rust extraction returns empty
-          try {
-            const canvasContainer = document.getElementById('canvas-container');
-            const rustTextOk = await createTextLayerFromRust(
-              canvasContainer || container, pageNum, dims.w, dims.h
-            );
-            if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
-            if (!rustTextOk) {
-              const page = await pdfDoc.getPage(pageNum);
-              if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
-              const textViewport = paginaViewport(page, { scale: 1.0 });
-              await createSinglePageTextLayer(page, textViewport);
-              if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
-            }
-            if (window.__pdfViewport) window.__pdfViewport.dirty = true;
-          } catch (e) {
-            console.warn('[render] Text layer failed:', e);
-          }
-
-          console.log(`[render] ✅ Vector viewport: ${dims.w}x${dims.h} pt, origin=(${dims.x0},${dims.y0})`);
-          // Mark page type so the unified render loop knows which branches to run
-          if (window.__pdfViewport) window.__pdfViewport.pageType = 'vector';
-          _skipBitmapRender = true;
-        }
-      }
 
       // ─── RASTER MODE: unified viewport ──────────────────────────────────
       // For raster-classified pages, activate the viewport singleton (same
@@ -478,8 +373,7 @@ async function _renderPageImpl(pageNum) {
       //  - AND either there are no cached vector commands, OR the user has
       //    forced a raster engine (override !== null), in which case cached
       //    vector commands must be bypassed.
-      const _useRaster = !_skipBitmapRender &&
-        (!_vectorAllowed || !vr.hasCachedCommands(doc.filePath, pageNum, userRotation));
+      const _useRaster = !_skipBitmapRender;
       if (_useRaster) {
         const { initViewport, setPage, wireEvents, viewport: pdfVP } =
           await import('./pdf-viewport.js');
@@ -583,7 +477,8 @@ async function _renderPageImpl(pageNum) {
         _vpMod.viewport.currentBitmap = null;
       }
 
-      await tekenPaginaMetPdfJs(page, beeldViewport, pdfCanvas);
+      if (_isStaleGen() || _isStaleDoc(doc)) return;
+      if (!await tekenPaginaMetPdfJs(page, beeldViewport, pdfCanvas, onPageResize)) return;
       if (_isStaleDoc(doc)) return;
       state.renderEngine = 'Raster (PDF.js)';
       // De pagina staat er. Wat hierna komt (tekst-, link- en formulierlaag,
@@ -755,19 +650,14 @@ async function _renderPageImpl(pageNum) {
 // Tekent één pagina met PDF.js op een canvas. Gebruikt door élk pad dat
 // PDFium niet kan aanroepen: de webversie (geen Tauri) en lege documenten
 // zonder bestandspad. Zie render-route.js voor wanneer dit pad geldt.
-async function tekenPaginaMetPdfJs(page, viewport, canvas) {
-  const dpr = getCanvasDPR();
-  canvas.width = Math.floor(viewport.width * dpr);
-  canvas.height = Math.floor(viewport.height * dpr);
-  canvas.style.width = Math.floor(viewport.width) + 'px';
-  canvas.style.height = Math.floor(viewport.height) + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, viewport.width, viewport.height);
-  // Geschakelde lagen (#684): de stand uit het paneel.
-  const { pdfjsLaagOpties } = await import('./lagen-schakelen.js');
-  await page.render({ canvasContext: ctx, viewport, annotationMode: 0, ...pdfjsLaagOpties() }).promise;
+async function tekenPaginaMetPdfJs(page, viewport, canvas, onResize = null) {
+  return renderPdfJsCanvas({
+    page, viewport, canvas, dpr: getCanvasDPR(), onResize,
+    renderOptions: async () => {
+      const { pdfjsLaagOpties } = await import('./lagen-schakelen.js');
+      return pdfjsLaagOpties();
+    },
+  });
 }
 
 // Render page offscreen and swap canvases atomically to avoid zoom flicker.
@@ -806,7 +696,7 @@ export async function renderPageOffscreen(pageNum) {
   // falen hieronder, zodat een rasterbug zichtbaar blijft.
   if (pdfjsFallbackNodig({ inTauri: isTauri(), mobiel: isMobile(), hasFilePath: !!doc.filePath })) {
     try {
-      await tekenPaginaMetPdfJs(page, viewport, pdfCanvas);
+      if (!await tekenPaginaMetPdfJs(page, viewport, pdfCanvas)) return;
       if (_isStaleDoc(doc)) return;
       setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
       redrawAnnotations();
@@ -892,151 +782,568 @@ const _renderedPages = new Set();
 const _contRerenderGate = createRerenderGate();
 let _continuousObserver = null;
 
-// Scherpe pagina-overlay voor GECAPTE zware pagina's in de doorlopende
-// weergave. De paginabitmap is boven de as-cap een CSS-gestretchte 4096px-
-// render (wazig), en een volledige render op hogere resolutie kan op
-// monsterpagina's (A0-vectorwerk) 20+ seconden duren. In plaats daarvan
-// renderen we alleen de ZICHTBARE uitsnede op volle resolutie via het
-// regio-rendercommando (zelfde patroon als de scherpe annotatie-overlay):
-// viewport-groot, dus snel en altijd binnen de canvaslimieten.
-const _pageSharpGen = new Map();
+// ─── Scherpe uitsnede boven de as-cap (#1163) ───────────────────────────────
+//
+// Een pagina die op apparaatresolutie niet binnen CONT_MAX_AXIS_PX past, was
+// een CSS-opgerekte bitmap: wazig, en erger naarmate zoom en vel groter zijn.
+// Voor zo'n pagina is het paginacanvas (.pdf-canvas) nu een UITSNEDE: het
+// zichtbare deel plus een marge op volle apparaatresolutie, via het
+// regio-rendercommando, met left/top/width/height op zijn plek in de
+// paginacontainer. De hele pagina op lage resolutie staat als
+// background-image op die container, zodat een net in beeld geschoven deel de
+// wazige pagina toont tot de nieuwe uitsnede er is. De meetkunde staat in
+// doorlopend-scherp.js.
+//
+// Er komt GEEN element en geen laag bij. De eerdere poging (een tweede,
+// scherp canvas over elke pagina) is op 2026-09-01 uitgezet omdat de extra
+// lagen de GPU-compositing op zware bladen over een grens duwden en het
+// paginacanvas zelf WIT rasterde. Hier is het hetzelfde ene canvas per
+// pagina, kleiner dan de 4096-bitmap van voorheen; een achtergrondbeeld hoort
+// bij de laag van het element zelf.
+//
+// Terugval op de gecapte hele-paginarender (het oude gedrag): de webversie,
+// Android/iOS, een document zonder bestand op schijf, een backend die de
+// vraag niet kent, OPDS_CONT_SHARP=0 in de omgeving van de app (of
+// `window.__opdsDoorlopendScherp = false` in de ontwikkelconsole) en elke
+// pagina waarvan de regio-render mislukt of leeg terugkomt.
 
-// UITGESCHAKELD (2026-09-01): de extra overlay-lagen per pagina duwen de
-// GPU-compositing op zware bladen over een grens waardoor de paginacanvas
-// zelf WIT rastert (backing stores aantoonbaar correct; laag verbergen =
-// beeld terug). Tot het herontwerp zonder extra lagen staat de feature uit;
-// boven de cap is de weergave dan wazig maar altijd correct.
-const SCHERPE_OVERLAYS_ACTIEF = false;
+/** Langste as van het achtergrondbeeld: het beeld van de gecapte render. */
+const SCHERP_BG_AS_PX = CONT_MAX_AXIS_PX;
+/** Langste as van een voorlopige achtergrond (uit wat er al op het scherm stond). */
+const SCHERP_BG_VOORLOPIG_AS_PX = 2048;
+/**
+ * Een voorlopige achtergrond van minstens deze maat blijft: de render van de
+ * hele pagina op de cap kost op een zwaar blad seconden waarin de volgende
+ * scherpe uitsnede van die pagina moet wachten, voor een beeld dat alleen
+ * even te zien is aan de rand tijdens het scrollen.
+ */
+const SCHERP_BG_GENOEG_AS_PX = 1536;
+/**
+ * Zo lang na een scherpe uitsnede wacht de render van de achtergrond: wie
+ * meteen verder zoomt of scrolt, krijgt eerst zijn volgende uitsnede (op een
+ * zwaar blad delen ze één worker en is een begonnen render niet af te breken).
+ */
+const SCHERP_BG_WACHT_MS = 1200;
+/** Zoveel achtergrondbeelden blijven bewaard (JPEG, enkele MB per stuk). */
+const SCHERP_BG_BEWAARD = 24;
 
-async function updateSharpPageOverlay(pageWrapper, pageNum) {
-  if (!SCHERPE_OVERLAYS_ACTIEF) {
-    pageWrapper?.querySelectorAll('.pdf-canvas-sharp').forEach((c) => c.remove());
-    return;
+// pageNum -> { gen, uitsnede, sleutel, bezig, opnieuw, herkanst, bgTimer } van de
+// pagina's die nu in de DOM in uitsnede-modus staan. Wordt bij elke herbouw
+// geleegd.
+const _scherpStaat = new Map();
+// sleutel -> { url, mini, voorlopig, as }: achtergrondbeelden, LRU.
+const _scherpAchtergronden = new Map();
+// sleutel -> { definitief }: lopende achtergrondtaken.
+const _scherpBgBezig = new Map();
+// Achtergronden waarvan de render mislukte: niet bij elke scroll opnieuw.
+const _scherpBgMislukt = new Set();
+// `${filePath}|${pageNum}`: pagina's waar de regio-render niet deugt.
+const _scherpKapot = new Set();
+let _scherpKan = null;
+let _scherpOnderweg = 0;
+let _scherpDraaiDoek = null;
+
+/** Kan en mag de app scherpe uitsnedes tekenen? Eén keer gevraagd. */
+function doorlopendScherpBeschikbaar() {
+  if (typeof window !== 'undefined' && window.__opdsDoorlopendScherp === false) return Promise.resolve(false);
+  if (!_scherpKan) {
+    _scherpKan = heeftRustRenderer()
+      ? Promise.resolve().then(() => invoke('doorlopend_scherp_beschikbaar')).then((v) => v === true, () => false)
+      : Promise.resolve(false);
   }
-  const doc = getActiveDocument();
-  if (!doc || doc.viewMode !== 'continuous' || !doc.filePath) return;
-  const cc = pageWrapper?.querySelector('.canvas-container-cont');
-  const baseCanvas = cc?.querySelector('.pdf-canvas');
-  const container = document.getElementById('pdf-container');
-  if (!cc || !baseCanvas || !container) return;
-  const baseW = parseFloat(pageWrapper.dataset.baseW);
-  const baseH = parseFloat(pageWrapper.dataset.baseH);
-  let sharp = cc.querySelector('.pdf-canvas-sharp');
-  const maxAxisCss = Math.max(baseW || 0, baseH || 0) * doc.scale;
-  if (!Number.isFinite(maxAxisCss) || maxAxisCss <= CONT_MAX_AXIS_PX * 1.02) {
-    if (sharp) sharp.style.display = 'none';
-    return;
+  return _scherpKan;
+}
+
+// Hoort deze pagina op deze maat (CSS-px) een scherpe uitsnede te krijgen?
+function _scherpVoorPagina(doc, pageNum, breedte, hoogte) {
+  if (!doc?.filePath || state?.renderEngineOverride === 'rust-skia') return false;
+  if (pdfjsFallbackNodig({ inTauri: isTauri(), mobiel: isMobile(), hasFilePath: !!doc.filePath })) return false;
+  if (_scherpKapot.has(`${doc.filePath}|${pageNum}`)) return false;
+  return scherpeUitsnedeNodig({ breedte, hoogte, dpr: getCanvasDPR(), maxAs: CONT_MAX_AXIS_PX });
+}
+
+function _achtergrondSleutel(doc, pageNum, rotatie, dun) {
+  return `${doc.filePath}|${pageNum}|${rotatie || 0}|${thinLinesKey(dun)}`;
+}
+
+function _zetAchtergrondOp(cc, sleutel, entry) {
+  if (!cc || !entry) return;
+  if (cc.dataset.scherpBg === sleutel && cc.dataset.scherpBgUrl === entry.url) return;
+  cc.style.backgroundImage = `url("${entry.url}")`;
+  cc.style.backgroundSize = '100% 100%';
+  cc.style.backgroundRepeat = 'no-repeat';
+  cc.dataset.scherpBg = sleutel;
+  cc.dataset.scherpBgUrl = entry.url;
+}
+
+function _haalAchtergrondWeg(cc) {
+  if (!cc || !cc.dataset.scherpBg) return;
+  cc.style.backgroundImage = '';
+  cc.style.backgroundSize = '';
+  cc.style.backgroundRepeat = '';
+  delete cc.dataset.scherpBg;
+  delete cc.dataset.scherpBgUrl;
+}
+
+function _vergeetAchtergrond(sleutel) {
+  const entry = _scherpAchtergronden.get(sleutel);
+  if (!entry) return;
+  _scherpAchtergronden.delete(sleutel);
+  document.querySelectorAll('#continuous-container .canvas-container-cont').forEach((cc) => {
+    if (cc.dataset.scherpBg === sleutel) _haalAchtergrondWeg(cc);
+  });
+  try { URL.revokeObjectURL(entry.url); } catch {}
+}
+
+function _vergeetAchtergronden(prefix = null) {
+  for (const sleutel of Array.from(_scherpAchtergronden.keys())) {
+    if (prefix === null || sleutel.startsWith(prefix)) _vergeetAchtergrond(sleutel);
   }
-  const contRect = container.getBoundingClientRect();
-  const ccRect = cc.getBoundingClientRect();
-  const visLinks = Math.max(0, contRect.left - ccRect.left);
-  const visBoven = Math.max(0, contRect.top - ccRect.top);
-  const visB = Math.min(ccRect.width, contRect.right - ccRect.left) - visLinks;
-  const visH = Math.min(ccRect.height, contRect.bottom - ccRect.top) - visBoven;
-  if (visB <= 0 || visH <= 0) {
-    if (sharp) sharp.style.display = 'none';
-    return;
-  }
-  const gen = (_pageSharpGen.get(pageNum) || 0) + 1;
-  _pageSharpGen.set(pageNum, gen);
-  const schaal = doc.scale;
-  try {
-    const { invokeTileRegion } = await import('./progressive-render.js');
-    const raw = await invokeTileRegion({
-      path: doc.filePath,
-      pageIndex: pageNum - 1,
-      scale: schaal,
-      rotation: getPageRotation(pageNum) || 0,
-      regionXPt: visLinks / schaal,
-      regionYPt: visBoven / schaal,
-      regionWPt: visB / schaal,
-      regionHPt: visH / schaal,
-    });
-    // Verouderd (nieuwere aanvraag, andere schaal of tab weg)? Niet tekenen.
-    if (_pageSharpGen.get(pageNum) !== gen || doc.scale !== schaal || _isStaleDoc(doc)) return;
-    const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
-    if (!bytes || bytes.length <= 8) return;
-    const dv = new DataView(bytes.buffer, bytes.byteOffset, 8);
-    const rw = dv.getUint32(0, true);
-    const rh = dv.getUint32(4, true);
-    if (!rw || !rh) return;
-    if (!sharp) {
-      sharp = document.createElement('canvas');
-      sharp.className = 'pdf-canvas-sharp';
-      sharp.style.position = 'absolute';
-      sharp.style.pointerEvents = 'none';
-      baseCanvas.insertAdjacentElement('afterend', sharp);
+  // Een nieuwe kans voor wat eerder mislukte (het bestand is opnieuw geladen
+  // of gesloten).
+  for (const set of [_scherpBgMislukt, _scherpKapot]) {
+    for (const sleutel of Array.from(set)) {
+      if (prefix === null || sleutel.startsWith(prefix)) set.delete(sleutel);
     }
-    sharp.width = rw;
-    sharp.height = rh;
-    sharp.style.left = `${visLinks}px`;
-    sharp.style.top = `${visBoven}px`;
-    sharp.style.width = `${visB}px`;
-    sharp.style.height = `${visH}px`;
-    sharp.style.display = '';
-    const rgba = new Uint8ClampedArray(bytes.buffer, bytes.byteOffset + 8, rw * rh * 4);
-    // Correctheidscheck: de overlay mag nooit LEGER zijn dan de basisbitmap
-    // onder dezelfde uitsnede — anders bedekt hij goede inhoud met wit
-    // (gezien in races vlak na openen/moduswissel: de regio-render leverde
-    // dan een vrijwel leeg beeld terwijl de losse aanroep dicht beeld geeft).
-    // Bij een te lege overlay: verbergen en één keer vertraagd opnieuw.
-    const telInkt = (data) => {
-      let n = 0;
-      const stap = Math.max(4, Math.floor(data.length / 4 / 2048) * 4);
-      for (let i = 0; i < data.length; i += stap) {
-        if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) n++;
-      }
-      return n;
-    };
-    const overlayInkt = telInkt(rgba);
-    let basisInkt = 0;
-    try {
-      const mini = document.createElement('canvas');
-      mini.width = 64; mini.height = 64;
-      const mctx = mini.getContext('2d');
-      // Zelfde uitsnede uit de basisbitmap (attrs-ruimte via CSS-verhouding).
-      const sx = (visLinks / ccRect.width) * baseCanvas.width;
-      const sy = (visBoven / ccRect.height) * baseCanvas.height;
-      const sw = (visB / ccRect.width) * baseCanvas.width;
-      const sh = (visH / ccRect.height) * baseCanvas.height;
-      mctx.drawImage(baseCanvas, sx, sy, sw, sh, 0, 0, 64, 64);
-      basisInkt = telInkt(mctx.getImageData(0, 0, 64, 64).data);
-    } catch { /* basis niet leesbaar — alleen op absolute leegte toetsen */ }
-    const teLeeg = overlayInkt <= 8 || (basisInkt > 40 && overlayInkt < basisInkt * 0.25);
-    if (teLeeg) {
-      sharp.style.display = 'none';
-      if (!sharp.dataset.herkansing) {
-        sharp.dataset.herkansing = '1';
-        setTimeout(() => {
-          delete sharp.dataset.herkansing;
-          updateSharpPageOverlay(pageWrapper, pageNum);
-        }, 2000);
-      }
-      return;
-    }
-    delete sharp.dataset.herkansing;
-    sharp.getContext('2d').putImageData(new ImageData(rgba, rw, rh), 0, 0);
-  } catch (e) {
-    console.warn(`[scherpe-pagina] regio-render p${pageNum} mislukt:`, e);
   }
 }
 
-// Alle zichtbare pagina's (na zoom-/scroll-settle).
-function updateSharpPageOverlays() {
-  const container = document.getElementById('pdf-container');
-  if (!container) return;
-  const contRect = container.getBoundingClientRect();
-  document.querySelectorAll('#continuous-container .page-wrapper').forEach((wrapper) => {
-    const pageNum = parseInt(wrapper.dataset.page, 10);
-    if (!pageNum) return;
-    const r = wrapper.getBoundingClientRect();
-    if (r.top < contRect.bottom && r.bottom > contRect.top) {
-      updateSharpPageOverlay(wrapper, pageNum);
-    } else {
-      const sharp = wrapper.querySelector('.pdf-canvas-sharp');
-      if (sharp) sharp.style.display = 'none';
+// Een beeld van de hele pagina (canvas of ImageBitmap) als achtergrondbeeld
+// bewaren en op de containers zetten die erom vroegen. Een definitief beeld
+// wordt nooit door een voorlopig vervangen.
+async function _bewaarAchtergrond(sleutel, bron, bronB, bronH, voorlopig, draai = 0) {
+  const bronMaat = achtergrondMaat(bronB, bronH, voorlopig ? SCHERP_BG_VOORLOPIG_AS_PX : SCHERP_BG_AS_PX);
+  if (!bronMaat) return;
+  // `draai`: de bron is ongedraaid getekend en komt hier in de stand van het
+  // scherm (zelfde draaiing als de uitsnede).
+  const stand = draaiTransform(draai, bronMaat.breedte, bronMaat.hoogte);
+  const maat = { breedte: stand.breedte, hoogte: stand.hoogte };
+  const doek = document.createElement('canvas');
+  doek.width = maat.breedte;
+  doek.height = maat.hoogte;
+  const ctx = doek.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, maat.breedte, maat.hoogte);
+  ctx.setTransform(...stand.matrix);
+  ctx.drawImage(bron, 0, 0, bronMaat.breedte, bronMaat.hoogte);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Klein beeld om een leeg teruggekomen uitsnede te herkennen.
+  const miniMaat = achtergrondMaat(maat.breedte, maat.hoogte, 512);
+  const mini = document.createElement('canvas');
+  mini.width = miniMaat.breedte;
+  mini.height = miniMaat.hoogte;
+  mini.getContext('2d', { willReadFrequently: true }).drawImage(doek, 0, 0, miniMaat.breedte, miniMaat.hoogte);
+  const blob = await new Promise((klaar) => doek.toBlob(klaar, 'image/jpeg', 0.9));
+  doek.width = 1;
+  doek.height = 1;
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  // Eerst decoderen: anders valt er tussen het oude en het nieuwe beeld een
+  // wit moment.
+  try {
+    const beeld = new Image();
+    beeld.src = url;
+    await beeld.decode();
+  } catch { /* de browser decodeert het dan bij het tekenen */ }
+  const oud = _scherpAchtergronden.get(sleutel);
+  if (oud && !oud.voorlopig && voorlopig) {
+    URL.revokeObjectURL(url);
+    return;
+  }
+  const entry = { url, mini, voorlopig, as: Math.max(maat.breedte, maat.hoogte) };
+  _scherpAchtergronden.delete(sleutel);
+  _scherpAchtergronden.set(sleutel, entry);
+  document.querySelectorAll('#continuous-container .canvas-container-cont').forEach((cc) => {
+    if (cc.dataset.scherpBg === sleutel || cc.dataset.scherpBgWacht === sleutel) {
+      delete cc.dataset.scherpBgWacht;
+      _zetAchtergrondOp(cc, sleutel, entry);
     }
   });
+  if (oud) setTimeout(() => { try { URL.revokeObjectURL(oud.url); } catch {} }, 0);
+  while (_scherpAchtergronden.size > SCHERP_BG_BEWAARD) {
+    const oudste = _scherpAchtergronden.keys().next().value;
+    if (oudste === undefined || oudste === sleutel) break;
+    _vergeetAchtergrond(oudste);
+  }
+}
+
+// Zorg dat de paginacontainer een beeld van de hele pagina als achtergrond
+// heeft: wat er al is, anders een voorlopig beeld uit wat op het scherm stond
+// en daarna het definitieve (de gecapte hele-paginarender van voorheen).
+// `definitief: false` laat die render nog even liggen: van een pagina in
+// beeld gaat de scherpe uitsnede voor (op een zwaar blad delen ze één worker).
+function _zorgVoorAchtergrond(doc, pageNum, cc, canvas, { rotatie, dun, baseW, baseH, definitief = true }) {
+  const sleutel = _achtergrondSleutel(doc, pageNum, rotatie, dun);
+  const entry = _scherpAchtergronden.get(sleutel);
+  if (entry) {
+    // LRU: een gebruikt beeld schuift naar achteren.
+    _scherpAchtergronden.delete(sleutel);
+    _scherpAchtergronden.set(sleutel, entry);
+    _zetAchtergrondOp(cc, sleutel, entry);
+    // (Een gedraaide pagina krijgt altijd het hier gedraaide beeld: dat staat
+    // gegarandeerd in dezelfde stand als de uitsnede.)
+    if (!entry.voorlopig || (!rotatie && entry.as >= SCHERP_BG_GENOEG_AS_PX)) return;
+  } else {
+    // Een achtergrond van een andere stand (gedraaid, lijnstand) hoort hier niet.
+    if (cc.dataset.scherpBg && cc.dataset.scherpBg !== sleutel) _haalAchtergrondWeg(cc);
+    cc.dataset.scherpBgWacht = sleutel;
+  }
+  if (_scherpBgMislukt.has(sleutel)) return;
+  const lopend = _scherpBgBezig.get(sleutel);
+  if (lopend) {
+    // De lopende taak neemt de definitieve render mee.
+    if (definitief) lopend.definitief = true;
+    return;
+  }
+  if (entry && !definitief) return;
+  const taak = { definitief };
+  _scherpBgBezig.set(sleutel, taak);
+  (async () => {
+    try {
+      if (!entry) {
+        // Voorlopig: het beeld van de hele pagina dat nog op het canvas staat
+        // (net over de cap heen gezoomd), anders de voorvertoning.
+        const lowRes = _lowResCache.get(_lowResKey(pageNum, doc));
+        if (canvas?.dataset.beeld === 'pagina' && canvas.width > 1 && canvas.height > 1) {
+          await _bewaarAchtergrond(sleutel, canvas, canvas.width, canvas.height, true);
+        } else if (lowRes?.canvas && voorvertoningRotatie(doc, pageNum) === (rotatie || 0)) {
+          await _bewaarAchtergrond(sleutel, lowRes.canvas, lowRes.canvas.width, lowRes.canvas.height, true);
+        }
+      }
+      if (!taak.definitief) return;
+      if (!rotatie && (_scherpAchtergronden.get(sleutel)?.as || 0) >= SCHERP_BG_GENOEG_AS_PX) return;
+      // Definitief: de gecapte hele-paginarender, ONGEDRAAID gevraagd en hier
+      // gedraaid, net als de uitsnede (zo staan ze altijd in dezelfde stand).
+      // Staat hij nog in de JS-cache (dezelfde sleutel als het hele-paginapad
+      // boven de cap), dan kost het geen render.
+      const schaal = SCHERP_BG_AS_PX / Math.max(baseW, baseH);
+      const cached = _bitmapJSCacheGet(`${doc.filePath}|${pageNum}|${Math.round(schaal * 10000)}|0|${thinLinesKey(dun)}`);
+      if (cached?.bitmap) {
+        try {
+          await _bewaarAchtergrond(sleutel, cached.bitmap, cached.w, cached.h, false, rotatie);
+          return;
+        } catch { /* intussen uit de cache gezet en gesloten: zelf renderen */ }
+      }
+      const { renderPdfPage } = await import('./engine-router.js');
+      const { RENDER_PRIORITY } = await import('./render-queue.js');
+      const ruw = await renderPdfPage({
+        path: doc.filePath, pageIndex: pageNum - 1, scale: schaal, rotation: 0, thinLines: dun,
+      }, { priority: RENDER_PRIORITY.PREFETCH });
+      const bytes = ruw instanceof Uint8Array ? ruw : new Uint8Array(ruw);
+      if (!bytes || bytes.length <= 8) return;
+      const kop = new DataView(bytes.buffer, bytes.byteOffset, 8);
+      const b = kop.getUint32(0, true);
+      const h = kop.getUint32(4, true);
+      if (!b || !h || b * h * 4 !== bytes.length - 8) return;
+      const beeld = await createImageBitmap(new ImageData(new Uint8ClampedArray(bytes.buffer, bytes.byteOffset + 8, b * h * 4), b, h));
+      try {
+        await _bewaarAchtergrond(sleutel, beeld, b, h, false, rotatie);
+      } finally {
+        try { beeld.close(); } catch {}
+      }
+    } catch (e) {
+      if (!isRenderCancelled(e)) {
+        _scherpBgMislukt.add(sleutel);
+        console.warn(`[doorlopend-scherp] achtergrond p${pageNum} mislukt:`, e);
+      }
+    } finally {
+      _scherpBgBezig.delete(sleutel);
+    }
+  })();
+}
+
+// Aandeel niet-witte monsters in RGBA-data (hooguit ~4096 monsters).
+function _inktAandeel(data) {
+  const pixels = data.length / 4;
+  if (!(pixels > 0)) return 0;
+  const stap = Math.max(1, Math.floor(pixels / 4096)) * 4;
+  let inkt = 0;
+  let monsters = 0;
+  for (let i = 0; i < data.length; i += stap) {
+    monsters++;
+    if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) inkt++;
+  }
+  return monsters ? inkt / monsters : 0;
+}
+
+// Is de teruggekomen uitsnede (vrijwel) leeg terwijl de achtergrond op die
+// plek wel beeld heeft? Dan zou ze goede inhoud met wit bedekken.
+function _uitsnedeTeLeeg(rgba, uitsnede, breedte, hoogte, mini) {
+  if (_inktAandeel(rgba) > 0.0005) return false;
+  if (!mini) return false;
+  try {
+    const fx = mini.width / breedte;
+    const fy = mini.height / hoogte;
+    const x = Math.max(0, Math.floor(uitsnede.x * fx));
+    const y = Math.max(0, Math.floor(uitsnede.y * fy));
+    const b = Math.max(1, Math.min(mini.width - x, Math.ceil(uitsnede.breedte * fx)));
+    const h = Math.max(1, Math.min(mini.height - y, Math.ceil(uitsnede.hoogte * fy)));
+    return _inktAandeel(mini.getContext('2d', { willReadFrequently: true }).getImageData(x, y, b, h).data) > 0.01;
+  } catch {
+    return false;
+  }
+}
+
+// Het canvas van een pagina in uitsnede-modus zonder beeld: geen bitmap in
+// het geheugen en niets op het scherm; de achtergrond toont de pagina.
+function _maakUitsnedeLeeg(canvas) {
+  if (!canvas) return;
+  if (canvas.width !== 1) canvas.width = 1;
+  if (canvas.height !== 1) canvas.height = 1;
+  canvas.style.position = 'absolute';
+  canvas.style.left = '0px';
+  canvas.style.top = '0px';
+  canvas.style.width = '0px';
+  canvas.style.height = '0px';
+  canvas.style.boxShadow = 'none';
+  canvas.dataset.beeld = 'uitsnede';
+}
+
+// Terug naar een canvas dat de hele pagina dekt (onder de cap, of als de
+// uitsnede niet kan): plaatsing en achtergrond weg. De aanroeper zet daarna
+// bitmap en CSS-maat.
+function _verlaatUitsnedeModus(canvas, cc, pageNum) {
+  _scherpStaat.delete(pageNum);
+  if (cc) {
+    delete cc.dataset.scherpBgWacht;
+    _haalAchtergrondWeg(cc);
+  }
+  if (!canvas || canvas.dataset.beeld !== 'uitsnede') return;
+  canvas.style.position = '';
+  canvas.style.left = '';
+  canvas.style.top = '';
+  canvas.style.boxShadow = '';
+  delete canvas.dataset.beeld;
+}
+
+function _vergeetScherpeUitsnedes() {
+  _scherpStaat.clear();
+}
+
+/**
+ * Zet of ververs de scherpe uitsnede van één pagina in uitsnede-modus: het
+ * deel in beeld plus een marge, op apparaatresolutie. Een uitsnede die het
+ * zichtbare deel nog dekt blijft staan; een pagina buiten beeld geeft haar
+ * bitmap terug. Verouderde antwoorden (andere zoom, ander document, herbouwde
+ * weergave, pagina uit beeld) worden weggegooid.
+ *
+ * Per pagina loopt er hooguit één aanvraag: de render is niet af te breken
+ * en op een zwaar blad werkt één worker ze na elkaar af, dus elke aanvraag
+ * die door verder scrollen al achterhaald is zou de volgende alleen maar
+ * ophouden. Wie tijdens een lopende aanvraag iets anders nodig heeft, krijgt
+ * dat direct daarna, voor de stand van dat moment.
+ */
+async function werkScherpeUitsnedeBij(pageWrapper, pageNum) {
+  const doc = getActiveDocument();
+  const cc = pageWrapper?.querySelector('.canvas-container-cont');
+  const canvas = cc?.querySelector('.pdf-canvas');
+  const container = document.getElementById('pdf-container');
+  if (!doc || doc.viewMode !== 'continuous' || !doc.filePath || !cc || !canvas || !container) return;
+  if (!canvas.isConnected) return;
+  const baseW = parseFloat(pageWrapper.dataset.baseW);
+  const baseH = parseFloat(pageWrapper.dataset.baseH);
+  const schaal = doc.scale;
+  const breedte = baseW * schaal;
+  const hoogte = baseH * schaal;
+  if (!(breedte > 0) || !(hoogte > 0)) return;
+  // Niet (meer) boven de cap, of de uitsnede kan hier niet: de gewone
+  // hele-paginarender neemt het over zodra de pagina hertekend wordt.
+  if (!_scherpVoorPagina(doc, pageNum, breedte, hoogte)) return;
+  let staat = _scherpStaat.get(pageNum);
+  if (!staat) {
+    staat = { gen: 0, uitsnede: null, sleutel: '', bezig: false, opnieuw: false, herkanst: false, bgTimer: null };
+    _scherpStaat.set(pageNum, staat);
+  }
+  const rotatie = beeldRotatie(pageNum);
+  const dun = thinLinesOn();
+  const dpr = getCanvasDPR();
+  const zichtbaarNu = () => zichtbaarDeel(container.getBoundingClientRect(), cc.getBoundingClientRect(), breedte, hoogte);
+  const zichtbaar = zichtbaarNu();
+  if (!zichtbaar) {
+    // Buiten beeld (ook: net buiten beeld klaargezet): geen bitmap; de
+    // achtergrond toont de pagina zodra ze in beeld schuift.
+    staat.gen++;
+    staat.uitsnede = null;
+    staat.sleutel = '';
+    staat.opnieuw = false;
+    if (canvas.dataset.beeld === 'uitsnede') _maakUitsnedeLeeg(canvas);
+    // Alleen wat er al is (voorvertoning): renderen doet de pagina in beeld.
+    _zorgVoorAchtergrond(doc, pageNum, cc, canvas, { rotatie, dun, baseW, baseH, definitief: false });
+    return;
+  }
+  const sleutel = uitsnedeSleutel({ schaal, dpr, rotatie, dunneLijnen: dun });
+  if (staat.sleutel === sleutel && uitsnedeVolstaat(staat.uitsnede, zichtbaar)) {
+    if (!staat.bgTimer) _zorgVoorAchtergrond(doc, pageNum, cc, canvas, { rotatie, dun, baseW, baseH });
+    return;
+  }
+  // Eerst wat er al is als achtergrond; de render daarvan volgt na de uitsnede.
+  _zorgVoorAchtergrond(doc, pageNum, cc, canvas, { rotatie, dun, baseW, baseH, definitief: false });
+  if (staat.bezig) {
+    staat.opnieuw = true;
+    return;
+  }
+  const uitsnede = scherpeUitsnede(zichtbaar, breedte, hoogte, { dpr, maxAs: CONT_MAX_AXIS_PX });
+  if (!uitsnede) return;
+  const gen = staat.gen;
+  staat.bezig = true;
+  staat.opnieuw = false;
+  if (staat.bgTimer) {
+    clearTimeout(staat.bgTimer);
+    staat.bgTimer = null;
+  }
+  const actueel = () => _scherpStaat.get(pageNum) === staat && staat.gen === gen
+    && doc.scale === schaal && !_isStaleDoc(doc) && canvas.isConnected;
+  const terugval = (reden) => {
+    console.warn(`[doorlopend-scherp] p${pageNum}: ${reden}; terug naar de hele-paginarender`);
+    _scherpKapot.add(`${doc.filePath}|${pageNum}`);
+    if (!actueel()) return;
+    _renderedPages.delete(pageNum);
+    renderContinuousPage(pageNum);
+  };
+  _scherpOnderweg++;
+  if (typeof window !== 'undefined') window.__opdsScherpOnderweg = _scherpOnderweg;
+  try {
+    const { invokeTileRegion } = await import('./progressive-render.js');
+    const ruw = await invokeTileRegion({
+      path: doc.filePath,
+      pageIndex: pageNum - 1,
+      // De tekenmachine tekent uitsnedes alleen ongedraaid; de draaiing van
+      // pagina en weergave gebeurt hieronder op het canvas.
+      rotation: 0,
+      thinLines: dun,
+      ...uitsnedeAanvraag(uitsnede, { schaal, rotatie, breedte, hoogte }),
+    });
+    if (!actueel()) return;
+    // Intussen verder gescrold? Een uitsnede die minder van het zichtbare
+    // deel dekt dan wat er al scherp staat, komt niet op het scherm.
+    const nu = zichtbaarNu();
+    if (!nu || overlapOppervlak(uitsnede, nu) === 0) {
+      staat.opnieuw = true;
+      return;
+    }
+    if (staat.sleutel === sleutel && staat.uitsnede
+      && overlapOppervlak(staat.uitsnede, nu) > overlapOppervlak(uitsnede, nu)) return;
+    const bytes = ruw instanceof Uint8Array ? ruw : new Uint8Array(ruw);
+    if (!bytes || bytes.length <= 8) { terugval('leeg antwoord'); return; }
+    const kop = new DataView(bytes.buffer, bytes.byteOffset, 8);
+    const rb = kop.getUint32(0, true);
+    const rh = kop.getUint32(4, true);
+    if (!rb || !rh || rb * rh * 4 !== bytes.length - 8) { terugval(`ongeldig beeld ${rb}x${rh}`); return; }
+    const plek = draaiTransform(rotatie, rb, rh);
+    if (!beeldPastBijAanvraag(plek.breedte, plek.hoogte, uitsnede.bitmapB, uitsnede.bitmapH)) {
+      terugval(`beeld ${plek.breedte}x${plek.hoogte} past niet bij de aanvraag ${uitsnede.bitmapB}x${uitsnede.bitmapH}`);
+      return;
+    }
+    const rgba = new Uint8ClampedArray(bytes.buffer, bytes.byteOffset + 8, rb * rh * 4);
+    const bg = _scherpAchtergronden.get(_achtergrondSleutel(doc, pageNum, rotatie, dun));
+    if (_uitsnedeTeLeeg(rgba, uitsnede, breedte, hoogte, bg?.mini)) {
+      // Eén herkansing (de regio-render kwam vlak na openen of een
+      // moduswissel wel eens leeg terug); blijft het leeg, dan de oude weg.
+      if (staat.herkanst) { terugval('uitsnede blijft leeg waar de pagina beeld heeft'); return; }
+      staat.herkanst = true;
+      setTimeout(() => {
+        if (_scherpStaat.get(pageNum) === staat && canvas.isConnected) werkScherpeUitsnedeBij(pageWrapper, pageNum);
+      }, 1200);
+      return;
+    }
+    staat.herkanst = false;
+    // Bitmap en plaatsing in één synchroon blok: geen frame met de nieuwe
+    // maat en het oude beeld.
+    if (canvas.width !== plek.breedte) canvas.width = plek.breedte;
+    if (canvas.height !== plek.hoogte) canvas.height = plek.hoogte;
+    const ctx = canvas.getContext('2d');
+    const beeld = new ImageData(rgba, rb, rh);
+    if (!rotatie) {
+      ctx.putImageData(beeld, 0, 0);
+    } else {
+      if (!_scherpDraaiDoek) _scherpDraaiDoek = document.createElement('canvas');
+      const klad = _scherpDraaiDoek;
+      klad.width = rb;
+      klad.height = rh;
+      klad.getContext('2d').putImageData(beeld, 0, 0);
+      ctx.setTransform(...plek.matrix);
+      ctx.drawImage(klad, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      klad.width = 1;
+      klad.height = 1;
+    }
+    canvas.style.position = 'absolute';
+    canvas.style.left = `${uitsnede.x}px`;
+    canvas.style.top = `${uitsnede.y}px`;
+    canvas.style.width = `${plek.breedte / uitsnede.pxPerCss}px`;
+    canvas.style.height = `${plek.hoogte / uitsnede.pxPerCss}px`;
+    canvas.style.boxShadow = 'none';
+    canvas.dataset.beeld = 'uitsnede';
+    staat.uitsnede = { ...uitsnede, breedte: plek.breedte / uitsnede.pxPerCss, hoogte: plek.hoogte / uitsnede.pxPerCss };
+    staat.sleutel = sleutel;
+    // Een annotatie met mengmodus mengt met het paginabeeld eronder: nu dat
+    // er scherp staat (en op een andere plek), opnieuw mengen.
+    if (doc.annotations?.some((a) => a.page === pageNum && (a.blendMode ? isGemengd(a.blendMode) : a.type === 'textHighlight'))) {
+      reclipContinuousAnnotationCanvas(pageWrapper, pageNum);
+    }
+  } catch (e) {
+    if (!isRenderCancelled(e)) terugval(`regio-render mislukt (${String(e?.message ?? e).slice(0, 120)})`);
+  } finally {
+    staat.bezig = false;
+    _scherpOnderweg--;
+    if (typeof window !== 'undefined') window.__opdsScherpOnderweg = _scherpOnderweg;
+    if (_scherpStaat.get(pageNum) === staat && canvas.isConnected) {
+      if (staat.opnieuw) {
+        // Tijdens de render is er iets anders gevraagd: nu voor de stand van nu.
+        staat.opnieuw = false;
+        werkScherpeUitsnedeBij(pageWrapper, pageNum);
+      } else if (staat.sleutel) {
+        // De uitsnede staat er: straks de achtergrond van de hele pagina.
+        if (staat.bgTimer) clearTimeout(staat.bgTimer);
+        staat.bgTimer = setTimeout(() => {
+          staat.bgTimer = null;
+          if (_scherpStaat.get(pageNum) !== staat || staat.bezig || !canvas.isConnected || _isStaleDoc(doc)) return;
+          _zorgVoorAchtergrond(doc, pageNum, cc, canvas, { rotatie, dun, baseW, baseH });
+        }, SCHERP_BG_WACHT_MS);
+      }
+    }
+  }
+}
+
+// Alle pagina's in uitsnede-modus bijwerken (na scrollen, een andere
+// venstermaat of een andere schermschaal): in beeld verversen, uit beeld de
+// bitmap teruggeven.
+function werkScherpeUitsnedesBij() {
+  if (!_scherpStaat.size) return;
+  for (const pageNum of Array.from(_scherpStaat.keys())) {
+    const wrapper = document.querySelector(`#continuous-container .page-wrapper[data-page="${pageNum}"]`);
+    if (!wrapper) { _scherpStaat.delete(pageNum); continue; }
+    werkScherpeUitsnedeBij(wrapper, pageNum);
+  }
+}
+
+/**
+ * Het paginabeeld van een pagina in de doorlopende weergave voor wie het wil
+ * natekenen (de MCP-schermopname): het vak van de hele pagina, en bij een
+ * pagina in uitsnede-modus de achtergrond en de plek van de uitsnede. Null
+ * als de pagina er niet is of nog niets toont.
+ * @returns {Promise<{vak: DOMRect, canvas: HTMLCanvasElement, uitsnede: boolean,
+ *   achtergrond: ImageBitmap|HTMLImageElement|null} | null>}
+ */
+export async function doorlopendPaginaBeeld(pageNum) {
+  const cc = document.querySelector(`#continuous-container .page-wrapper[data-page="${pageNum}"] .canvas-container-cont`);
+  const canvas = cc?.querySelector('canvas.pdf-canvas');
+  if (!cc || !canvas) return null;
+  if (canvas.dataset.beeld !== 'uitsnede') {
+    return { vak: canvas.getBoundingClientRect(), canvas, uitsnede: false, achtergrond: null };
+  }
+  let achtergrond = null;
+  const url = cc.dataset.scherpBgUrl;
+  if (url) {
+    try {
+      const beeld = new Image();
+      beeld.src = url;
+      await beeld.decode();
+      achtergrond = beeld;
+    } catch { /* zonder achtergrond: alleen de uitsnede */ }
+  }
+  if (!achtergrond && !(canvas.width > 1 && canvas.height > 1)) return null;
+  return { vak: cc.getBoundingClientRect(), canvas, uitsnede: true, achtergrond };
 }
 
 // Per-pagina render-generatie voor de doorlopende weergave: de Rust-invoke
@@ -1141,6 +1448,8 @@ async function renderContinuousPage(pageNum) {
   if (!doc || !doc.pdfDoc) return;
   const page = await doc.pdfDoc.getPage(pageNum);
   if (_isStaleDoc(doc)) return; // tab switched while we awaited PDF.js page
+  const scherpKan = await doorlopendScherpBeschikbaar();
+  if (_isStaleDoc(doc)) return;
   // Paginarotatie plus weergaverotatie (#200): de pagina, zijn tekst-, link-
   // en formulierlaag en de container staan in de gedraaide stand; alleen de
   // annotaties blijven in de paginaruimte (weergaveTransform hieronder).
@@ -1152,6 +1461,9 @@ async function renderContinuousPage(pageNum) {
   const viewport = paginaViewport(page, vpOpts);
   const myRenderGen = (_contPageRenderGen.get(pageNum) || 0) + 1;
   _contPageRenderGen.set(pageNum, myRenderGen);
+  // Boven de as-cap: een scherpe uitsnede in plaats van een opgerekte
+  // hele-paginabitmap (#1163), waar de regio-render er is.
+  const scherp = scherpKan && _scherpVoorPagina(doc, pageNum, viewport.width, viewport.height);
 
   // Canvas-CSS-maat op het SCHRIJFMOMENT bepalen, niet uit de hierboven
   // vastgelegde viewport: doc.scale kan tijdens de async Rust-render
@@ -1182,12 +1494,18 @@ async function renderContinuousPage(pageNum) {
     pdfCanvasEl.style.background = 'white';
     canvasContainer.appendChild(pdfCanvasEl);
 
-    // Show low-res preview immediately while full render runs in background
-    setupCanvasHiDPI(pdfCanvasEl, viewport.width, viewport.height);
-    const lowRes = _lowResCache.get(_lowResKey(pageNum));
-    if (lowRes) {
-      const previewCtx = pdfCanvasEl.getContext('2d');
-      previewCtx.drawImage(lowRes.canvas, 0, 0, pdfCanvasEl.width, pdfCanvasEl.height);
+    if (scherp) {
+      // Geen canvas ter grootte van de pagina (boven de cap past dat niet
+      // eens); de voorvertoning komt als achtergrond van de container.
+      _maakUitsnedeLeeg(pdfCanvasEl);
+    } else {
+      // Show low-res preview immediately while full render runs in background
+      setupCanvasHiDPI(pdfCanvasEl, viewport.width, viewport.height);
+      const lowRes = _lowResCache.get(_lowResKey(pageNum));
+      if (lowRes) {
+        const previewCtx = pdfCanvasEl.getContext('2d');
+        previewCtx.drawImage(lowRes.canvas, 0, 0, pdfCanvasEl.width, pdfCanvasEl.height);
+      }
     }
   }
 
@@ -1200,6 +1518,13 @@ async function renderContinuousPage(pageNum) {
     annotationCanvasEl.style.left = '0';
     canvasContainer.appendChild(annotationCanvasEl);
   }
+  // Muis-events koppelen zodra de pagina haar canvassen heeft, niet pas aan
+  // het einde van een geslaagde render (#1174). Een eerste render die door een
+  // nieuwere werd ingehaald (fitPage vlak na het openen van een nieuw
+  // document), mislukte of werd afgebroken, keerde vóór dat einde terug; de
+  // volgende vond de canvassen al en sloeg het koppelen over. De pagina nam
+  // dan geen enkel gereedschap meer aan.
+  setupContinuousPageEvents(annotationCanvasEl, pageNum);
 
   // Update canvas dimensions for new scale. A REUSED pdf-canvas keeps its old
   // bitmap as a CSS-stretched placeholder until the new render lands: resizing
@@ -1227,8 +1552,10 @@ async function renderContinuousPage(pageNum) {
     weergaveTransform(pageNum),
   );
   if (isNewPage) {
-    setupCanvasHiDPI(pdfCanvasEl, viewport.width, viewport.height);
-  } else {
+    if (!scherp) setupCanvasHiDPI(pdfCanvasEl, viewport.width, viewport.height);
+  } else if (pdfCanvasEl.dataset.beeld !== 'uitsnede') {
+    // (Een uitsnede houdt haar plek en maat, meegeschaald door het
+    // zoomgebaar, tot het nieuwe beeld er is.)
     const { w: cssW0, h: cssH0 } = cssSize();
     pdfCanvasEl.style.width = cssW0 + 'px';
     pdfCanvasEl.style.height = cssH0 + 'px';
@@ -1236,11 +1563,9 @@ async function renderContinuousPage(pageNum) {
   // Cursor is handled centrally by js/ui/cursor.js — no need to set it here.
 
   // Only editText forces pe:none statically; select uses dynamic fallthrough.
-  // See comment near renderer block ~line 455.
-  if (state.currentTool === 'editText') {
-    annotationCanvasEl.style.zIndex = '2';
-    annotationCanvasEl.style.pointerEvents = 'none';
-  }
+  // See comment near renderer block ~line 455. Een nieuw canvas heeft in de
+  // CSS geen z-index en zou anders onder de tekstlaag liggen (#1013).
+  pasCanvasLagenToe(canvasContainer, state.currentTool);
 
   // RUST-ONLY: continuous-mode page render. Used to dual-fallback to
   // PDF.js — removed per project policy. Rust failure surfaced via console
@@ -1310,9 +1635,17 @@ async function renderContinuousPage(pageNum) {
   console.time(label + ' cache-lookup');
   const _cached = _bitmapJSCacheGet(_jsCacheKey);
   console.timeEnd(label + ' cache-lookup');
-  if (_pdfjsPad) {
+  if (scherp) {
+    // Geen hele-paginarender: de uitsnede in beeld, met de hele pagina op
+    // lage resolutie als achtergrond. Loopt naast de lagen hieronder.
+    werkScherpeUitsnedeBij(pageWrapper, pageNum);
+    state.renderEngine = 'Raster (PDFium)';
+    console.timeEnd(label);
+  } else if (_pdfjsPad) {
     try {
-      await tekenPaginaMetPdfJs(page, viewport, pdfCanvasEl);
+      _verlaatUitsnedeModus(pdfCanvasEl, canvasContainer, pageNum);
+      if (!await tekenPaginaMetPdfJs(page, viewport, pdfCanvasEl)) { console.timeEnd(label); return; }
+      pdfCanvasEl.dataset.beeld = 'pagina';
       state.renderEngine = 'Raster (PDF.js)';
     } catch (e) {
       console.warn(`[render-continuous] PDF.js-render van pagina ${pageNum} mislukt:`, e);
@@ -1320,6 +1653,8 @@ async function renderContinuousPage(pageNum) {
     console.timeEnd(label);
   } else if (_cached) {
     console.time(label + ' canvas-draw-cached');
+    _verlaatUitsnedeModus(pdfCanvasEl, canvasContainer, pageNum);
+    pdfCanvasEl.dataset.beeld = 'pagina';
     pdfCanvasEl.width = _cached.w;
     pdfCanvasEl.height = _cached.h;
     // CSS size = bitmap / dpr (1:1), or the logical page size when the axis
@@ -1370,6 +1705,8 @@ async function renderContinuousPage(pageNum) {
       const rustH = headerView.getUint32(4, true);
       const rgba = new Uint8ClampedArray(_contBytes.buffer, _contBytes.byteOffset + 8, _contBytes.length - 8);
       console.time(label + ' canvas-putImageData');
+      _verlaatUitsnedeModus(pdfCanvasEl, canvasContainer, pageNum);
+      pdfCanvasEl.dataset.beeld = 'pagina';
       pdfCanvasEl.width = rustW;
       pdfCanvasEl.height = rustH;
       // CSS size: see the cached branch above.
@@ -1405,11 +1742,8 @@ async function renderContinuousPage(pageNum) {
   // gestretcht dan oud beeld), maar de tekst-/link-/formlagen zouden op de
   // verouderde viewport gepositioneerd worden. Overslaan: de aankomende
   // debounced re-render (reRenderVisibleContinuousPages cleart _renderedPages)
-  // herbouwt deze pagina op de juiste schaal. De muis-events moeten bij een
-  // nieuwe pagina wél nu al gekoppeld worden: bij de herkansing is isNewPage
-  // false en zou setupContinuousPageEvents anders nooit draaien.
+  // herbouwt deze pagina op de juiste schaal.
   if (doc.scale !== vpOpts.scale) {
-    if (isNewPage) setupContinuousPageEvents(annotationCanvasEl, pageNum);
     // De laatste debounced re-render kan al gedraaid zijn terwijl deze render
     // nog liep — zonder herplanning blijft de pagina dan permanent op de
     // (gestretchte) oude bitmap staan. Zelf een verse render inplannen.
@@ -1451,6 +1785,11 @@ async function renderContinuousPage(pageNum) {
 
   // Re-apply overlay state for newly created form/link layers
   applyOverlayPointerEvents(canvasContainer);
+  // Tekstlaag en annotatiecanvas van deze pagina in de stapeling van het
+  // actieve gereedschap (#1013). setTool() zet die alleen voor de pagina's die
+  // er dan al zijn; een later gebouwde pagina hield anders de tekstlaag
+  // bovenop en de hand kon er niet pannen.
+  pasGereedschapLagenToe(canvasContainer, state.currentTool);
 
   // Render annotations
   const annotationCtxEl = annotationCanvasEl.getContext('2d');
@@ -1466,14 +1805,8 @@ async function renderContinuousPage(pageNum) {
   // Re-apply search highlights after re-render
   onPageRendered();
 
-  // Scherpe overlays bij hoge zoom (gecapte backing store) direct bijwerken.
+  // Scherpe annotatie-overlay bij hoge zoom (staat uit, zie rendering.js).
   updateContinuousSharpOverlay(pageWrapper, pageNum);
-  updateSharpPageOverlay(pageWrapper, pageNum);
-
-  // Setup mouse events only for new pages (not re-renders)
-  if (isNewPage) {
-    setupContinuousPageEvents(annotationCanvasEl, pageNum);
-  }
 }
 
 // Re-render only visible pages at new scale (keeps existing DOM structure)
@@ -1595,7 +1928,19 @@ function _applyContinuousZoomInstant(oldScale, anchorY = null, anchorX = null) {
         cv.dataset.clipY = (parseFloat(cv.dataset.clipY) || 0) * factor;
         return;
       }
-      if (cv.classList.contains('annotation-canvas-sharp') || cv.classList.contains('pdf-canvas-sharp')) {
+      if (cv.dataset.beeld === 'uitsnede') {
+        // Paginacanvas als uitsnede (#1163): plek en maat schalen mee; de
+        // bitmap blijft tijdelijk opgerekt tot de nieuwe uitsnede er is.
+        const pageNum = parseInt(wrapper.dataset.page, 10);
+        const staat = _scherpStaat.get(pageNum);
+        if (staat?.uitsnede) staat.uitsnede = schaalUitsnede(staat.uitsnede, factor);
+        cv.style.width = `${(parseFloat(cv.style.width) || 0) * factor}px`;
+        cv.style.height = `${(parseFloat(cv.style.height) || 0) * factor}px`;
+        cv.style.left = `${(parseFloat(cv.style.left) || 0) * factor}px`;
+        cv.style.top = `${(parseFloat(cv.style.top) || 0) * factor}px`;
+        return;
+      }
+      if (cv.classList.contains('annotation-canvas-sharp')) {
         // De viewport-uitsnede schaalt mee met de pagina (maat én positie);
         // de settle-hertekening vervangt hem daarna door een exacte uitsnede.
         cv.style.width = `${(parseFloat(cv.style.width) || 0) * factor}px`;
@@ -1690,8 +2035,25 @@ function _bindContinuousScrollSync() {
       if (acties.paginaVolgen) _syncCurrentPageFromScroll(container);
       // Annotatie-uitsnedes op de nieuwe scrollpositie zetten.
       if (acties.uitsnedesBijwerken) reclipAllContinuousAnnotationCanvases();
+      // De scherpe pagina-uitsnedes ook; niet midden in een zoomgebaar (de
+      // scrollcorrectie daarvan komt hier ook langs): dat doet de
+      // hertekening na het gebaar.
+      if (acties.uitsnedesBijwerken && !_contRerenderTimer) werkScherpeUitsnedesBij();
     }, 120);
   }, { passive: true });
+  // Een groter venster laat meer van de pagina zien dan de uitsnedes dekken.
+  if (typeof ResizeObserver === 'function') {
+    let wacht = null;
+    new ResizeObserver(() => {
+      if (wacht) clearTimeout(wacht);
+      wacht = setTimeout(() => {
+        wacht = null;
+        if (!naScrollen(getActiveDocument()).uitsnedesBijwerken) return;
+        reclipAllContinuousAnnotationCanvases();
+        werkScherpeUitsnedesBij();
+      }, 150);
+    }).observe(container);
+  }
 }
 
 function _syncCurrentPageFromScroll(container) {
@@ -1767,6 +2129,9 @@ export async function renderContinuous(forceRebuild) {
     _continuousObserver = null;
   }
   _renderedPages.clear();
+  // De pagina's worden opnieuw opgebouwd: lopende uitsnede-aanvragen horen
+  // bij canvassen die verdwijnen.
+  _vergeetScherpeUitsnedes();
 
   continuousContainer.innerHTML = '';
 
@@ -1904,9 +2269,13 @@ export async function renderContinuous(forceRebuild) {
 }
 
 // Setup pointer events for continuous mode pages
+const _paginaEventsGekoppeld = new WeakSet();
 function setupContinuousPageEvents(canvas, pageNum) {
   // Store pageNum in dataset for the dispatcher's resolvePointerCoords
   canvas.dataset.page = pageNum;
+  const cc0 = canvas.closest('.canvas-container-cont') || canvas;
+  // Eén keer per paginacontainer: elke render roept dit aan.
+  if (!eenmaalPerElement(_paginaEventsGekoppeld, cc0)) return;
   // Bind op de paginacontainer, niet op het annotatiecanvas: dat canvas is
   // een viewport-uitsnede en dekt de pagina niet volledig — buiten de
   // uitsnede zou een klik anders in een dode zone vallen. Het filter
@@ -1957,6 +2326,36 @@ function _prevSpreadAnchor(anchor) {
   return anchor <= 2 ? 1 : anchor - 2;
 }
 
+/**
+ * Show the page area that belongs to a document's view mode: the single-page
+ * canvas or the continuous container. Each document keeps its own view mode
+ * while the two areas are shared, so this runs on every view mode change AND
+ * on every tab switch. Without it a switch from a continuous document to a
+ * single-page one left the previous document's pages on screen.
+ */
+export function zetWeergaveLayout(doc) {
+  const singleContainer = document.getElementById('canvas-container');
+  const continuousContainer = document.getElementById('continuous-container');
+  const pdfContainer = document.getElementById('pdf-container');
+  if (!doc || !singleContainer || !continuousContainer) return;
+  if (doc.viewMode === 'single') {
+    singleContainer.style.display = 'inline-block';
+    continuousContainer.style.display = 'none';
+    _setContinuousLayoutActive(false);
+  } else {
+    singleContainer.style.display = 'none';
+    continuousContainer.style.display = (doc.bookSpread || doc.facingSpread) ? 'grid' : 'flex';
+    _setContinuousLayoutActive(true);
+    // CRUCIAAL: single-/rasterweergave zet #pdf-container inline op
+    // `overflow:hidden` (het viewport-singleton bezit dan de pan/zoom).
+    // Doorlopende/boekweergave scrollt juist NATIEF via deze container.
+    // Zonder deze reset blijft de inline `hidden` staan na één single-render
+    // en kan de gebruiker niet meer scrollen. Terug naar '' laat de CSS-regel
+    // (.main-view #pdf-container.visible { overflow:auto }) het overnemen.
+    if (pdfContainer) pdfContainer.style.overflow = '';
+  }
+}
+
 // Switch view mode
 export async function setViewMode(mode) {
   const doc = getActiveDocument();
@@ -1991,107 +2390,17 @@ export async function setViewMode(mode) {
     doc.facingSpread = false;
     if (mode === 'continuous') doc.bookSpread = false;
   }
-  const singleContainer = document.getElementById('canvas-container');
   const continuousContainer = document.getElementById('continuous-container');
-  const pdfContainer = document.getElementById('pdf-container');
+  zetWeergaveLayout(doc);
 
   if (doc.viewMode === 'single') {
-    singleContainer.style.display = 'inline-block';
-    continuousContainer.style.display = 'none';
-    _setContinuousLayoutActive(false);
     await renderPage(doc.currentPage);
   } else {
-    singleContainer.style.display = 'none';
-    continuousContainer.style.display = (doc.bookSpread || doc.facingSpread) ? 'grid' : 'flex';
-    _setContinuousLayoutActive(true);
-    // CRUCIAAL: single-/rasterweergave zet #pdf-container inline op
-    // `overflow:hidden` (het viewport-singleton bezit dan de pan/zoom).
-    // Doorlopende/boekweergave scrollt juist NATIEF via deze container
-    // (scrollTop/scrollIntoView/_continuousRezoom). Zonder deze reset blijft
-    // de inline `hidden` staan na één single-render en kan de gebruiker niet
-    // meer scrollen — alleen de eerste pagina('s) zijn zichtbaar. Terug naar
-    // '' laat de CSS-regel (.main-view #pdf-container.visible { overflow:auto })
-    // het weer overnemen.
-    if (pdfContainer) pdfContainer.style.overflow = '';
     await renderContinuous();
     // Stay on the page the user was reading — the rebuild starts at page 1.
     const wrapper = continuousContainer.querySelector(`.page-wrapper[data-page="${doc.currentPage}"]`);
     if (wrapper) wrapper.scrollIntoView({ block: 'start' });
   }
-}
-
-// ─── Adjacent-page prefetch (idle-gated) ────────────────────────────────────
-// The original prefetchAdjacentPages was removed (see the renderPage() note)
-// because it ran unconditionally and starved visible-thumbnail generation —
-// Rust backend contention that froze the app on large files. This version only
-// fires after a navigation settles AND the pipeline is genuinely idle, and it
-// aborts the instant the user navigates again. It primes the NEXT page's vector
-// draw-commands into the same cache renderPage() reads (vr.hasCachedCommands),
-// so sequential paging becomes a cache hit instead of a cold Rust extract.
-let _prefetchTimer = null;
-const PREFETCH_DELAY_MS = 600;       // settle window after a navigation
-const PREFETCH_RETRY_MS = 400;       // re-poll cadence while waiting for idle
-const PREFETCH_MAX_WAIT_MS = 4000;   // give up after this — never busy-loop
-
-export function schedulePrefetch(centerPage) {
-  if (_prefetchTimer) clearTimeout(_prefetchTimer);
-  _prefetchTimer = setTimeout(() => { _prefetchTimer = null; _runPrefetch(centerPage, 0); }, PREFETCH_DELAY_MS);
-}
-
-// The active doc IFF the user is still parked on `centerPage` (else navigation
-// moved on and this prefetch is stale).
-function _prefetchDocIfStill(centerPage) {
-  const doc = getActiveDocument();
-  return doc && doc.pdfDoc && doc.currentPage === centerPage ? doc : null;
-}
-
-async function _runPrefetch(centerPage, waited) {
-  const doc = _prefetchDocIfStill(centerPage);
-  if (!doc) return; // user navigated — the new nav scheduled its own prefetch
-  // Don't compete with a foreground render or with visible-thumbnail work.
-  // Re-poll for a bounded window (timer-based, never a busy loop), then give up.
-  if ((window.__pdfRenderInFlight || 0) > 0 || !isThumbnailPipelineIdle()) {
-    if (waited >= PREFETCH_MAX_WAIT_MS) return;
-    _prefetchTimer = setTimeout(
-      () => { _prefetchTimer = null; _runPrefetch(centerPage, waited + PREFETCH_RETRY_MS); },
-      PREFETCH_RETRY_MS,
-    );
-    return;
-  }
-  // Forward first (normal reading direction), then backward.
-  const targets = [];
-  if (centerPage + 1 <= doc.pdfDoc.numPages) targets.push(centerPage + 1);
-  if (centerPage - 1 >= 1) targets.push(centerPage - 1);
-  for (const pn of targets) {
-    if (!_prefetchDocIfStill(centerPage)) return; // user moved — stop starting new IPC
-    if (!isThumbnailPipelineIdle()) return;       // visible thumbnails resumed — yield
-    try { await _prefetchOnePage(doc, pn, centerPage); }
-    catch { /* best-effort: a failed prefetch just means the next nav renders cold */ }
-  }
-}
-
-// Cache-only mirror of renderPage()'s cold vector path: analyze → extract →
-// prepareImages. Never touches #pdf-canvas or the viewport singleton.
-async function _prefetchOnePage(doc, pageNum, centerPage) {
-  if (!heeftRustRenderer() || !doc.filePath) return;
-  if (state.renderEngineOverride != null) return; // user forced a raster engine
-  const rotation = getPageRotation(pageNum);
-  const vr = await import('./vector-renderer.js');
-  if (vr.hasCachedCommands(doc.filePath, pageNum, rotation)) return; // already primed
-  const ptcMod = await import('./page-type-cache.js');
-  let pageType = ptcMod.getCachedPageType(doc.filePath, pageNum - 1);
-  if (!pageType) {
-    pageType = await invoke('analyze_page_type', { path: doc.filePath, pageIndex: pageNum - 1 });
-    ptcMod.cachePageType(doc.filePath, pageNum - 1, pageType);
-  }
-  if (pageType !== 'vector') return; // raster pages aren't command-cached
-  if (!_prefetchDocIfStill(centerPage)) return;
-  const cmdData = await invoke('extract_draw_commands', { path: doc.filePath, pageIndex: pageNum - 1, rotation });
-  const cmdBytes = cmdData instanceof Uint8Array ? cmdData : new Uint8Array(cmdData);
-  vr.cacheCommands(doc.filePath, pageNum, cmdBytes, rotation);
-  if (!_prefetchDocIfStill(centerPage)) return;
-  await vr.prepareImages(doc.filePath, pageNum, rotation);
-  console.log(`[prefetch] primed page ${pageNum}`);
 }
 
 // Go to specific page.
@@ -2141,16 +2450,13 @@ export async function goToPage(pageNum, options = {}) {
     if (pdfContainer && !options.skipScroll) {
       pdfContainer.scrollTop = 0;
     }
-    // Prime the neighbouring pages while the backend is idle so the next
-    // sequential nav is a cache hit (skips the cold Rust extract).
-    schedulePrefetch(pageNum);
   } else {
     // Scroll to page in continuous mode
     const pageWrapper = document.querySelector(`.page-wrapper[data-page="${pageNum}"]`);
     if (pageWrapper && !options.skipScroll) {
       // Een lopende wieluitloop zou deze vloeiende sprong afbreken (#522).
       stopAlleWielScrollers();
-      pageWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      pageWrapper.scrollIntoView({ behavior: scrollGedrag(), block: 'start' });
     }
   }
 
@@ -2166,7 +2472,31 @@ export async function goToPage(pageNum, options = {}) {
 // via the legacy PDF.js path will have its change immediately stomped.
 // We must therefore mutate the viewport directly when it's active, and
 // only fall back to the legacy `doc.scale` path otherwise.
-export async function zoomIn() {
+// PDF.js single-page views (web and unsaved documents) scroll the page-sized
+// canvas instead of using the native viewport's pan offsets. Preserve the
+// point in that canvas through its actual CSS resize, including fixed chrome
+// and page rotation. Scroll limits still apply when a page fits an axis.
+function singlePageZoomAnchor(doc, point) {
+  const container = document.getElementById('pdf-container');
+  const canvas = getPdfCanvas();
+  if (!container || !canvas) return null;
+  const rectBefore = canvas.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const anchor = point ?? {
+    x: containerRect.left + container.clientLeft + container.clientWidth / 2,
+    y: containerRect.top + container.clientTop + container.clientHeight / 2,
+  };
+  const pageNum = doc.currentPage;
+  const scale = doc.scale;
+  return () => {
+    if (getActiveDocument() !== doc || doc.currentPage !== pageNum || doc.scale !== scale) return;
+    const { dx, dy } = anchorScrollCorrection(anchor, rectBefore, canvas.getBoundingClientRect());
+    container.scrollLeft += dx;
+    container.scrollTop += dy;
+  };
+}
+
+export async function zoomIn(point = null) {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc) return;
   const vp = window.__pdfViewport;
@@ -2185,10 +2515,10 @@ export async function zoomIn() {
     return;
   }
   doc.scale += 0.25;
-  await renderPage(doc.currentPage);
+  await renderPage(doc.currentPage, singlePageZoomAnchor(doc, point));
 }
 
-export async function zoomOut() {
+export async function zoomOut(point = null) {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc) return;
   const vp = window.__pdfViewport;
@@ -2211,8 +2541,21 @@ export async function zoomOut() {
     if (doc.scale <= 0.2) doc.scale = Math.max(0.05, doc.scale - 0.025);
     else if (doc.scale <= 0.5) doc.scale = Math.max(0.05, doc.scale - 0.1);
     else doc.scale -= 0.25;
-    await renderPage(doc.currentPage);
+    await renderPage(doc.currentPage, singlePageZoomAnchor(doc, point));
   }
+}
+
+// Zoom de PDF.js-weergave van één pagina naar een vaste schaal, met het punt
+// `point` (client-coördinaten) als vast punt. Voor de zoomrechthoek van het
+// hand-gereedschap (#1161); de vector-viewport en de doorlopende weergave
+// hebben hun eigen route.
+export async function zoomEnkelePaginaNaar(nieuweSchaal, point = null) {
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !(nieuweSchaal > 0)) return;
+  const schaal = Math.min(24, Math.max(0.05, nieuweSchaal));
+  if (schaal === doc.scale) return;
+  doc.scale = schaal;
+  await renderPage(doc.currentPage, singlePageZoomAnchor(doc, point));
 }
 
 export async function setZoom(newScale) {
@@ -2571,6 +2914,10 @@ export function rotateAnnotation(ann, normDelta, oldW, oldH) {
     ann.armOriginX = ao.x; ann.armOriginY = ao.y;
   }
 
+  // Gedraaide quads van een markering op schuine tekst (#927).
+  if (Array.isArray(ann.quads)) {
+    ann.quads = ann.quads.map(q => (Array.isArray(q) ? q.map(p => rotatePoint(p.x, p.y, normDelta, oldW, oldH)) : q));
+  }
   // Text markup rects (textHighlight, textStrikethrough, textUnderline)
   if (ann.rects && ann.rects.length > 0) {
     ann.rects = ann.rects.map(r => rotateRect(r.x, r.y, r.width, r.height, normDelta, oldW, oldH));
@@ -2712,6 +3059,8 @@ export function clearPdfView() {
   _lowResCache.clear();
   _renderedPages.clear();
   _contPageRenderGen.clear();
+  _vergeetScherpeUitsnedes();
+  _vergeetAchtergronden();
 
   // Clear continuous mode container
   const continuousContainer = document.getElementById('continuous-container');

@@ -3,6 +3,7 @@
     "openPopUpNote": "Avaa ponnahdusmuistiinpano",
     "hidePopUpNote": "Piilota ponnahdusmuistiinpano",
     "resetPopUpLocation": "Palauta ponnahdusmuistiinpanon sijainti",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Muokkaa tekstiä...",
     "addReply": "Lisää vastaus",
     "locked": "Lukittu",
@@ -12,11 +13,13 @@
     "printable": "Tulostettava",
     "status": "Tila",
     "showByStatus": "Näytä tilan mukaan",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Ei mitään",
     "statusAccepted": "Hyväksytty",
     "statusCancelled": "Peruutettu",
     "statusCompleted": "Valmis",
     "statusRejected": "Hylätty",
+    "statusReviewed": "Tarkastettu",
     "reviewHistory": "Tarkastushistoria...",
     "layer": "Taso:",
     "noLayersAvailable": "Tasoja ei ole saatavilla",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Lisää pisteitä mittaketjuun",
     "dimChainRemove": "Poista apuviiva ketjusta",
     "selectRoom": "Valitse huone",
+    "checkScale": "Tarkista mittakaava tällä viivalla...",
     "saveToToolSet": "Tallenna työkalusarjaan"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Keskitä pystysuunnassa",
     "distributeHorizontally": "Jaa vaakasuunnassa",
     "distributeVertically": "Jaa pystysuunnassa",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Trimmaa seinien nurkat",
     "deleteAnnotations": "Poista {{count}} merkintää",
     "deleteConfirm": "Poistetaanko {{count}} merkintää?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Sisennä uuden kirjanmerkin alle...",
     "indent": "Sisennä",
     "outdent": "Pienennä sisennystä",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Poista {{count}} kirjanmerkkiä"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Lisää tiedostosta...",
     "insertFromFileBefore": "Ennen tätä sivua...",
     "insertFromFileAfter": "Tämän sivun jälkeen...",
-    "pageLabels": "Sivujen nimiöt (nimien muodostus)..."
+    "pageLabels": "Sivujen nimiöt (nimien muodostus)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Korosta valinta",
     "strikethroughSelection": "Yliviivaa valinta",
     "underlineSelection": "Alleviivaa valinta",
-    "curvedLeaderSelection": "Lisää kaareva kuvateksti"
+    "curvedLeaderSelection": "Lisää kaareva kuvateksti",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Poistetaanko tämä merkintä?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Poista kärkipiste",
     "insertVertex": "Lisää kärkipiste tähän",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Muunna kaareksi",
     "convertToLine": "Muunna viivaksi"
   },

@@ -78,6 +78,11 @@ function paginaMaatPt() {
 }
 
 export async function ensureBitmapForCurrentView() {
+    const myGen = ++_bitmapGen;
+    const { filePath, pageNum, rotation, zoom } = viewport;
+    const isCurrent = () => myGen === _bitmapGen && viewport.active && viewport.pageType === 'raster'
+        && viewport.filePath === filePath && viewport.pageNum === pageNum
+        && viewport.rotation === rotation && viewport.zoom === zoom;
     if (!viewport.active || !viewport.filePath || viewport.pageType !== 'raster') {
         viewport.currentBitmap = null;
         viewport.dirty = true;
@@ -98,16 +103,16 @@ export async function ensureBitmapForCurrentView() {
     const capScale = MAX_BITMAP_AXIS_PX / maxAxisPt;
 
     const _prefOn = !!(state.preferences && state.preferences.progressiveRender);
-    const _heavy = _prefOn ? await isHeavyPage(viewport.filePath, viewport.pageNum) : false;
-    const _extreme = _heavy ? await isExtremePage(viewport.filePath, viewport.pageNum) : false;
+    const _heavy = _prefOn ? await isHeavyPage(filePath, pageNum) : false;
+    if (!isCurrent()) return;
+    const _extreme = _heavy ? await isExtremePage(filePath, pageNum) : false;
+    if (!isCurrent()) return;
     if (_prefOn && _heavy && (!_extreme || !needsVisibleTile(viewport.zoom, dpr, capScale))) {
         console.log(`[prog-guard] zware pagina p${viewport.pageNum} → progressief pad`);
-        _bitmapGen++; // maak een eventuele in-flight gewone render stale
         return ensureProgressiveBitmapForCurrentView();
     }
 
     if (_prefOn && _extreme) {
-        _bitmapGen++;
         const fallback = getBestAvailableBitmap(
             viewport.filePath,
             viewport.pageNum,
@@ -120,8 +125,6 @@ export async function ensureBitmapForCurrentView() {
         }
         return;
     }
-
-    const myGen = ++_bitmapGen;
 
     // Cap so PDFium never has to render above the 4096 px axis limit.
     const exactScale = Math.min(targetScale, capScale);
@@ -140,7 +143,7 @@ export async function ensureBitmapForCurrentView() {
 
     // Async: fetch the exact bucket. ensureBitmap dedups concurrent calls.
     const entry = await ensureBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, useBucket);
-    if (myGen !== _bitmapGen) return;  // stale (newer zoom/page came in)
+    if (!isCurrent()) return;  // stale (newer zoom/page came in)
     if (entry && entry.bitmap) {
         viewport.currentBitmap = entry.bitmap;
         viewport.dirty = true;
@@ -158,7 +161,7 @@ export async function ensureBitmapForCurrentView() {
     // e.g. 100%/200%/400% @ 2x DPR — nothing to upgrade).
     if (useBucket / exactScale > 1.02) {
         const exactEntry = await ensureExactBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, exactScale);
-        if (myGen !== _bitmapGen) return;  // stale (newer zoom/page/pan came in)
+        if (!isCurrent()) return;  // stale (newer zoom/page/pan came in)
         if (exactEntry && exactEntry.bitmap) {
             viewport.currentBitmap = exactEntry.bitmap;
             viewport.dirty = true;
@@ -278,6 +281,7 @@ export async function prewarmZoomTiles(filePath, pageNum) {
                     regionWPt: region.w,
                     regionHPt: region.h,
                     thinLines: thin,
+                    sharpen: true,
                 }, { priority: RENDER_PRIORITY.PREFETCH });
                 if (!viewport.active || viewport.filePath !== filePath || viewport.pageNum !== pageNum) return;
                 const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
@@ -365,6 +369,7 @@ export async function prewarmZoomTiles(filePath, pageNum) {
                 regionWPt: region.w,
                 regionHPt: region.h,
                 thinLines: thin,
+                sharpen: true,
             }, { priority: RENDER_PRIORITY.PREFETCH });
             if (!viewport.active || viewport.filePath !== filePath || viewport.pageNum !== pageNum) return;
             const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
@@ -514,6 +519,7 @@ export async function ensureTileForCurrentView(canvas) {
             regionWPt: bufferedRegion.w,
             regionHPt: bufferedRegion.h,
             thinLines: thin,
+            sharpen: true,
         });
         if (!_tileRequests.isCurrent(requestToken)) return;
         const bytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
@@ -547,7 +553,25 @@ export async function ensureTileForCurrentView(canvas) {
         }
     } catch (e) {
         // Dropped because the document closed or is no longer shown (#506).
-        if (!isRenderCancelled(e)) console.warn('[tile-orch] render failed:', e);
+        if (!isRenderCancelled(e)) {
+            console.warn('[tile-orch] render failed:', e);
+            // Extreme pages above the whole-page cap intentionally start with
+            // tiles only. If both scene and PDFium tiles fail (e.g. unsupported
+            // extra page rotation), they otherwise stay completely white.
+            // Recover a bounded whole-page bitmap, never a stale orientation.
+            const stillCurrent = () => _tileRequests.isCurrent(requestToken)
+                && viewport.active && viewport.pageType === 'raster' && viewport.filePath === filePath
+                && viewport.pageNum === pageNum && (viewport.rotation || 0) === rotation;
+            if (stillCurrent() && !viewport.currentBitmap) {
+                const bucket = computeZoomBucket(Math.min(requestedZoom * dpr, capScale));
+                const fallbackBucket = bucket > capScale ? bucket / 2 : bucket;
+                const fallback = await ensureBitmap(filePath, pageNum, rotation, fallbackBucket);
+                if (stillCurrent() && !viewport.currentBitmap && fallback?.bitmap) {
+                    viewport.currentBitmap = fallback.bitmap;
+                    viewport.dirty = true;
+                }
+            }
+        }
     } finally {
         _tileRequests.finish(requestToken);
     }

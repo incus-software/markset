@@ -409,14 +409,17 @@ test('an indexed image with an out-of-range hival gets a palette of at most 256 
   assert.deepEqual([...uit.bytes.subarray(plte + 4, plte + 10)], [255, 0, 0, 0, 0, 255]);
 });
 
-// A document opened with a password is read-only and its content does not
-// leave the app as a copy (wachtwoord-pdf.js): not through the menu, the
-// dialog or the MCP tool.
+// The decrypted content of a protected document (password or permissions,
+// #378) does not leave the app as a copy (wachtwoord-pdf.js): not through the
+// menu, the dialog or the MCP tool.
 test('a password-protected document is not exported to IFCX', () => {
-  assert.match(lees('./ifcx-export.js'), /if \(opslaanGeweigerd\(doc\)\) return \{ ok: false, code: 'protected' \};/);
-  const paneel = lees('../solid/components/app-menu/ExportPanel.jsx');
-  const ifcx = paneel.slice(paneel.indexOf('const handleExportIfcx'), paneel.indexOf("openDialog('ifcx-export')"));
-  assert.match(ifcx, /opslaanGeweigerd\(doc\)[\s\S]*protectedPdfReadOnly/);
+  assert.match(lees('./ifcx-export.js'), /if \(heeftBeveiligdeInhoud\(doc\)\) return \{ ok: false, code: 'protected' \};/);
+  // The menu card, the save button and the File menu share one starter.
+  const starter = lees('./ifcx-opslaan.js');
+  const ifcx = starter.slice(starter.indexOf('export async function opslaanAlsIfcx'), starter.indexOf("openDialog('ifcx-export')"));
+  assert.match(ifcx, /heeftBeveiligdeInhoud\(doc\)/);
+  assert.match(starter, /if \(beveiligd\) return 'protectedPdfReadOnly';/);
+  assert.match(lees('../solid/components/app-menu/ExportPanel.jsx'), /handleExportIfcx = async \(\) => \{\s*if \(await opslaanAlsIfcx\(\)\) closeAppMenu\(\);/);
   assert.match(lees('../solid/components/dialogs/IfcxExportDialog.jsx'), /result\.code === 'protected'/);
   const brug = lees('../mcp-bridge.js');
   const handler = brug.slice(brug.indexOf('async function handleExportIfcx'), brug.indexOf('// ─── Afdrukken zonder printvenster'));
@@ -500,7 +503,8 @@ test('the existing .ifcreport export is unchanged', () => {
 
 test('the export is wired: menu card, dialog, MCP bridge, Rust server and tool catalogue', () => {
   const paneel = lees('../solid/components/app-menu/ExportPanel.jsx');
-  assert.match(paneel, /openDialog\('ifcx-export'\)/);
+  assert.match(paneel, /opslaanAlsIfcx\(\)/);
+  assert.match(lees('./ifcx-opslaan.js'), /openDialog\('ifcx-export'\)/);
   assert.match(paneel, /t\('exportPanel\.exportIfcx'\)/);
   assert.match(lees('../solid/components/DialogHost.jsx'), /'ifcx-export': IfcxExportDialog/);
   const venster = lees('../solid/components/dialogs/IfcxExportDialog.jsx');

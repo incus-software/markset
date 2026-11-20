@@ -15,6 +15,7 @@ import { createFilePickApi } from '../../markset/plugin-file-pick.js'; // Markse
 import {
   registerSelectionListener as _registerSelectionListener,
   unregisterSelectionListener as _unregisterSelectionListener,
+  onAnySelectionChange,
 } from './selection-listener-registry.js';
 import { clearToolGroups, toolGroupIdsOf } from './tool-group-state.js';
 import { setNativePanelHidden } from '../solid/stores/propertiesStore.js';
@@ -257,6 +258,11 @@ export function createPluginApi(pluginId) {
     openFolderDialog: async (title) => (await import('../core/platform.js')).openFolderDialog(title),
   });
   const registeredProTools = []; // Markset
+  const selectionChangeStops = new Set();  // onSelectionChange registrations
+  const selectedAnnotations = () => {
+    const doc = getActiveDocument();
+    return doc && Array.isArray(doc.selectedAnnotations) ? [...doc.selectedAnnotations] : [];
+  };
   const documentListeners = new Map();
   let viewNavigation = null;
   const navigation = () => (viewNavigation ??= createViewNavigation(viewNavigationHost()));
@@ -276,6 +282,7 @@ export function createPluginApi(pluginId) {
         const page = doc?.currentPage ?? null;
         const scale = doc ? JSON.stringify({
           documentScale: doc.measureScale,
+          pageScales: doc.pageScales ?? null,
           calibratedAnnotations: (doc.annotations || [])
             .filter(a => ['scaleRegion', 'scaleBar', 'viewport'].includes(a.type))
             .map(a => [a.id, a.page, a.x, a.y, a.width, a.height, a.scaleString, a.pixelsPerUnit, a.unit]),
@@ -353,6 +360,8 @@ export function createPluginApi(pluginId) {
       systemInstanceLinks: true,
       scopedPropertyPanels: true,
       agentTasks: true,
+      ocrEngines: true,
+      assets: true,
     },
 
     // --- Markset: smart symbols (markset/plugin-smart-api.js) ---
@@ -396,6 +405,22 @@ export function createPluginApi(pluginId) {
       registeredPalettes.splice(idx, 1);
     },
 
+    // Show or hide one of this extension's own palettes. Without this an
+    // extension palette could be registered but never opened. It then docks
+    // and floats like the Tool Palette.
+    async setToolPaletteVisible(id, visible) {
+      if (!registeredPalettes.includes(id)) return false;
+      const m = await import('../solid/components/ExtensionToolPalette.jsx');
+      m.setExtPaletteVisible(id, !!visible);
+      return m.isExtPaletteVisible(id);
+    },
+
+    async isToolPaletteVisible(id) {
+      if (!registeredPalettes.includes(id)) return false;
+      const m = await import('../solid/components/ExtensionToolPalette.jsx');
+      return m.isExtPaletteVisible(id);
+    },
+
     // --- Property panel registration (custom edit-form for plugin annotations) ---
     registerPropertyPanel(typeName, renderFn) {
       scope.eisActief('propertyPanel', typeName);
@@ -424,6 +449,43 @@ export function createPluginApi(pluginId) {
       scope.eisActief('selectionListener', typeName);
       _registerSelectionListener(typeName, fn);
       registeredSelectionListeners.push({ typeName, fn });
+    },
+
+    /**
+     * The selected annotations of the active document, in selection order:
+     * one, several, or [] when nothing is selected. Unlike
+     * registerSelectionListener (one annotation of one type, null on a
+     * multi-select), this covers a selection of several annotations (#1059).
+     * The array is the caller's own; the annotations in it are the app's.
+     */
+    getSelectedAnnotations() {
+      return selectedAnnotations();
+    },
+
+    /**
+     * Call `fn(selected)` whenever the selection changes (select, add to the
+     * selection, deselect, switch document). `selected` is what
+     * getSelectedAnnotations() returns at that moment. Returns a function
+     * that stops it; also stopped when the extension unloads.
+     */
+    onSelectionChange(fn) {
+      if (typeof fn !== 'function') throw new TypeError('onSelectionChange: fn must be a function');
+      scope.eisActief('selectionChange', pluginId);
+      let active = true;
+      // The app updates the selection around the event; read it once the
+      // current turn has settled. A change still under way when the listener
+      // stops is not delivered.
+      const unsubscribe = onAnySelectionChange(() => queueMicrotask(() => {
+        if (!active) return;
+        try { fn(selectedAnnotations()); } catch (err) { console.error('[plugin] onSelectionChange listener threw', err); }
+      }));
+      const stop = () => {
+        active = false;
+        unsubscribe();
+        selectionChangeStops.delete(stop);
+      };
+      selectionChangeStops.add(stop);
+      return stop;
     },
 
     unregisterSelectionListener(typeName, fn) {
@@ -755,6 +817,41 @@ export function createPluginApi(pluginId) {
       return navigation().focusAnnotation(request);
     },
 
+    // --- OCR-engines (#970): de gebruiker kiest er één als voorkeursengine;
+    // elke OCR-taak in de app gebruikt die dan (js/pdf/ocr-engines.js). Hoort
+    // bij de bijdragescope: uitladen of herladen haalt de engine weg. ---
+    async registerOcrEngine(descriptor) {
+      scope.eisActief('ocrEngine', String(descriptor?.id));
+      const { registreerOcrEngine, verwijderOcrEngine } = await import('../pdf/ocr-engines.js');
+      // Na het laden opnieuw: de extensie kan intussen uitgeladen zijn.
+      scope.eisActief('ocrEngine', String(descriptor?.id));
+      const sleutel = registreerOcrEngine(pluginId, descriptor);
+      try {
+        scope.voegToe('ocrEngine', sleutel, () => verwijderOcrEngine(sleutel));
+      } catch (e) {
+        verwijderOcrEngine(sleutel);
+        throw e;
+      }
+      return sleutel;
+    },
+
+    unregisterOcrEngine(id) {
+      const sleutel = typeof id === 'string' && id.startsWith(`${pluginId}:`) ? id : `${pluginId}:${id}`;
+      return scope.verwijder('ocrEngine', sleutel);
+    },
+
+    /** Een binair bestand uit het eigen pakket van deze extensie (modellen, WebAssembly). */
+    async readAsset(path) {
+      const { isVeiligAssetPad } = await import('./plugin-assets.js');
+      if (!isVeiligAssetPad(path)) throw new TypeError('readAsset: a relative path inside the extension');
+      scope.eisActief('asset', path);
+      const { invoke } = await import('@tauri-apps/api/core');
+      const data = await invoke('read_plugin_asset', { pluginId, filePath: path });
+      if (data instanceof ArrayBuffer) return data;
+      if (ArrayBuffer.isView(data)) return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      return new Uint8Array(data).buffer;
+    },
+
     // --- Linttabbladen (#551): alleen data, de host tekent; zie ribbon-tab-registry.js ---
     registerRibbonTab(descriptor) {
       return lintRegister.registreer(scope, descriptor);
@@ -845,6 +942,7 @@ export function createPluginApi(pluginId) {
       smartSymbolApi.cleanup(); // Markset
       registeredProTools.forEach(id => _unregisterProTool(id)); // Markset
       registeredProTools.length = 0;
+      [...selectionChangeStops].forEach((stop) => stop());
       // Het eigenschappenpaneel en de gereedschapsgroepen per extensie
       // herstellen, niet globaal: andere extensies houden hun toestand (#550).
       if (verbergtNativePaneel) setNativePanelHidden(false);

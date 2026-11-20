@@ -30,7 +30,8 @@
     "formRadio": "Formular-Optionsschaltfläche",
     "screenshot": "Bildschirmfoto",
     "pageLabelPick": "Text für Seitenbeschriftung wählen",
-    "proofread": "Korrektur"
+    "proofread": "Korrektur",
+    "count": "Zählen"
   },
   "toolLabel": "Werkzeug:",
   "annotationsLabel": "Anmerkungen:",
@@ -110,6 +111,7 @@
   "searchHitsOne": "1 Treffer",
   "searchHitsMany": "{{count}} Treffer",
   "passwordProtectedBar": "Mit Kennwort geschützt: schreibgeschützt geöffnet.",
+  "passwordProtectedEditableBar": "Mit einem Kennwort geschützt. Beim Speichern bleibt der Schutz erhalten.",
   "documentSearch": {
     "title": "Dokumente durchsuchen",
     "query": "Suchtext",
@@ -157,5 +159,12 @@
     "port": "Port: {{port}}",
     "lastTool": "Letztes Werkzeug: {{tool}} um {{time}}",
     "noTool": "Noch keine Werkzeugaufrufe"
-  }
+  },
+  "sharedReviewActive": "Gemeinsame Prüfung",
+  "sharedReviewUpdates": "Gemeinsame Prüfung: {{n}} neu",
+  "sharedReviewTitle": "Anmerkungen werden über {{folder}} geteilt. Klicken, um die gemeinsame Prüfung zu öffnen.",
+  "sharedReviewError": "Gemeinsame Prüfung: Ordner nicht erreichbar",
+  "pdfaReadOnly": "Dieses Dokument entspricht dem Standard {{label}} und wurde schreibgeschützt geöffnet, um Änderungen zu verhindern.",
+  "pdfaValidate": "Validieren",
+  "countGroupTip": "Aktive Zählgruppe: die nächste Markierung kommt in diese Gruppe"
 }

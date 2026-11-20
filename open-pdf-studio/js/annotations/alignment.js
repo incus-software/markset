@@ -5,12 +5,25 @@ import { cloneAnnotation } from './factory.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { matchAnnotationSizes } from './size-matching.js';
 import { correctionKind } from './corrections/model.js';
+import { annotationBounds } from './spatial-index.js';
+import { applyMoveRigid, recalcCalloutLeader } from './transforms.js';
+import { paginaMaat, weergaveRotatie } from '../pdf/weergave-ruimte.js';
+import { paginaUitlijnenInPaginaruimte } from './uitlijnen-pagina.js';
+import { heeftTekstkader, maakKadersPassend } from './kader-passend.js';
+import { isLayerLocked } from './annotatie-lagen.js';
+import { layoutTextboxForExport, isRTLText } from './rendering/shapes.js';
 
 // Uitlijn-referentie (arr-align-to dropdown, issue #313):
 //  - 'selection' (default): uitlijnen op de collectieve bounding box
 //  - 'last': uitlijnen op de laatst geselecteerde annotatie
+//  - 'page': uitlijnen op de pagina (#968); werkt ook met een enkele markering
+// De keuze blijft de hele sessie staan (signaal op moduleniveau).
 const [alignTarget, setAlignTarget] = createSignal('selection');
 export { alignTarget, setAlignTarget };
+// Bij 'page': standaard schuift de selectie als groep (onderlinge ligging
+// blijft); met deze optie gaat elke markering apart tegen de rand.
+const [alignPageEach, setAlignPageEach] = createSignal(false);
+export { alignPageEach, setAlignPageEach };
 
 function redraw() {
   if (getActiveDocument()?.viewMode === 'continuous') {
@@ -86,9 +99,62 @@ function getRefBounds(selected, bounds) {
   return entry ? entry.b : null;
 }
 
+// --- Uitlijnen op de pagina (#968) ---
+
+// Selectie voor uitlijnen op de pagina: al vanaf een markering. Vergrendelde
+// markeringen en proefleescorrecties (#508) blijven staan.
+function getSelectedVoorPagina() {
+  const doc = getActiveDocument();
+  if (!doc) return [];
+  let sel = Array.isArray(doc.selectedAnnotations) ? doc.selectedAnnotations : [];
+  if (sel.length === 0 && doc.selectedAnnotation) sel = [doc.selectedAnnotation];
+  return sel.filter(a => a && !a.locked && correctionKind(a) === null);
+}
+
+// Zichtbaar kader in de paginaruimte. Rechthoekige markeringen via
+// annotationBounds: die rekent een rotatie en aanhaallijnen mee. Lijnen en
+// puntenlijsten via de selectiegeometrie, zonder de klikmarge.
+function paginaKader(a) {
+  if (a.x != null && a.y != null && a.width > 0 && a.height > 0) {
+    return annotationBounds(a) || getAnnotationBounds(a);
+  }
+  return getAnnotationBounds(a) || annotationBounds(a);
+}
+
+function alignToPage(kant) {
+  const doc = getActiveDocument();
+  const selected = getSelectedVoorPagina();
+  if (!doc || selected.length === 0) return;
+  withUndo(selected, () => {
+    // Per pagina uitlijnen: een markering hoort bij haar eigen pagina.
+    const perPagina = new Map();
+    for (const a of selected) {
+      const page = a.page || doc.currentPage || 1;
+      if (!perPagina.has(page)) perPagina.set(page, []);
+      perPagina.get(page).push(a);
+    }
+    const now = new Date().toISOString();
+    for (const [page, groep] of perPagina) {
+      // Paginaruimte: na /Rotate en paginarotatie, binnen de CropBox, in
+      // pagina-eenheden (/UserUnit). De weergaverotatie bepaalt wat links is.
+      const maat = paginaMaat(page, doc);
+      if (!maat) continue;
+      const verschuivingen = paginaUitlijnenInPaginaruimte(
+        groep.map(paginaKader), maat, weergaveRotatie(doc), kant, { perStuk: alignPageEach() });
+      groep.forEach((a, i) => {
+        const { x, y } = verschuivingen[i];
+        if (!x && !y) return;
+        applyMoveRigid(a, x, y);
+        a.modifiedAt = now;
+      });
+    }
+  });
+}
+
 // --- Alignment ---
 
 export function alignLeft() {
+  if (alignTarget() === 'page') { alignToPage('left'); return; }
   const selected = getSelected();
   if (selected.length < 2) return;
   withUndo(selected, () => {
@@ -100,6 +166,7 @@ export function alignLeft() {
 }
 
 export function alignCenter() {
+  if (alignTarget() === 'page') { alignToPage('center'); return; }
   const selected = getSelected();
   if (selected.length < 2) return;
   withUndo(selected, () => {
@@ -115,6 +182,7 @@ export function alignCenter() {
 }
 
 export function alignRight() {
+  if (alignTarget() === 'page') { alignToPage('right'); return; }
   const selected = getSelected();
   if (selected.length < 2) return;
   withUndo(selected, () => {
@@ -126,6 +194,7 @@ export function alignRight() {
 }
 
 export function alignTop() {
+  if (alignTarget() === 'page') { alignToPage('top'); return; }
   const selected = getSelected();
   if (selected.length < 2) return;
   withUndo(selected, () => {
@@ -137,6 +206,7 @@ export function alignTop() {
 }
 
 export function alignMiddle() {
+  if (alignTarget() === 'page') { alignToPage('middle'); return; }
   const selected = getSelected();
   if (selected.length < 2) return;
   withUndo(selected, () => {
@@ -152,6 +222,7 @@ export function alignMiddle() {
 }
 
 export function alignBottom() {
+  if (alignTarget() === 'page') { alignToPage('bottom'); return; }
   const selected = getSelected();
   if (selected.length < 2) return;
   withUndo(selected, () => {
@@ -310,3 +381,43 @@ function matchDimensions(opts) {
 export function sameSize() { matchDimensions({ width: true, height: true }); }
 export function sameWidth() { matchDimensions({ width: true }); }
 export function sameHeight() { matchDimensions({ height: true }); }
+
+// --- Kader passend maken (#1144) ---
+// De regel staat in kader-passend.js. Hier: de selectie, een ongedaan-stap
+// voor alles, en het meten met dezelfde lettertypeketen als het canvas en de
+// opgeslagen appearance (layoutTextboxForExport).
+
+/** De geselecteerde tekstvakken en aanhaalvakken die bewerkt mogen worden. */
+export function tekstkadersInSelectie(lijst = null) {
+  const doc = getActiveDocument();
+  if (!doc) return [];
+  let sel = Array.isArray(lijst) ? lijst : (Array.isArray(doc.selectedAnnotations) ? doc.selectedAnnotations : []);
+  if (!lijst && sel.length === 0 && doc.selectedAnnotation) sel = [doc.selectedAnnotation];
+  return sel.filter(a => heeftTekstkader(a) && !a.locked && !a.readOnly
+    && !isLayerLocked(doc, a) && correctionKind(a) === null);
+}
+
+/**
+ * Maakt het kader van elk geselecteerd tekstvak en aanhaalvak passend om zijn
+ * tekst. `lijst`: deze annotaties in plaats van de selectie (contextmenu).
+ * @returns {number} het aantal veranderde vakken
+ */
+export function fitBoxToText(lijst = null) {
+  // Tijdens het typen beheert de editor de maat van het vak.
+  if (state.isEditingText) return 0;
+  const kaders = tekstkadersInSelectie(Array.isArray(lijst) ? lijst : null);
+  if (kaders.length === 0) return 0;
+  const originelen = snapshotAll(kaders);
+  const gewijzigd = maakKadersPassend(kaders, {
+    measureVoor: (a) => layoutTextboxForExport(a).measure,
+    rtlVoor: (a) => isRTLText(a.text || ''),
+    herberekenAanhaallijn: recalcCalloutLeader,
+  });
+  if (gewijzigd.length === 0) return 0;
+  const now = new Date().toISOString();
+  for (const a of gewijzigd) a.modifiedAt = now;
+  // Alleen de veranderde vakken in de ongedaan-stap, in een keer.
+  recordBulkModify(gewijzigd, gewijzigd.map(a => originelen[kaders.indexOf(a)]));
+  redraw();
+  return gewijzigd.length;
+}

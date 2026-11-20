@@ -1,0 +1,1283 @@
+# Stukken JavaScript naar Rust
+
+Stapsgewijs rekenwerk uit de JavaScript-laag naar Rust verplaatsen binnen de
+bestaande Tauri-app. Per stap: dezelfde uitvoer als de JS-route (met een
+pariteitstest), de JS-route blijft als terugval (webversie, Android, ontbrekend
+of falend commando), en een meting JS tegen Rust inclusief IPC. Is Rust niet
+duidelijk sneller of lichter, dan blijft JS de standaard.
+
+## Monochroom-hercompressie per beeld (#902)
+
+**Wat is verplaatst.** Het rekenwerk van `optimizeMonochromeImage()`
+(`open-pdf-studio/js/pdf/monochrome-image.js`) en de CCITT G4-encoder
+(`js/pdf/ccitt-g4.js`): Flate uitpakken, acht-bit grijs/RGB tot één bit pakken
+(alleen zuiver zwart/wit), Flate en CCITT G4 coderen, en de kleinste complete
+stream kiezen. Dat staat nu in de crate `open-pdf-monochrome` (pure logica,
+`cargo test -p open-pdf-monochrome` draait gewoon). Het Tauri-commando
+`monochroom_beeld` (`src-tauri/src/monochroom.rs`) krijgt de ruwe streambytes
+als rauwe body en de afgeleide getallen als JSON-kop `x-opds-monochroom`, en
+geeft een `ipc::Response` terug (soort, beide kandidaatlengtes, gekozen bytes).
+
+Blijft in JS: het lezen van de PDF-structuur en alle toelatingsregels
+(filters, kleurruimte, maskers, geheugengrenzen), de documentlus
+(`monochrome-document.js`) en het opbouwen van het vervangende
+streamwoordenboek. De keuzeregel vergelijkt complete streamobjecten; JS geeft
+daarvoor de grootte van beide kandidaatwoordenboeken bij `/Length 0` mee, Rust
+rekent `basis - 1 + cijfers(n) + n`.
+
+**Bedrading.** `compress.js` vraagt via `getMonochromeNative()`
+(`js/pdf/monochrome-rust.js`) één keer of de Rust-route er is
+(`monochroom_rust_beschikbaar`) en geeft de encoder door aan
+`optimizeMonochromeDocument({ native })`. Webversie en Android: geen
+Rust-route. Faalt een aanroep, dan één waarschuwing in de console en de
+JS-encoder doet dat beeld. `OPDS_RUST_MONOCHROME=0` (omgevingsvariabele van de
+app) zet de Rust-route uit om te vergelijken.
+
+**Pariteit.**
+- CCITT G4 is byte-gelijk aan de JS-encoder: 34 referentiecodes (alle
+  testbitmaps van `ccitt-g4.test.mjs`, beide `/BlackIs1`) in de Rust-tests, en
+  40 coderingen van twintig 300 dpi-scanpagina's in
+  `scripts/bench-rust/09-monochrome.mjs`.
+- Flate: andere bytes (zlib-rs tegen de zlib van de webview), dezelfde inhoud
+  na decoderen. Rust-Flate is op deze scans ~1,5 % kleiner; bij een bijna-gelijke
+  stand tussen Flate en G4 kan de keuze daardoor in theorie omslaan. Op de
+  gemeten pagina's wint G4 met ruim 30 % en is de keuze steeds gelijk.
+- Uitpakken is even streng als `DecompressionStream`: afgekapte invoer en
+  rommel na het einde geven `invalid-image-data`, te veel uitvoer
+  `decoded-or-output-limit`. Volgorde van controles en redenen is gelijk.
+- `monochrome-rust.test.mjs` toetst het contract met een JS-referentie van de
+  Rust-regels: zelfde filter, reden, `before`/`after`, woordenboek en data als
+  de JS-route, plus terugval en annuleren.
+
+**Meting** (Node 24, Windows x64; `node scripts/bench-rust/09-monochrome.mjs`
+vanuit `open-pdf-studio/`). A4-scan op 300 dpi: 2480×3509 px, gepakt 1062 KB,
+acht bit 8,3 MB; bron Flate (zlib-niveau 6). Rust in-proces gemeten
+(release-build); IPC als model: 1 ms per aanroep + 3 kopieën per richting
+(~4 GB/s), dat is ~1,2 ms per pagina (157–206 KB heen, 105 KB terug).
+
+| geval | JS met app-pauzes | JS zonder pauzes | Rust + IPC-model |
+|---|---:|---:|---:|
+| 1 pagina, één-bit bron | 116 ms | 53 ms | 17 ms (Rust 15,5) |
+| 1 pagina, acht-bit grijs | 1847 ms | 126 ms | 32 ms (Rust 30,4) |
+| document 20 pagina's (3,1 MB → 2,07 MB) | 2069 ms | 900 ms | 645 ms (Rust 311, IPC 24, pdf-lib + lijm 311) |
+
+"App-pauzes" is de standaard-`checkpoint` van de JS-route (`setTimeout(0)` om
+de 32 rijen bij het pakken, om de 512 rijen in G4). In Node op Windows kost
+elke pauze ~15 ms; in de webview ~4 ms (geneste timers), dus daar ligt de
+JS-tijd tussen de twee JS-kolommen. De Rust-route draait buiten de UI-thread en
+heeft die pauzes niet nodig.
+
+Rust is per beeld 3–4× sneller dan JS zonder pauzes; voor het hele document
+1,4× (pdf-lib laden/opslaan blijft in JS en is dan de helft van de tijd).
+Uitsplitsing per één-bit pagina in Rust: uitpakken ~2 ms, Flate (zlib-rs)
+~9 ms, G4 ~4 ms. Met flate2/miniz_oxide was Flate 25 ms en Rust per pagina
+niet sneller dan JS; daarom zlib-rs (licentie Zlib, stond al in Cargo.lock).
+
+**Standaard.** Rust aan op de desktop: duidelijk sneller ook met een ruime
+IPC-marge (zelfs 10 ms per aanroep houdt het document sneller dan JS).
+
+**Live na te kijken.** De echte IPC-kosten in WebView2 (het model hierboven is
+een aanname), en een compressierun in de app op een gescand document met
+`OPDS_RUST_MONOCHROME=0` en zonder, met gelijke uitkomst per beeld.
+
+**Vervolg (niet gedaan).** De documentlus doet de beelden na elkaar; Rust kan
+meerdere beelden tegelijk als JS ze parallel aanbiedt (binnen het
+documentbudget). Uitpakken van acht-bit bronnen kan ook via zlib-rs.
+
+## Vergelijken: pixelwerk in de PDFium-worker
+
+**Wat:** het pixelwerk van Vergelijken (`open-pdf-studio/js/compare/`):
+beide revisies rasteren op de vergelijkingsresolutie (0,2 mm per pixel),
+achtergrond schatten, inktmaskers, automatische uitlijning (grove zoektocht
+met fasecorrelatie, patch-verfijning, betrouwbaarheid), verschil per pixel
+met tolerantie, clusters (runs + union-find), samenvoegen en filteren.
+
+**Waar:** in het PDFium-workerproces (`pdfium-worker/src/compare/`), nieuwe
+aanvraag `compare`. De worker rendert zelf beide pagina's in tegels en houdt
+de maskers in een eigen cache (128 MB per worker, leeg bij Trim). Over IPC
+gaan alleen een JSON-kop (uitlijning, statistieken) en de clusters als f64's
+via het gedeelde geheugen: 80 bytes per cluster, bijvoorbeeld 560 bytes voor
+een A0-paar, tegen 2 × 100 MB RGBA als de bitmaps over IPC zouden gaan.
+De app roept hem aan met het Tauri-commando `compare_pixel_pair`
+(`tauri::ipc::Response`, rauwe bytes) vanuit `js/compare/rust-compare.js`.
+
+**Profiel van de JS-weg** (gegenereerde tekeningparen met bekende
+verplaatste, toegevoegde en verwijderde elementen, `scripts/bench-rust/09-compare-pixels.mjs`;
+node 24, pdf.js met @napi-rs/canvas, i9-14900HX; mediaan, ms):
+
+| paar | masker | voorbeeld | renderen | inkt | uitlijnen | detectie | totaal |
+|---|---|---:|---:|---:|---:|---:|---:|
+| A3 | 2100×1485 | 50 | 78 | 27 | – | 14 | 168 |
+| A3 + plotverschuiving | 2100×1485 | 79 | 109 | 39 | 641 | 43 | 905 |
+| A0 | 5945×4205 | 276 | 1207 | 630 | – | 87 | 2160 |
+| A0 + plotverschuiving | 5945×4205 | 218 | 1062 | 576 | 627 | 209 | 2681 |
+
+De tijd zit in het renderen plus `getImageData` en de inktomzetting (in de app
+op de hoofdthread, met een pauze per tegel) en, met automatische uitlijning,
+in de uitlijning (in een Web Worker). De detectie zelf is klein.
+
+**Rust, dezelfde paren** (stadia volgens de worker zelf, ms):
+
+| paar | voorbeeld | renderen | inkt | uitlijnen | detectie | totaal |
+|---|---:|---:|---:|---:|---:|---:|
+| A3 | 14 | 40 | 3 | – | 4 | 63 |
+| A3 + plotverschuiving | 22 | 50 | 3 | 155 | 23 | 253 |
+| A0 | 67 | 221 | 33 | – | 31 | 351 |
+| A0 + plotverschuiving | 55 | 214 | 32 | 169 | 122 | 598 |
+
+**Eind tot eind** (JS met verse maskers tegen de worker inclusief stdin/stdout,
+SHM lezen en decoderen in JS; de extra Tauri-stap draagt dezelfde paar honderd
+bytes en is niet meegeteld):
+
+| paar | JS | Rust | versnelling | Rust, maskers in cache |
+|---|---:|---:|---:|---:|
+| A3 | 168 | 64 | 2,6× | 5 |
+| A3 + plotverschuiving | 905 | 255 | 3,6× | 156 |
+| A0 | 2160 | 354 | 6,1× | 27 |
+| A0 + plotverschuiving | 2681 | 603 | 4,4× | 283 |
+
+Daarnaast verdwijnt al het pixelwerk van de hoofdthread (in de app is dat het
+grootste deel van de JS-tijd: renderen + inkt). De JS-rendertijden zijn onder
+node gemeten; in de WebView zijn ze vergelijkbaar of trager.
+
+In de Rust-poort zijn twee dingen sneller gemaakt zonder de uitkomst te
+veranderen: de kolom-FFT werkt op een aaneengesloten kopie (dezelfde
+rekenstappen, minder cache-missers) en onafhankelijke stappen (kandidaten van
+de grove zoektocht, patches van de verfijning, rijbanden van de inktomzetting)
+draaien op een paar threads, met de keuze daarna in de oorspronkelijke
+volgorde.
+
+**Pariteit, deel 1: de algoritmen zijn bitgelijk.** `cargo test -p pdfium-worker`
+voert de Rust-poort uit op dezelfde invoer als de JS-modules
+(`pdfium-worker/tests/fixtures/compare/`, gemaakt door
+`scripts/bench-rust/compare-golden.mjs`: pdf.js-maskers van de A3-paren,
+synthetische paren met schaal, kwartslag en meetschaal, een RGBA-tegel met
+getinte achtergrond en transparante pixels) en eist dezelfde uitvoer, ook voor
+de kommagetallen bit voor bit (f64-bitpatronen in de fixture): 23
+detectiegevallen (drie gevoeligheden, de precisieniveaus, identiteit,
+afgekapt), 5 uitlijningen,
+4 inktmaskers en de achtergrondschatting. Daarvoor rekent de poort zoals V8:
+`Math.hypot` en `Math.round` nagebouwd, cos/sin/atan2/exp/log uit de
+`libm`-crate (fdlibm-afstamming, MIT/Apache).
+
+**Pariteit, deel 2: PDFium tegen pdf.js.** De worker rendert met PDFium, de
+JS-weg met pdf.js; de randen van lijnen en tekst worden anders
+geanti-aliast. Gemeten op de gegenereerde paren (zelfde drempels, `--check`
+van het benchmarkscript):
+
+| paar | clusters JS / Rust | gekoppeld (gesplitst) | max. randafwijking | max. verschil pixelCount | alle bewerkingen gevonden | uitlijningsverschil |
+|---|---|---|---|---:|---|---|
+| A3 | 11 / 11 | 11 (0) | 1 px (0,2 mm) | 19 % | ja / ja | – |
+| A3 + verschuiving | 12 / 11 | 11 (0) | 1 px (0,2 mm) | 23 % | ja / ja | ≤ 0,001 mm, 0,0012° |
+| A0 | 6 / 7 | 6 (1) | 1 px (0,2 mm) | 21 % | ja / ja | – |
+| A0 + verschuiving | 6 / 7 | 6 (1) | 1 px (0,2 mm) | 21 % | ja / ja | 0,002 mm, 0,0010° |
+
+De tolerantie (en waarom):
+- gekoppelde clusters hebben dezelfde soort en overlappen (IoU ≥ 0,5); hun
+  randen mogen 1 mm verschillen (gemeten: 1 pixel = 0,2 mm). Een
+  anti-aliasrand is hoogstens een pixel breed;
+- een wijziging mag aan één kant één cluster zijn en aan de andere twee, waar
+  een lijn van de andere revisie hem kruist: of het gat bij de kruising groter
+  is dan de samenvoegafstand hangt af van de anti-aliasrand van die lijn. De
+  stukken worden als groep gekoppeld (gezien op het A0-paar: één verwijderde
+  wand);
+- wat niet te koppelen is mag alleen een spikkel onder 4× de minimale
+  oppervlakte zijn (gezien: één spikkel in A3 + verschuiving, alleen in JS);
+- pixelCount (gewijzigde pixels) verschilt tot ruim 20 %: bij lijnen van 1 à 2
+  pixels breed telt de anti-aliasrand zwaar mee. Het is daarom geen
+  koppelvoorwaarde; oppervlakten in het rapport (`areaMm2`) kunnen in die
+  orde verschillen tussen desktop en webversie;
+- uitlijning: verschil kleiner dan 0,1 mm en 0,02°.
+Niet-ingebedde standaardfonts tekent pdf.js met de fonts die de app meegeeft
+(Liberation), PDFium met zijn eigen; het benchmarkscript geeft pdf.js daarom
+dezelfde fonts als de app, anders verschilt tekst meer dan anti-aliasing.
+
+**Precisie (#1149).** De schuif Precisie in de vergelijkingsweergave (vijf
+niveaus, 0 = de gekozen gevoeligheid zelf) schaalt de tolerantie, de minimale
+oppervlakte en op de lagere niveaus de samenvoegafstand
+(`precisionSettings` in `detect-plan.js`). De omrekening naar pixels gebeurt
+in JS; de worker krijgt alleen andere waarden voor `tolerance_px`,
+`min_area_px`, `merge_px` en `noise_px`. De inktdrempel (`threshold`)
+verandert niet, dus de maskers in de cache van de worker (sleutel: bestand,
+pagina, resolutie, drempel) en in die van de JS-weg blijven bruikbaar: een
+ander niveau rekent alleen de detectie opnieuw. De fixtures bevatten elk
+niveau, ook tolerantie 0 op het hoogste.
+
+**Standaard:** desktop gebruikt de worker (duidelijk sneller, en geen
+pixelwerk meer op de hoofdthread). JS blijft de terugval: in de webversie en
+op Android (Tauri zonder PDFium-worker: `isMobile()` houdt de worker-weg
+daar uit, zonder IPC-aanroep), voor een kant die alleen in het geheugen bestaat (de
+versie van vóór het laatste opslaan), als de bestandslengte op schijf afwijkt
+van wat de app heeft, als geen worker `compare` kent (een oudere sidecar
+noemt het niet in `caps` van zijn Ready-regel en krijgt de aanvraag dus
+nooit), en bij elke fout (één waarschuwing in de console, dan JS).
+`OPDS_RUST_COMPARE=0` in de omgeving van de app dwingt JS af.
+
+**Nog live te controleren:** Vergelijken in de app op echte tekeningen
+(overlay en naast elkaar, automatische uitlijning, schaalcorrectie, rapport
+over alle pagina's), het terugvallen met een oude sidecar en met
+`OPDS_RUST_COMPARE=0`, en pagina's met annotaties.
+
+**Formuliervelden.** pdf.js tekent met intent 'display' ook de weergaven van
+formuliervelden; een gewijzigde veldwaarde is dan een wijziging. PDFium tekent
+velden niet als annotatie maar alleen in de formulierstap (`FPDF_FFLDraw`), en
+die stap kent geen matrix. Op een pagina met velden rendert de worker een
+tegel daarom als de hele pagina op schaal met een verschoven oorsprong,
+annotaties en velden mee; pagina's zonder velden houden de matrixroute. Live
+gezien vóór deze aanpassing: tekening met tekst-, keuze-, keuzerondje- en
+lijstveld, tweede versie met andere waarden en één extra lijn: JS 9
+wijzigingen (de lijn plus de velden), worker 2 (alleen de lijn), terwijl de
+overlay de nieuwe veldwaarden wel toonde.
+
+## Snap-geometrie uit de PDF-tekening
+
+**Wat:** de punten (eindpunten, middens) en randen waarop de snap-engine op
+lijnwerk van de PDF snapt, plus de ruimtelijke index daarover. Voorheen liep
+`pdf-snap-extractor.js` de hele PDF.js-operatorlijst van de pagina af; nu leest
+de PDFium-worker de padobjecten uit de pagina die hij voor het tekenen al
+geparst heeft (`pdfium-worker/src/snap_geometry.rs`), met CTM, de /Matrix van
+geneste formulieren en de weergavematrix die de app meegeeft (paginarotatie,
+gebruikersrotatie, /UserUnit, verschoven MediaBox). Krommen worden zoals in
+JavaScript in vier gelijke parameterstappen recht gemaakt; ontdubbelen gaat
+op hetzelfde raster van 0,1 px.
+
+**Overdracht:** `extract_snap_geometry` (Tauri) → worker-request
+`snap_geometry` → binaire `OSG1`-codering via de SHM-regio (in stukken als het
+groter is dan 64 MB) → `tauri::ipc::Response` → `snap-geometrie-binair.js`. De
+index komt kant-en-klaar mee: cellen met `Uint32Array`-blikken als vakjes, in
+dezelfde volgorde als `buildSpatialIndex`.
+
+**Keuze van de route:** desktop met een bestandspad (dezelfde voorwaarde als het
+tekenen met PDFium) gebruikt de worker; anders, of als de worker faalt, de
+PDF.js-route. Een worker die `snap_geometry` niet in zijn `caps` meldt (oudere
+sidecar) krijgt het request nooit; de app valt dan voor de rest van de sessie
+terug op JavaScript, met één waarschuwing in de console. JavaScript afdwingen:
+`OPDS_RUST_SNAP=0` bij het starten van de app, of `window.__opdsRustSnap = false`
+in de ontwikkelconsole.
+
+**Pariteit** (`node --expose-gc scripts/bench-rust/snap-geometrie.mjs --alleen pariteit`):
+lijnen, polylijnen (open en gesloten), krommen (`c`, `v`, `y`), rechthoeken,
+geneste formulieren met /Matrix (ook gedraaid en tweemaal gebruikt), CTM met
+schaal en scheefstand, /Rotate 90/180/270, /Rotate plus gebruikersrotatie,
+verschoven MediaBox met /UserUnit 2: punten (met soort) en randen gelijk binnen
+0,01 pt (grootste afwijking 1,5e-5). De index uit de worker is identiek aan
+`buildSpatialIndex` op dezelfde punten. Op de zware tekening (435.157 punten,
+199.978 randen) zijn alle randen gelijk (grootste afwijking 2,4e-4 px) en
+verschillen 6 punten door een grensgeval van het ontdubbelen: een coördinaat
+die precies op een celgrens van 0,1 px valt (x,x5), waar het laatste bitje van
+de float32-waarde beslist in welke cel hij valt; PDF.js en PDFium lezen getallen
+uit de inhoud net anders in float32. Zo'n punt heeft in de andere set altijd een
+punt binnen één cel.
+
+**Bewuste verschillen:**
+
+- *Knippaden* (`re W n`): de JavaScript-route nam de knipgrens mee als snaprand,
+  de Rust-route niet. Een knippad is geen getekende lijn, en PDFium kent het niet
+  als eigen object (alleen als eigenschap van de objecten die het knipt). De
+  pariteitstest controleert dat het verschil precies de knip-rechthoek is.
+  Geknipte lijnen zelf komen in beide routes heel mee.
+- *Weergaven van annotaties*: de PDF.js-operatorlijst bevat ook de weergave van
+  annotaties, maar de JavaScript-route negeerde de matrix van de annotatie,
+  zodat die lijnen op de verkeerde plek kwamen (in de test 200 pt verschoven).
+  De worker tekent zonder annotaties (zoals de weergave in de app) en laat ze
+  weg; de app snapt op haar eigen annotaties via de snap-engine.
+- Een pad met alleen `n` (geen vulling, geen lijn, geen knip) maakt PDFium niet
+  aan; de JavaScript-route nam het mee. Komt in de praktijk nauwelijks voor.
+
+**Meting** (`node --expose-gc scripts/bench-rust/snap-geometrie.mjs`, Windows,
+release-worker, mediaan van 5; de machine draaide tegelijk andere builds, dus
+de getallen schommelen):
+
+Zware tekening A1, 200.003 segmenten (polylijnen, lijnen, rechthoeken, krommen,
+een blok via een formulier), 1,4 MB PDF, 83.599 operatoren:
+
+| route | extractie | overdracht | decoderen | index | totaal |
+|---|---:|---:|---:|---:|---:|
+| JavaScript (PDF.js-operatorlijst + geometrie + index) | 2696 ms | - | - | in geometrie | 8084 ms |
+| Rust koud (bestand laden + parsen + extractie) | 324 ms | 14 ms | 35 ms | 0 (mee uit de worker) | 374 ms |
+| Rust warm (document in de workercache) | 362 ms | 13 ms | 31 ms | 0 | 406 ms |
+
+Overdracht: 9,9 MB in één stuk. Piekgeheugen node-heap (+ArrayBuffers):
+JavaScript 243 MB, Rust-route 76 MB; het workerproces piekt op 82 MB (los van
+de WebView).
+
+2.000.000 segmenten (14 MB PDF, 841.146 operatoren, 4,3 miljoen punten), één
+run; de overdracht van 97,8 MB gaat in twee SHM-stukken:
+
+| route | extractie | overdracht | decoderen | index | totaal |
+|---|---:|---:|---:|---:|---:|
+| JavaScript | 21.387 ms | - | - | in geometrie | 72.200 ms |
+| Rust koud | 3493 ms | 236 ms | 1139 ms | 0 | 4869 ms |
+| Rust warm | 2104 ms | 205 ms | 1546 ms | 0 | 3855 ms |
+
+Piekgeheugen node-heap: JavaScript 1668 MB, Rust-route 688 MB (vooral de
+4,3 miljoen puntobjecten zelf); workerproces 700 MB (vóór het vrijgeven van de
+ontdubbel-set vóór het coderen, dat daarna is toegevoegd). Op zo'n blad is ook
+de Tauri-IPC van ~100 MB naar de WebView een post om live te meten.
+
+De grootste post in de JavaScript-route bleek de ruimtelijke index (tekst-
+sleutels in een Map, en elke 2000 elementen een `setTimeout`): ruim de helft
+van de tijd. Die komt nu kant-en-klaar uit de worker.
+
+Niet gemeten: de laatste stap van de Rust-app naar de WebView (Tauri-IPC van
+~10 MB per 200.000 segmenten). In de app draait PDF.js bovendien in een eigen
+worker en kopieert de operatorlijst naar de hoofdthread; die kosten zitten
+niet in de JavaScript-getallen hierboven (die zijn dus eerder te gunstig voor
+JavaScript).
+
+**Standaard:** Rust aan op het bureaublad. Ruim tien keer sneller end-to-end en
+een derde van het geheugen in de WebView, met dezelfde snapset.
+
+**Live te controleren:** snappen op een grote CAD-tekening (eindpunt, midden,
+loodrecht, snijpunt) in het echte venster; de IPC-tijd van de WebView; dat het
+ophalen van snap-geometrie tegelrenders op dezelfde worker niet merkbaar
+ophoudt (beide lopen via de request-lock van die worker).
+
+## Zoeken: tekst uit de PDFium-worker
+
+**Stand (18 november 2026): standaard uit, pdf.js leest de tekst.** De route
+was van 2026.46.0 tot en met 2026.47.1 de standaard op het bureaublad. Een
+vergelijking in de draaiende app op de 35 bestanden van de verificatieset gaf
+op 4 bestanden andere tekst dan pdf.js, op twee soorten pagina's:
+- tekst die een halve slag gedraaid staat op grote tekeningen;
+- woordspaties bij fonts die als deelverzameling zijn ingesloten.
+
+Het zoeken kon daardoor treffers missen (432 tegen 435 op één bestand). De
+pariteit op de PDF's in de repo was volledig, dus de tests hieronder vangen
+dit niet. De route gaat nu alleen aan met `window.__opdsRustZoeken = true` in
+de ontwikkelconsole; de worker, het commando en de code blijven staan. Om
+haar weer standaard aan te zetten moet de worker die twee soorten pagina's
+markeren (zoals nu bij verticaal schrift), zodat pdf.js ze leest, en moet de
+vergelijking op de verificatieset in de draaiende app gelijk uitkomen.
+
+De rest van deze sectie beschrijft de route zoals ze gebouwd is.
+
+**Wat is verplaatst.** Het lezen van de paginatekst voor het zoeken (zoekbalk,
+zoeken in open documenten en in een map, MCP `app_search_documents`). Voorheen
+haalde `extractPageText` (`js/search/find-controller.js`) per pagina pdf.js
+`getTextContent()` op; de pdf.js-worker parste daarvoor de inhoud en laadde de
+fonts, en de items gingen als structured clone naar de hoofdthread. Nu leest de
+PDFium-worker de pagina's (`pdfium-worker/src/page_text/`, aanvraag
+`page_text`) en geeft hij de tekstitems die pdf.js zou maken: dezelfde tekst,
+spaties, regeleinden en itemgrenzen, met transform, breedte en hoogte, en per
+teken het stuk basislijn dat het beslaat.
+
+Blijft in JavaScript: het zoeken zelf (hoofdletters, hele woorden en de
+reguliere expressie volgen precies `RegExp`; over 500 pagina's kost dat 2–9 ms,
+zie de meting), de tekst van annotaties en SHX-annotaties, ingevoegde tekst
+("Add Text") en de nog niet opgeslagen OCR-woorden (`metOcrWoorden`,
+`ocr-laag.js`): die komen er na de worker-tekst bij zoals voorheen.
+
+**Hoe.** PDFium heeft de tekst al gelezen (fonts, ToUnicode, coderingen). De
+worker haalt per teken de Unicode-waarde, oorsprong, matrix en lettergrootte
+uit de tekstpagina van PDFium (`FPDFText_*`), de voortgang uit de fontbreedte
+(`FPDFFont_GetGlyphWidth`; de losse tekenbox neemt uitstekende inkt mee en
+draait mee), en de volgorde, de formulier- en beeldgrenzen en de gemarkeerde
+inhoud (BDC/EMC) uit de objectboom. Daarover draaien de itemregels van pdf.js
+6.4 (`buildTextContentItem`, `compareWithLastPosition`, `addFakeSpaces`,
+`normalizeUnicode`, `bidi`), regel voor regel overgenomen (`pdfjs.rs`,
+`bidi.rs`). Wat PDFium zelf toevoegt of weglaat wordt rechtgezet: afgeleide
+spaties en regeleinden (`IsGenerated`) vallen weg, een afbreekstreepje aan het
+regeleinde (PDFium: U+0002) wordt weer '-', en een tekstobject met alleen
+spaties en een kopie van een vorig tekstobject (vette tekst door twee keer
+tekenen), die PDFium overslaat, komen terug.
+
+**Overdracht:** `extract_search_text` (Tauri) → worker-request `page_text` voor
+een reeks pagina's → binaire `OPT1`-codering via de SHM-regio (UTF-16-tekst,
+48 bytes per item, 4 bytes per teken voor het tekenvak) →
+`tauri::ipc::Response` → `rust-zoektekst.js`. De worker stopt na ~150 ms (na
+minstens één pagina) en zegt hoeveel pagina's erin zitten; de app vraagt de
+rest daarna, zodat tegelrenders op die worker niet lang wachten. De eerste
+gevraagde pagina (de huidige) komt alleen, voor een snelle eerste treffer;
+daarna lezen twee workers (banen, elk een eigen worker uit de pool van vier)
+het document in stukken van 32 pagina's, hooguit 128 pagina's vóór het zoeken
+uit.
+
+**Markeringen.** Het tekenvak komt mee in de items (`vakken`); `find-bar.js`
+gebruikt het voor het deel van een item dat een treffer beslaat
+(`matchFractionsUitVakken`). Voorheen schatte de app dat met `measureText` in
+een generieke letterfamilie; bij kerning, letter- of woordafstand (Tc/Tw) en
+ligaturen zat ook een schatting met de echte fontbreedtes tot ~1 pt naast de
+tekens (met `measureText` is het verschil groter).
+
+**Keuze van de route:** desktop met een bestandspad, de bytes die de app van
+het bestand heeft (`getCachedPdfBytes`; bij zoeken in een map de gelezen bytes)
+hebben dezelfde lengte als het bestand op schijf, en de worker telt evenveel
+pagina's als pdf.js. Anders, of bij een fout, pdf.js zoals voorheen (één
+waarschuwing in de console; een gewijzigd bestand of een pool die nog opstart
+zwijgend). Een worker die `page_text` niet in zijn `caps` noemt (oudere
+sidecar) krijgt de aanvraag nooit; de app zet de route dan voor de sessie uit.
+De route aanzetten: `window.__opdsRustZoeken = true` in de ontwikkelconsole
+(geldt voor zoekopdrachten daarna; al gelezen tekst blijft in de tekstcache).
+`OPDS_RUST_SEARCH=0` bij het starten van de app dwingt pdf.js af, ook met de
+schakelaar aan. Webversie en Android/iOS: ongewijzigd (pdf.js).
+
+**Pagina's die pdf.js blijft lezen** (de worker markeert ze en de app leest die
+pagina met pdf.js; de rest van het document gaat gewoon via de worker):
+- schrift van rechts naar links (Hebreeuws, Arabisch): PDFium ontleedt daar
+  presentatievormen naar basisletters (U+FE70–FEFF, bijvoorbeeld een
+  lam-alef-ligatuur naar twee letters) en spiegelt haakjes; pdf.js laat de
+  vormen staan. Voor zoeken op getypte basisletters is PDFium eigenlijk beter,
+  maar dan zouden de treffers tussen desktop en webversie verschillen;
+- verticaal schrift (Identity-V): PDFium geeft voor zo'n tekstobject geen
+  tekens;
+- een glyph zonder Unicode-vertaling (`FPDFText_HasUnicodeMapError`): pdf.js
+  vindt er vaak nog een via de glyphnaam (© in een TeX-font, Type3 zonder
+  ToUnicode, waar PDFium de tekencodes geeft);
+- Type3-tekst op lettergrootte 1 of kleiner: pdf.js schaalt de letterhoogte dan
+  met FontBBox × FontMatrix (TeX-bitmapfonts), die PDFium niet naar buiten
+  geeft.
+
+**Pariteit** (`node --expose-gc scripts/bench-rust/10-zoektekst.mjs --alleen
+pariteit` en `--alleen echt`): de zoekfunctie van de app (`zoekPaginaAlleBronnen`
+met `buildPattern`) op de tekst van beide routes, per zoekvraag gewoon,
+hoofdlettergevoelig en hele woorden.
+- Gemaakte PDF (`zoektekst-pdfs.mjs`, 14 pagina's): Latijn met Tj/TJ, kerning,
+  meervoudige spaties, Tc, Tw, Tz, Ts (super- en subscript), lettergrootte- en
+  fontwissels op één regel, losse BT-blokken, T*/' en regelafstand, geschaalde
+  Tm en CTM, diakrieten, afbreking, gedachtestreep en aanhalingstekens;
+  ligaturen via glyphnamen (/fi, /fl), via ToUnicode naar meer tekens ("ffi")
+  en naar U+FB01/U+FB02; CJK (Chinees, Japans, Koreaans, gemengd met Latijn,
+  TJ-gat); gedraaide tekst (90°, 180°, 270°, 45°, scheef); een pagina met
+  /Rotate 90; tekst in formulieren (genest, met /Matrix, tweemaal gebruikt,
+  gedraaid, en een formulier zonder tekst tussen tekst op één regel); CropBox
+  met verschoven oorsprong en tekst erbuiten; onzichtbare tekst (3 Tr); Type3
+  met ToUnicode; een lege pagina en een met alleen spaties. Uitkomst: op elke
+  pagina die via de worker gaat dezelfde tekst en dezelfde treffers in dezelfde
+  volgorde (538 treffers over de drie opties); het itemvak (transform, breedte,
+  hoogte) wijkt 0,000 pt af, het treffervak hoogstens 0,004 pt waar JavaScript
+  met de echte fontbreedtes kan rekenen. De pagina's met rechts-naar-links,
+  verticaal schrift, Type3 zonder ToUnicode en Type3 op Tf 1 gaan bewust naar
+  pdf.js; de zoektocht via de app-route (`extractPageText` met de bron) over
+  het hele document is daardoor gelijk aan die via pdf.js. Een afwijkende
+  bestandslengte valt terug naar pdf.js.
+- Alle PDF's in de repository (41 bestanden, waaronder de verificatieset in
+  `test pdf-bestanden` (alleen gelezen), de kaders en fixtures en het
+  pdf.js-voorbeeld): op elke pagina gelijke tekst en gelijke treffers voor 11
+  zoekvragen; één pagina gaat via pdf.js (© zonder Unicode in een TeX-font).
+  Grootste itemvakverschil 0,13 pt (f32 in de codering).
+- Onderweg gevonden en rechtgezet (elk zag je eerst als verschil): pdf.js sluit
+  een item bij elke BDC/EMC (getagde PDF's uit een tekstverwerker: "€" en
+  "1.200,00" als losse items); PDFium slaat een tekstobject met alleen een
+  spatie over ("wateraccumulatie en" werd "wateraccumulatieen") en een dubbel
+  getekend tekstobject (CAD-tekeningen); de losse tekenbox is breder dan de
+  voortgang bij 'f' en 'r' (een spatie viel dan net onder de drempel van pdf.js).
+- Nog wel anders, in de testset niet gezien: tekstrijzing (Ts) groter dan de
+  letterhoogte (pdf.js corrigeert de regeleinde-toets daarvoor), een leeg
+  BMC/EMC-paar tussen twee objecten met dezelfde markering, een inline beeld
+  (BI/EI) midden in een regel (pdf.js sluit daar geen item, de worker wel),
+  Type3 met een lege FontBBox op een grotere lettergrootte, en meer dan één
+  spatie in een los spatie-object (telt als één). Rust-tests:
+  `cargo test -p pdfium-worker page_text`; JavaScript:
+  `node --test js/search/rust-zoektekst.test.mjs`.
+
+**Meting** (`node --expose-gc scripts/bench-rust/10-zoektekst.mjs --alleen bench
+--runs 5`, Windows x64, release-worker, mediaan van 5; de machine draaide
+tegelijk andere builds en de JavaScript-tijden schommelden tussen meetrondes
+met 30–50 %, dus vergelijk binnen een tabel). Een zoektocht zoals de zoekbalk
+hem doet: vers geopend document, huidige pagina eerst, dan de rest, per pagina
+`extractPageText` en de treffers. Rust inclusief de overdracht (stdin/stdout van
+de worker, SHM lezen) en het decoderen; tijden in ms. "Piek node-heap" staat
+voor de WebView (pdf.js draait onder node in dezelfde heap; in de app in een
+eigen worker in hetzelfde proces); "tekstcache" is wat de zoekbalk daarna
+bewaart.
+
+Gemaakt tekstdocument, 500 pagina's A4 (2,37 miljoen tekens, afwisselend Tj met
+spaties en TJ met kerning), zoekvraag "search" (8254 treffers):
+
+| route | eerste treffer | totaal | waarvan zoeken | piek node-heap | tekstcache |
+|---|---:|---:|---:|---:|---:|
+| JavaScript (pdf.js) | 37 | 1874 | 9 | 91 MB | 11 MB |
+| Rust, 1 baan | 36 | 1934 | 12 | 45 MB | 17 MB |
+| Rust, 2 banen (standaard) | 39 | 1027 | 7 | 45 MB | 16 MB |
+| Rust, 3 banen | 32 | 768 | 8 | 50 MB | 16 MB |
+
+Zelfde document, een woord dat alleen op pagina 499 staat, huidige pagina 250:
+tot de treffer JavaScript 1751 ms, Rust 1 baan 1367, 2 banen 726, 3 banen 749.
+
+Tekensets uit de verificatieset, zoekvraag "e":
+
+| tekening | pagina's | JS eerste / totaal | Rust (2 banen) eerste / totaal | piek node-heap JS / Rust |
+|---|---:|---:|---:|---:|
+| 3131-CLT-Set (1,4 MB) | 5 | 26 / 86 | 6 / 73 | 7 / 9 MB |
+| Zware vector PDF (17 MB) | 19 | 74 / 1751 | 28 / 1113 | 109 / 121 MB |
+| Barn Relocation (25 MB) | 7 | 136 / 289 | 58 / 152 | 60 / 27 MB |
+
+Overdracht: 14,9 MB voor de 500 pagina's in 17 aanvragen (~30 KB per pagina);
+een workerproces piekt op 32 MB. De laatste stap van de app naar de WebView
+(Tauri-IPC) is niet gemeten; met het model van de monochroomstap (1 ms per
+aanroep plus drie kopieën) is dat ~30 ms op de 500 pagina's.
+
+Uitsplitsing van één baan (500 pagina's, in het workerproces): pagina laden
+(`FPDF_LoadPage`) ~170–220 ms, de tekstpagina van PDFium (`FPDFText_LoadPage`)
+~700–900 ms, de tekens opvragen ~150 ms, de itemregels van pdf.js en het
+coderen de rest. De tekstpagina van PDFium is de bodem: per pagina ongeveer
+even snel als pdf.js `getTextContent`. De tijdwinst komt uit het lezen met twee
+workers tegelijk (pdf.js heeft in de app één worker) en bij tekeningen uit het
+parsen door PDFium. De geheugenwinst komt doordat pdf.js geen fonts en geen
+tekstinhoud meer opbouwt: de piek van de JavaScript-heap halveert bij een
+tekstdocument. Bij de zware vectortekening domineert het openen van het
+document in pdf.js (beide routes) en hangt de piek af van wanneer de garbage
+collector draait. De tekstcache is met de Rust-route groter (16 tegen 11 MB op
+500 pagina's: de tekenvakken komen mee).
+
+**Standaard:** Rust aan op de desktop, met twee banen. Met één baan is Rust op
+een tekstdocument niet sneller dan pdf.js (de tekstpagina van PDFium kost
+evenveel als `getTextContent`), wel lichter; met twee banen 1,8–2,4× sneller
+over het hele document met de helft van de piek in de JavaScript-heap, en op
+tekeningen 1,2–1,9× sneller met de eerste treffer 2–4× eerder. Drie banen helpt
+nog wat op lange tekstdocumenten, maar laat dan tijdens het zoeken maar één
+worker vrij voor het tekenen.
+
+**Live te controleren:** zoeken in een groot tekstdocument en in een zware
+tekenset in het echte venster (tijd tot de eerste treffer, of het tekenen
+tijdens het zoeken merkbaar ophoudt, het geheugen van de WebView); de
+markeringen op gedraaide tekst, op tekst in formulieren en bij kerning; zoeken
+in een document met nog niet opgeslagen OCR-woorden (die komen uit JavaScript
+erbij); zoeken in een map en via MCP `app_search_documents`; een document met
+Arabische of verticale tekst (die pagina's via pdf.js); en het terugvallen met
+`OPDS_RUST_SEARCH=0` en met een oudere sidecar.
+
+## Annotaties laden bij het openen: onderzocht, JS blijft
+
+**Vraag.** Kan het lezen van de annotaties bij het openen (pdf.js
+`getAnnotations` per blad, de pdf-lib-lezing van de rauwe woordenboeken in
+`extractAnnotationColors`, en het omzetten naar het model) sneller door de
+rauwe extractie naar Rust te verplaatsen, met het omzetten in JS?
+
+**Uitkomst.** Nee, niet duidelijk genoeg: JS blijft, er is geen Rust-route
+ingebouwd. Het profiel vond wel de grootste post, en die zat in JS: een
+kwadratische zoekactie, nu gerepareerd met dezelfde modellen als uitkomst.
+
+**Meetset** (`scripts/bench-rust/annotaties-set.mjs`): 100 bladen A1, met de
+echte saver geschreven: per blad 500 annotaties in 22 soorten (vormen, wolk,
+lijnen en pijlen, maatlijn, meetvlak, meetomtrek, telling, aanwijzer,
+tekstvak, stempel, inkt, notitie, antwoord met status, links naar een URL en
+naar een blad, boog, gebogen aanwijzer, arcering, gedraaide vorm met
+doorzichtigheid), dus met de OPS_-sleutels, appearances en /Measure, plus per
+blad 6 annotaties zoals een ander programma ze schrijft (eigen sleutels,
+ExtGState-alfa in de appearance, /PolygonDimension, markering). Samen 57.500
+annotatiewoordenboeken, 50.600 modellen, 67 MB.
+
+**Profiel van de JS-lader** (`node --expose-gc --max-old-space-size=8192
+scripts/bench-rust/10-annotaties-profiel.mjs`, node 24, Windows, dezelfde
+stappen als `loadExistingAnnotations`, twee runs; de machine draaide
+tegelijk andere builds, dus de getallen schommelen):
+
+| stap | vóór de reparatie | na de reparatie |
+|---|---:|---:|
+| pdf.js openen | 0,3 s | 0,1 s |
+| pdf.js `getAnnotations`, alle bladen | 4,3–6,6 s | 2,3–3,9 s |
+| pdf-lib `PDFDocument.load` (hele bestand) | 15,8–16,0 s | 15,3–15,9 s |
+| `extractAnnotationColors`, alle bladen | 5,8–8,3 s | 3,3–7,2 s |
+| `zetPaginaAnnotatiesOm` (omzetten) | 36,7–64,7 s | 1,9–3,9 s |
+| totaal | 68–91 s | 24–31 s |
+
+De omzetting ging voor 80 % op aan `zoekExtraKleuren`
+(`js/pdf/loader/extra-sleutel.js`): bij elke annotatie waarvan de /Rect niet
+exact als sleutel in de kaart stond, liep de vage match alle sleutels van het
+blad af, met een `split` per sleutel, en dat per aanroep (meerdere per
+annotatie). Dat missen gebeurt bij ruim een derde van de annotaties van de app:
+de saver schrijft `160.64000000000001`, pdf-lib leest dat met `Number()`,
+pdf.js telt cijfer voor cijfer en komt op `160.64`. Nu een index per kaart
+(vakken van 8 pt op x0) en een geheugen per gevraagde rechthoek; dezelfde
+regel (kleinste afstand onder 8, bij gelijke afstand de eerste in de kaart).
+Pariteit: `extra-sleutel.test.mjs` vergelijkt de index met de volle doorloop
+op 2000 rechthoeken met gelijke afstanden en sleutels die geen rechthoek
+zijn, en `scripts/bench-rust/10-annotaties-model.mjs` (vaste klok en vaste
+toevalsreeks, zodat id's en tijdstempels gelijk zijn) gaf voor en na de
+reparatie byte-gelijke modellen: 50.600 op de grote set, 2530 op 5 × 500.
+
+**Rust-meetprototype** (`scripts/bench-rust/annotaties-rust/`, een losse
+crate met lopdf 0.34 buiten de workspace): bestand laden, van alle bladen
+elk annotatiewoordenboek met opgevolgde verwijzingen (pagina's en andere
+annotaties als verwijzing, stromen als woordenboek + lengte) als JSON. Dat is
+de ondergrens van een Rust-route; de semantiek en het omzetten blijven daarna
+in JS.
+
+| stap | 5 × 500 (2875 annotaties) | 100 × 500 (57.500) |
+|---|---:|---:|
+| lopdf laden | 66 ms | 1,4–1,8 s |
+| woordenboeken doorlopen | 46 ms | 1,2 s |
+| JSON coderen | 8 ms | 0,2 s |
+| IPC (model: 1 ms + 3 kopieën van ~4 GB/s) | 3 ms | 42 ms (52,7 MB) |
+| `JSON.parse` in JS | 13 ms | 0,34–0,40 s |
+| totaal | 135 ms | 3,1–3,5 s |
+| geheugen in JS | 5 MB | 90 MB |
+
+Ter vergelijking het geheugen van de JS-route: het pdf-lib-document van dit
+bestand 321 MB, pdf.js met de annotaties van alle bladen 505 MB; het
+structured clone van die annotaties naar de hoofdthread (in de app draait
+pdf.js in een eigen worker) ~0,7 s.
+
+**Waarom het niet loont.**
+- De grootste post die overblijft, `PDFDocument.load` (15 s, 60 % van het
+  totaal), verdwijnt er niet mee. De lader start die bij elk openen
+  (`getSharedPdfLibDoc` in `loader.js`) en zeven andere lezers wachten erop:
+  annotatielagen, 3D, stijlsets, goedkeuringen, kop- en voettekst,
+  viewports/UserUnit en schalen. pdf-lib leest het hele bestand in één keer op
+  de hoofdthread (`objectsPerTick` staat op oneindig); een blad met een
+  rechthoek wacht er bij het openen ook op (`loadAnnotationsForSinglePage`).
+- Wat Rust wel kan overnemen is hoogstens `getAnnotations` (in de app al in
+  de pdf.js-worker) en het lezende deel van `extractAnnotationColors`: samen
+  ~5–10 s op deze set, tegen ~3,5 s voor de Rust-route plus een JS-laag die de
+  records nog moet duiden. Eind tot eind dus van ~25 s naar ~20 s, en alleen
+  na een volledige nabouw.
+- Die nabouw is groot en breekbaar. PDFium geeft per sleutel alleen een
+  f32-getal of tekst, en kan de sleutels van een woordenboek niet opsommen
+  (geen OPS_- of vreemde sleutels, geen geneste /Measure); lopdf 0.34 bewaart
+  reële getallen als f32 (`1586.635294117647` wordt `1586.6353`), dus er moet
+  een eigen f64-lezer bovenop. Het model leest bovendien twee bronnen met elk
+  hun eigen getallen: velden uit pdf.js (cijfer voor cijfer) en uit pdf-lib
+  (`Number()`), en de bronvingerafdruk (`pdfBron`, saver/bron-behoud.js) is
+  een hash van pdf-libs `PDFDict.toString()`. Rust moet beide exact nadoen,
+  anders herschrijft de saver annotaties die niet veranderden. Daarbij komen
+  velden die pdf.js zelf afleidt, zoals de tekst uit de appearance van een
+  tekstvak (`textContent`, met fontdecodering).
+
+**Standaard:** JS, op desktop en web. Geen `OPDS_RUST_*`-vlag, want er is
+geen Rust-route.
+
+**Wat wel zou helpen (niet gedaan).**
+- `objectsPerTick` meegeven aan `PDFDocument.load` in `getSharedPdfLibDoc`:
+  dezelfde uitkomst, maar de hoofdthread blijft tussendoor bereikbaar in
+  plaats van 15 s vast te zitten. Live te meten hoeveel langer het laden dan
+  duurt.
+- Een volgende Rust-stap op het gedeelde pdf-lib-document bij het openen: de
+  zeven lezers hebben elk maar een klein deel van de catalogus en de bladen
+  nodig. Pas als dat document niet meer bij elk openen geladen wordt, loont
+  het om ook de annotaties uit Rust te halen.
+
+**Live na te kijken.** De reparatie van de vage match in de app: een zware
+markeringsset openen (de `[PERF] page …: convertAnnotations`-regels) en
+nagaan dat kleuren, lagen en antwoorden er nog zijn zoals voorheen. De
+getallen hierboven zijn onder node gemeten; in de WebView kunnen pdf-lib en
+de omzetting trager of sneller zijn.
+
+## Bytes rauw over de grens: afdrukken en tekencommando's
+
+**Wat.** Twee commando's stuurden bytes als JSON-array met één getal per byte
+(het eerste punt uit #463, toen gemeten en niet gedaan). Er verhuist geen
+rekenwerk; alleen de overdracht verandert.
+
+- `write_temp_pdf` (afdrukken in `js/pdf/print-job.js`, en samengevoegd openen
+  vanuit de printwachtrij in `PrintQueueWindow.jsx`): de app riep het aan met
+  `Array.from(pdfBytes)`. Nu gaat de PDF als rauwe body en de taaknaam
+  procent-gecodeerd in de kop `x-opds-name` (`writeTempPdf` in
+  `js/core/platform.js`), net als `write_file_atomic`. Android kan geen rauwe
+  body versturen en houdt de JSON-vorm; het commando leest beide.
+- `extract_draw_commands` (de tekencommando's van vectorpagina's voor de
+  miniaturen en het voorladen, `js/pdf/loader.js` en `js/pdf/renderer.js`) gaf
+  `Vec<u8>` terug. Nu een `tauri::ipc::Response`; de aanroepers namen al een
+  `ArrayBuffer` aan.
+
+`read_file` en `extract_draw_commands_batch` hadden geen aanroepers meer en
+zijn weg.
+
+**Meting** (`node scripts/bench-rust/04-ipc-boundary.mjs`, met de serialiseerder
+die Tauri zelf injecteert; #463, node 24):
+
+| richting | als JSON | rauw |
+|---|---:|---:|
+| JS → Rust, 1 MB | 105 ms, 3,6 MB tekst | 0,1 µs, 1,0 MB |
+| JS → Rust, 8 MB | 1587 ms, 28,6 MB tekst | 0,1 µs, 8,0 MB |
+| Rust → JS, 1 MB | 22 ms `JSON.parse` | 0,3 µs |
+| Rust → JS, 8 MB | 182 ms | 0,3 µs |
+
+Een afdruktaak van 30 MB kostte dus ruim 3 s aan omzetten op de
+interface-thread, plus een tussenarray van 30 miljoen getallen; een
+vectorpagina met een paar MB tekencommando's 50–150 ms per pagina. Het
+serde-werk aan de Rust-kant is niet gemeten. (Op 11-11 met een bouwende
+machine gaf dezelfde meting 265 ms per MB voor `Array.from`.)
+
+**Toets.** `js/core/temp-pdf.test.mjs`: rauwe body en kop op de desktop, geen
+kop zonder naam, JSON met naam op Android, fout in de browser.
+
+**Live na te kijken.** Een groot document afdrukken (de taaknaam in de
+wachtrij van de printer, ook met leestekens), twee taken uit de printwachtrij
+samengevoegd openen, en de miniaturen van een document met vectorpagina's.
+
+## Symbolen zoeken: het zoeken in Rust, op hetzelfde beeld
+
+**Wat is verplaatst.** `matchSymbols()` uit `js/search/symbol-matcher.js`: per
+variant (draaiing × schaal) het sjabloon over het binaire paginabeeld
+schuiven, vensters met de verkeerde hoeveelheid inkt overslaan, de rest op
+doorsnede/vereniging scoren, en overlappende treffers uitdunnen. Dat staat nu
+in de crate `open-pdf-scan` (pure logica, `cargo test -p open-pdf-scan` draait
+gewoon). Het Tauri-commando `symbol_match_raster`
+(`src-tauri/src/symbool_zoeken.rs`) krijgt het sjabloon en het beeld als rauwe
+body (één byte per pixel) en de maten en toleranties in de kop
+`x-opds-symbol`, en geeft de treffers terug.
+
+Blijft in JS: de pagina renderen met pdf.js, `binaryImage()` en
+`cropTemplate()` (samen 10–30 ms), het omrekenen naar paginacoördinaten, de
+zoekvraag bewaren en de tellingen plaatsen. De JS-matcher blijft de terugval:
+webversie, Android/iOS, een ontbrekend of falend commando (één waarschuwing in
+de console) en `OPDS_RUST_SCAN=0`.
+
+**Waarom op hetzelfde beeld.** Het beeld dat Rust krijgt is het beeld dat de
+JS-matcher zou krijgen, dus de treffers zijn dezelfde. De andere mogelijkheid,
+de pagina ook door PDFium laten renderen, is gebouwd en gemeten maar staat niet
+aan; zie verderop.
+
+**Pariteit.** `scripts/bench-rust/scan-golden.mjs` maakt beelden en laat de
+JS-modules erop los; `open-pdf-scan/src/tests.rs` eist dezelfde uitkomst:
+sjabloon, treffers in dezelfde volgorde, de afkapvlag, en scores en schalen
+bit voor bit (f64-bitpatronen in de fixture). 15 gevallen: een tekening met
+het symbool gedraaid, geschaald en beschadigd; alle twaalf varianten; drempel
+1; dubbele toleranties; een rechthoek op gebroken coördinaten; een raster dat
+na 5000 kandidaten afkapt; meer dan 1000 treffers; een sjabloon dat gedraaid
+niet in het beeld past; en de fouten `INVALID_TOLERANCE`, `TEMPLATE_BOUNDS` en
+`TEMPLATE_NEEDS_CONTRAST`. Samen ruim 2000 treffers. Ook `binaryImage()` zelf
+(grijs rond de drempel, kleur, alfa). De rijen van een variant lopen in Rust
+op een paar threads; de treffers worden in rijvolgorde samengevoegd, zodat de
+grens van 5000 kandidaten op dezelfde plek valt.
+
+**Meting** (`node scripts/bench-rust/11-symbool-formulier.mjs --worker …`,
+node 24, Windows x64, release-build; de machine draaide tegelijk andere
+builds). Het raster is hoogstens 1200 px op de lange zijde. Zoektijd in ms,
+JS zonder de pauzes van de app:
+
+| pagina | raster | JS, 1 variant | Rust, 1 variant | JS, 12 varianten | Rust, 12 varianten |
+|---|---|---:|---:|---:|---:|
+| 3131-CLT-Set p2 | 1200×809 | 171 | 9 | 739 | 61 |
+| Zware vector PDF p3 | 1200×849 | 491 | 35 | 3287 | 306 |
+| NKD1a p2 | 1200×555 | 76 | 6 | 289 | 36 |
+| HY-103-1 p1 | 1200×721 | 3850 | 53 | 30.613 | 809 |
+| contractvoorstel p1 | 849×1200 | 58 | 16 | 683 | 103 |
+| Technische tekening p1 | 1201×848 | 37 | 9 | 427 | 57 |
+
+Rust is 4 tot 70 keer sneller, het meest waar het telt (een dichte tekening
+met veel kandidaten). Daar komt bij dat de JS-matcher om de 16 rijen pauzeert
+(`setTimeout(0)`): ongeveer 50 pauzes per variant en pagina, in de WebView
+~4 ms per stuk, dus ~0,2 s per variant bovenop de tabel; de Rust-route heeft
+die pauzes niet nodig. De overdracht is het beeld zelf, hoogstens 2 MB als
+rauwe body (met het model van de monochroomstap ~2 ms). De pdf.js-render vóór
+het zoeken blijft: 0,04–10 s op deze pagina's (onder node met
+@napi-rs/canvas; in de WebView niet gemeten).
+
+**Standaard.** Rust aan op de desktop.
+
+**Onderzocht en niet aangezet: ook de render door PDFium.** De worker kan de
+pagina zelf renderen en erop zoeken (aanvraag `symbol_scan`,
+`pdfium-worker/src/raster_scan/`), zodat ook de pdf.js-render en
+`getImageData` van de interface-thread verdwijnen. Eind tot eind met één
+variant: 876 → 646 ms (CLT), 5950 → 2976 (NKD1a), 13.657 → 2807 (HY-103),
+611 → 48 (Technische tekening); op Zware vector p3 geen winst (3018 → 3327).
+Maar het raster van PDFium is niet dat van pdf.js: 82–95 % van de inktpixels
+valt precies samen, 99–100 % binnen één pixel
+(`scripts/bench-rust/scan-raster-verschil.mjs`). Voor deze matcher is die ene
+pixel veel: op een proefblad met hetzelfde symbool op 60 plekken met gebroken
+coördinaten (`scripts/bench-rust/scan-waarheid.mjs`) liggen de scores van de
+echte symbolen in beide routes tussen 0,56 en 0,97, rond de standaarddrempel
+van 0,75:
+
+| drempel | JS, zelfde draaiing | worker | JS, vier draaiingen | worker |
+|---|---:|---:|---:|---:|
+| 0,75 (standaard) | 12 van 29 | 10 van 29 | 27 van 60 | 16 van 60 |
+| 0,6 | 27 van 29 | 27 van 29 | 57 van 60 | 60 van 60 |
+
+Geen van beide routes gaf een valse treffer. De worker scoort gelijkmatiger
+(laagste score 0,62 tegen 0,56) maar minder vaak boven 0,75, dus met de
+standaarddrempel vindt hij met draaiingen minder. Dat is een andere uitkomst
+voor de gebruiker, geen snelheidswinst alleen; daarom staat deze route uit.
+`window.__opdsSymbolRender = 'pdfium'` in de ontwikkelconsole zet hem aan om
+te vergelijken. De meting laat ook zien dat de matcher zelf op dun lijnwerk
+bij de standaarddrempel minder dan de helft vindt, in beide routes; dat is
+een eigenschap van het algoritme en los van deze stap.
+
+**Live na te kijken.** Symbolen zoeken op een tekening (één pagina en een
+reeks, met draaiingen en schalen), dezelfde treffers met `OPDS_RUST_SCAN=0`,
+afbreken tijdens het zoeken, en de voortgangsbalk.
+
+## Symbolen zoeken: een score die één pixel verdraagt
+
+**Aanleiding.** De meting hierboven liet zien dat de matcher op dun lijnwerk
+bij de standaarddrempel minder dan de helft van de echte symbolen vond, in
+beide routes: de score was doorsnede/vereniging van inktpixels, en een lijn
+van één pixel die één pixel verschuift (een symbool op een gebroken
+pixelpositie, of een andere renderer) halveert die. De getallen in de twee
+tabellen van het vorige hoofdstuk zijn met die oude score gemeten.
+
+**Wat is veranderd** (in `js/search/symbol-matcher.js` en gelijk in
+`open-pdf-scan/src/symbol.rs`; dit verandert de uitkomst, ook in de webversie):
+- De score is het aandeel van de inkt dat het andere beeld binnen één pixel
+  verklaart: (sjablooninkt met beeldinkt ernaast + beeldinkt met sjablooninkt
+  ernaast) / (sjablooninkt + beeldinkt), over het venster van het sjabloon.
+  Een exacte kopie scoort nog steeds 1.
+- Waarborg tegen dichte inkt die niets met het sjabloon te maken heeft (tekst,
+  arcering): de gewone doorsnede/vereniging moet minstens 0,6 × de drempel
+  halen (`EXACT_SHARE`).
+- De voorselectie op hoeveelheid inkt is verruimd naar 0,8 × de drempel
+  (`COUNT_SHARE`) en de ankerpunten kijken in het gegroeide beeld, anders
+  vallen verschoven kopieën al af vóór het scoren.
+
+**Meting tegen de waarheid** (`scripts/bench-rust/scan-waarheid.mjs`; een blad
+met het symbool op 60 plekken, 29 in de draaiing van het sjabloon; gevonden
+van aanwezig, tussen haakjes valse treffers):
+
+| drempel | score | JS, zelfde draaiing | worker | JS, vier draaiingen | worker |
+|---|---|---:|---:|---:|---:|
+| 0,75 (standaard) | oud | 12 van 29 (0) | 10 van 29 (0) | 27 van 60 (0) | 16 van 60 (0) |
+| 0,75 (standaard) | nieuw | 29 van 29 (0) | 29 van 29 (0) | 60 van 60 (0) | 60 van 60 (0) |
+| 0,6 | oud | 27 van 29 (0) | 27 van 29 (0) | 57 van 60 (0) | 60 van 60 (0) |
+| 0,6 | nieuw | 29 van 29 (0) | 29 van 29 (14) | 60 van 60 (0) | 60 van 60 (27) |
+
+Gelijk voor lijndiktes van 0,5, 1 en 2 pt; op het blad met /Rotate 90 geeft
+ook de JS-route bij 0,6 valse treffers (15 en 24). Bij de standaarddrempel
+vinden beide routes nu alles zonder valse treffers; een lagere drempel is met
+de nieuwe score ruimer dan vroeger en geeft op dit blad valse treffers. De
+keuze van de waarborg is gemeten met `scripts/bench-rust/scan-tolerant-proef.mjs`:
+zonder waarborg gaf een willekeurig tekstvenster op een tekstpagina 101
+treffers, met 0,6 nog 3 (was 1), en bij 0,5 bleven op de proefbladen enkele
+valse treffers over.
+
+**Pariteit.** De fixtures zijn opnieuw gemaakt met de aangepaste JS-matcher;
+`cargo test -p open-pdf-scan` eist weer dezelfde treffers in dezelfde volgorde
+met bitgelijke scores (15 gevallen, ruim 1500 treffers). In
+`symbol-matcher.test.mjs`: een kopie waarvan een halve lijn één pixel
+verschoven is wordt gevonden (met de oude score niet), en een dicht
+willekeurig patroon geeft alleen zichzelf.
+
+**Snelheid.** De ruimere voorselectie laat meer vensters door, dus het zoeken
+zelf kost meer. Zelfde pagina's en omstandigheden als hierboven (de machine
+was nog drukker), ms:
+
+| pagina | JS, 1 variant | Rust, 1 variant | JS, 12 varianten | Rust, 12 varianten |
+|---|---:|---:|---:|---:|
+| 3131-CLT-Set p2 | 289 | 17 | 1628 | 156 |
+| Zware vector PDF p3 | 2561 | 147 | 4873 | 297 |
+| NKD1a p2 | 581 | 309 | 2342 | 2089 |
+| HY-103-1 p1 | 7237 | 134 | 11.359 | 898 |
+| contractvoorstel p1 | 633 | 120 | 4623 | 1049 |
+| Technische tekening p1 | 607 | 74 | 3782 | 699 |
+
+**De render door PDFium blijft uit.** Bij de standaarddrempel is het verschil
+tussen de twee rasters met de nieuwe score verdwenen op de proefbladen, maar
+bij een lagere drempel geeft het PDFium-raster meer valse treffers dan dat van
+pdf.js. `window.__opdsSymbolRender = 'pdfium'` blijft de schakelaar om te
+vergelijken.
+
+**Live na te kijken.** Symbolen zoeken op echte tekeningen: of de extra
+treffers echte symbolen zijn, en of de standaarddrempel in de dialoog nog de
+goede is.
+
+## Pauzes in de JS-routes zonder timer
+
+De JS-matcher (om de 16 rijen) en de JS-monochroomroute (om de 32 rijen)
+gaven de beurt terug met `setTimeout(0)`. Een geneste timer kost in de WebView
+~4 ms en onder node op Windows ~15 ms: wachttijd, geen rekentijd (bij de
+monochroomstap gemeten als 1847 ms tegen 126 ms voor één pagina). Beide
+gebruiken nu `volgendeTaak()` (`js/core/volgende-taak.js`: `scheduler.yield()`,
+anders een MessageChannel). Dit raakt alleen de terugvalroutes (webversie,
+Android/iOS, een falend commando); de desktop rekent in Rust. Het effect in de
+WebView is niet gemeten.
+
+## Formulierherkenning: het paginabeeld uit de PDFium-worker
+
+**Wat is verplaatst.** Voor "Formuliervelden herkennen" rendert de app per
+pagina een raster van hoogstens 1600 px, niet gedraaid, en zoekt
+`detectFormShapes()` (`js/pdf/form-recognition.js`) daarin samenhangende
+inktgebieden: een lange dunne lijn is een schrijflijn, een lege omlijning een
+tekstvak, aankruisvakje of keuzerondje. Op de desktop rendert nu de
+PDFium-worker de pagina op dezelfde maat (`render_scan`: wit papier, geen
+annotaties of velden, /Rotate teruggedraaid) en draait de port van
+`detectFormShapes()` uit `open-pdf-scan` (aanvraag `form_shapes`, commando
+`raster_scan_page`). Terug gaan alleen de vormen, als één JSON-regel.
+
+Blijft in JS: de tekst van de pagina (pdf.js `getTextContent`, of OCR), de
+bestaande velden, `labelCandidates()`, en het maken van het formulier met
+pdf-lib. De pdf.js-route blijft de terugval: webversie, Android/iOS, een
+document waarvan de bytes afwijken van het bestand op schijf, een worker
+zonder `raster_scan` in zijn `caps`, elke fout (één waarschuwing), en
+`OPDS_RUST_SCAN=0`.
+
+**Pariteit, deel 1: het algoritme is bitgelijk.** Dezelfde fixtures en test
+als hierboven: vijf paginabeelden (drie schalen, meer dan 500 kandidaten, een
+lege pagina) met tekstvakken, aankruisvakjes, keuzerondjes, schrijflijnen,
+gevulde vlakken, te korte en te hoge vormen en grijs net onder en boven de
+inktdrempel; vormen in dezelfde volgorde, alle getallen bit voor bit.
+
+**Pariteit, deel 2: PDFium tegen pdf.js.** Het raster verschilt langs randen
+ongeveer een pixel (zie hierboven). Op een gemaakt papieren formulier met 8
+tekstvakken, 6 aankruisvakjes, 4 keuzerondjes en 4 schrijflijnen op gebroken
+coördinaten (`scan-waarheid.mjs`), met lijndiktes van 0,5, 0,75, 1 en 1,5 pt
+en een pagina met /Rotate 90, vinden beide routes hetzelfde: alle tekstvakken,
+aankruisvakjes en schrijflijnen, en evenveel vormen in totaal (23). De
+keuzerondjes worden vanaf 0,75 pt in beide routes als aankruisvakje gezien;
+dat is het algoritme, niet de route. Op bouwtekeningen, waar de vormen
+toevallige rechthoeken in het lijnwerk zijn, verschilt het aantal wel (8
+tegen 5, 16 tegen 12 op de meetpagina's).
+
+**Meting** (zelfde script en omstandigheden; ms). JS = pdf.js-render +
+`getImageData` + `detectFormShapes`; worker = één aanvraag, warm (koud is het
+openen van het bestand erbij: 30–1000 ms):
+
+| pagina | raster | JS: render | lezen | herkennen | totaal | worker: render | herkennen | totaal |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| contractvoorstel p1 | 1132×1600 | 26 | 31 | 32 | 88 | 19 | 8 | 27 |
+| Technische tekening p1 | 1131×1600 | 110 | 73 | 85 | 268 | 54 | 9 | 64 |
+| 3131-CLT-Set p2 | 1600×1079 | 622 | 43 | 107 | 773 | 720 | 5 | 726 |
+| Zware vector PDF p3 | 1600×1132 | 2631 | 130 | 123 | 2884 | 2067 | 12 | 2079 |
+| NKD1a p2 | 1600×740 | 5504 | 206 | 98 | 5808 | 3222 | 8 | 3231 |
+| HY-103-1 p1 | 962×1600 | 11.845 | 54 | 117 | 12.016 | 3052 | 26 | 3079 |
+
+Op documenten (waar formulieren staan) 3 tot 4 keer sneller; op zware
+tekeningen bepaalt de render de tijd en wint PDFium 1 tot 4 keer. Het
+herkennen zelf was in JS al klein; de winst zit in de render, in het
+teruglezen van de pixels, en in het feit dat geen van drieën nog op de
+interface-thread gebeurt.
+
+**Standaard.** De worker aan op de desktop: sneller, en op formulieren
+dezelfde velden.
+
+**Live gecontroleerd** (12-11, release-build als onzichtbare testinstantie met
+eigen datamap, via de tools `app_recognize_form` en `app_search_symbols`, met
+en zonder `OPDS_RUST_SCAN=0`):
+- Symbolen zoeken op het proefblad: dezelfde treffers in dezelfde volgorde met
+  dezelfde scores, 12 bij de standaardinstelling en 57 met twaalf varianten op
+  drempel 0,6; met twaalf varianten 2,2 s tegen 3,8 s (de pdf.js-render zit in
+  beide).
+- Formulierherkenning op het proefformulier (0,75 pt, ook met /Rotate 90): in
+  beide routes 23 kandidaten met dezelfde verdeling (8 tekstvakken, 4
+  schrijflijnen, 10 aankruisvakjes, 1 keuzerondje) en dezelfde labels; alle
+  echte velden in beide. 20 van de 23 vallen binnen 1,5 pt samen. De rest:
+  een ander rondje krijgt de soort keuzerondje, en elke route ziet één andere
+  letter uit de tekst aan voor een vakje. 61 ms tegen 169–265 ms.
+- `write_temp_pdf` met 6 MB: dezelfde bytes op schijf, de naam met leestekens
+  behouden; 0,4–0,8 s rauw tegen 4,9–5,5 s in de oude JSON-vorm (drukke
+  machine). `extract_draw_commands` geeft een `ArrayBuffer`; `read_file` en
+  `extract_draw_commands_batch` bestaan niet meer.
+- Een bestand dat op schijf afwijkt geeft `PDF_SCAN_STALE`, een ongeldige
+  draaiing `INVALID_TOLERANCE`; geen waarschuwingen in de console.
+
+**Nog live na te kijken.** Velden herkennen op een gescand formulier en met
+OCR, afdrukken naar een echte printer (de taaknaam in de wachtrij), twee
+taken uit de printwachtrij samengevoegd openen, het terugvallen met een
+oudere sidecar, en macOS en Linux.
+## Paginabeelden verscherpen in Rust
+
+**Aanleiding.** Gebruikers noemden de app traag in het gebruik. Een profiel
+van het zoomen (`Profiler` over CDP, release-build) wees één functie aan:
+`sharpenRgba()` (`js/pdf/render-sharpen.js`), het lichte 3 × 3 onscherpe
+masker dat sinds 4-10 standaard aan staat (`pageSharpen: 2`) en op elk vers
+paginabeeld en elke tegel draait. Het rekent op de interface-thread, per
+pixel en per kleurkanaal, met een volledige kopie van de bitmap: ~21 ms per
+megapixel (45 ms voor een tegel van 2,2 MP, 184 ms voor een A4 op 300 dpi,
+432 ms voor de grootste bitmap). Zo lang reageert het venster niet.
+
+**Wat is verplaatst.** Het filter staat nu in Rust
+(`pdfium-worker/src/sharpen.rs`; de app-crate neemt het bestand over met
+`#[path]`, zoals `render_budget.rs`). De commando's `render_pdf_page`,
+`render_pdf_page_region` en `render_tile_scene_region` nemen een argument
+`sharpen` (de sterkte uit `SHARPEN_LEVELS`) en verscherpen het beeld vóór
+het naar de WebView gaat, op een blokkerende thread en over een paar threads
+verdeeld (`src-tauri/src/verscherpen.rs`). De beeldcache van de app bewaart
+het onverscherpte beeld, zodat een andere sterkte geen nieuwe render vraagt.
+
+**Bedrading.** Alle paginabeelden komen via twee functies binnen:
+`renderPdfPage()` (`engine-router.js`) en `invokeTileRegion()`
+(`progressive-render.js`). Een aanroeper die het resultaat aan
+`sharpenPageRgba()` geeft, zet daar `sharpen: true` bij. De route
+(`js/pdf/render-sharpen-route.js`) vraagt één keer of de backend het kan
+(`sharpen_rust_beschikbaar`), geeft de sterkte mee en onthoudt de buffer van
+het antwoord; `sharpenPageRgba()` laat zo'n beeld daarna met rust. Aanroepers
+die niet verscherpten (miniaturen, schermafdruk, de progressieve tegels, de
+uitvoer) geven het argument niet mee en krijgen hetzelfde beeld als voorheen.
+
+De JS-filter blijft de terugval: webversie, mobiel, de alfa-motor
+(`render_pdf_page_skia`), een oudere backend, en `OPDS_RUST_SHARPEN=0` in de
+omgeving van de app (dan zegt de backend nee en verscherpt JS).
+
+**Pariteit.** `scripts/bench-rust/sharpen-golden.mjs` laat `sharpenRgba()` los
+op beelden met dunne lijnen, zachte randen, kleur, ruis en wisselende alfa
+(vijf maten, waaronder 3 × 3 en heel smal of laag), voor alle vier de
+sterktes, plus geheel zwart, wit en waarden die precies op een half uitkomen;
+`cargo test -p pdfium-worker sharpen` eist dezelfde bytes (23 gevallen). De
+afronding volgt het toekennen aan een `Uint8ClampedArray`: begrenzen op
+0..255, halven naar even. Verder: alfa en de rand van één pixel blijven
+ongemoeid, en de verdeling over threads slaat geen rij over.
+
+**Live gemeten** (14-11, release-build als onzichtbare testinstantie, venster
+1200 × 800 op schermfactor 1,5; twaalf zoomstappen met het muiswiel; met en
+zonder `OPDS_RUST_SHARPEN=0`):
+
+| tekening | route | tijd in het JS-filter | lange taken | langste | samen |
+|---|---|---:|---:|---:|---:|
+| Technische tekening p1 | JS | 3591 ms | 14 | 1186 ms | 4506 ms |
+| Technische tekening p1 | Rust | 0 | 8 | 186 ms | 802 ms |
+| HY-103-1 p1 | JS | 473 ms | 5 | 342 ms | 695 ms |
+| HY-103-1 p1 | Rust | 0 | 2 | 93 ms | 176 ms |
+
+De schermafdruk van het paginavenster (`app_screenshot_view`) is in beide
+routes dezelfde, passend en ingezoomd (gelijke SHA-256 van de PNG). De twee
+instanties draaiden tegelijk, dus de JS-tijden zijn aan de hoge kant; een
+eerdere run met alleen de JS-route gaf 1,3–1,7 s in het filter en een
+langste taak van 0,45–0,77 s. Wat overblijft aan lange taken is vooral
+`createImageBitmap` op het ontvangen beeld.
+
+**Standaard.** Rust aan op de desktop.
+
+**Nog live na te kijken.** Een groot scherm (op 4K zijn de beelden tot vier
+keer zo groot), de voorkeur op elk van de vijf standen, de zeer zware
+pagina's van de scene-motor, en macOS en Linux.
+
+## Afdrukken, afbeeldingen exporteren en comprimeren: zware pagina's via PDFium
+
+**Wat.** De rasterexport haalt zware pagina's sinds #701 uit de PDFium-workers
+(`rasterPaginaCanvas`, `renderPaginaPdfium`). Afdrukken (`print-job.js`),
+afbeeldingen exporteren (`exportAsImages`) en comprimeren (`compress.js`)
+liepen nog over `renderPageOffscreen`: PDF.js op de interface-thread, bij
+afdrukken op 300 dpi. Ze gebruiken nu `renderUitvoerPagina()`
+(`js/pdf/exporter.js`): een zware pagina (dezelfde grens als de rasterexport,
+`kiesRasterMotor`) komt uit de workers, een lichte uit PDF.js zoals voorheen,
+omdat het beeld daar sneller in de WebView zelf ontstaat dan dat het als
+pixels overkomt.
+
+**Een deel van de pagina.** Afdrukken rendert alleen wat op het vel komt
+(`deel`, print-plaatsing.js). `renderPaginaPdfium()` neemt nu een `deel` en
+haalt alleen de tegels op die het raken (`tegelsVoorDeel` in
+`raster-export-plan.js`, ook bij 90°, 180° en 270° extra rotatie); met `doel`
+tekent hij op een eigen canvas, zodat de aanroepers een `HTMLCanvasElement`
+houden. De markeringslaag komt uit dezelfde JS-tekening als altijd.
+
+**Terugval.** Webversie, mobiel, een document zonder bestand, een pool die
+niet klaar is en elke fout van de worker (één waarschuwing): PDF.js.
+`window.__opdsUitvoerMotor = 'pdfjs'` in de ontwikkelconsole dwingt PDF.js af.
+Per pagina meldt de console de motor en de tijd (`[raster] output page …`).
+
+**Live gemeten** (14-11, release-build als onzichtbare testinstantie; het
+afdrukvoorbeeld in het printvenster, dat dezelfde functie gebruikt):
+
+| tekening | PDFium | PDF.js |
+|---|---:|---:|
+| HY-103-1 p1 (zwaar), voorbeeld 450 × 271 px | 0,7–2,2 s | 4,1 s |
+| Technische tekening p1 (licht) | blijft PDF.js | 0,03–0,3 s |
+
+Op het kleine voorbeeld verschilt 4,2 % van de pixels meer dan 32 niveaus en
+0,9 % meer dan 96 (randen: PDFium en PDF.js anti-aliasen anders); het beeld
+staat op dezelfde plek, ook als deel van het vel.
+
+**Niet gemeten of nagekeken.** Een echte afdruk op 300 dpi (alleen het
+voorbeeld is gemeten), het resultaat op papier naast het oude, afbeeldingen
+exporteren en comprimeren in de app, poster- en meer-op-één-vel-afdrukken,
+en macOS en Linux.
+
+## Stempelbeelden: het paginadeel uit de PDFium-worker
+
+**Wat.** Een stempel waarvan de appearance geen ingepakte afbeelding is,
+krijgt zijn beeld uit een render van de pagina met de annotatieweergaven erin
+(`js/pdf/loader/image-extraction.js`). Dat was een render van de hele pagina
+met PDF.js, op de interface-thread, bij het eerste beeld van die pagina. Nu
+rendert de PDFium-worker alleen het deel van de pagina waar de stempels
+staan: `render_region` kent een veld `annotations` (cap `region_annotations`),
+het commando heet `render_annotated_region`, de JS-kant
+`js/pdf/loader/stempel-beeld-rust.js`.
+
+**Zelfde soort beeld.** Het resultaat blijft een uitsnede van de weergave
+(ruimte 'visual', bron 'render'): alles erna is ongewijzigd. De pixels zijn
+van PDFium in plaats van PDF.js. Op de twee testbestanden met een getekende
+stempel verschilt de schermafdruk van de pagina alleen in het stempelvak, in
+1 respectievelijk 19 pixels met meer dan 32 niveaus verschil (randen).
+
+**Meting** (release-build, onzichtbare testinstantie, elk bestand drie keer
+geopend; de regel `[PERF] page 1: stampExtraction`):
+
+| bestand | PDF.js | worker |
+|---|---:|---:|
+| blad van 2448 × 1584 pt, één getekende stempel | 952–1462 ms | 241–276 ms |
+| blad van 3226 × 1684 pt, gedraaid, één getekende stempel en één afbeelding | 1395–1702 ms | 1242–1340 ms |
+
+Bij het tweede bestand zit de meeste tijd in het uitpakken van de afbeelding
+via pdf-lib, niet in de render. Drie andere bestanden met stempels (13, 4 en
+1 stuks) gebruiken de terugval niet: hun beelden komen uit pdf-lib en zijn
+byte-gelijk gebleven.
+
+**JS blijft** voor de webversie, Android/iOS, een document zonder bestand op
+schijf, een oudere of ontbrekende backend en elke fout (één waarschuwing,
+daarna PDF.js voor dat document). `OPDS_RUST_STAMPS=0` dwingt PDF.js af.
+
+## Het eigen vectorpad is weg
+
+De weergave via eigen tekencommando's (`vector-renderer.js`) stond sinds juli
+uit voor de pagina zelf, maar de lader haalde bij elk openen nog de
+tekencommando's van alle vectorpagina's op, en de miniaturen speelden ze af.
+Dat is verwijderd: lader, weergave, viewport, miniaturen en het vrijgeven bij
+sluiten. Miniaturen komen nu altijd uit PDFium.
+
+Gemeten op vijf bestanden (4 tot 21 pagina's): het miniaturenpaneel is bij
+vier pixelgelijk; bij het vijfde was de miniatuur van pagina 4 via het
+vectorpad flets en onvolledig, en is ze nu juist. De tijd tot de miniaturen
+stilstaan: 2,5 → 1,4 s, 11,2 → 9,7 s, 17,0 → 16,3 s, 0,9 → 1,1 s en
+1,8 → 1,9 s. De paginaweergave van zeven bestanden is dezelfde PNG gebleven.
+
+De Rust-commando's `extract_draw_commands` en `analyze_page_type` staan er
+nog; het eerste heeft geen aanroeper meer in de app.
+
+## PNG insluiten in Rust, en wat de echte app verder liet zien
+
+Rust fase 3 bestond uit vier stukken die samen gebouwd zijn: paginatekst uit
+de PDFium-worker voor meer lezers, beeldwerk (PNG insluiten en stempelbeelden
+decoderen), objectstromen inpakken bij het opslaan, en de JPEG van
+rasteruitvoer in de worker. Daarna is alles in de echte app nagemeten (18-11,
+debug-build van de app; de beeldcrate is daarin geoptimaliseerd gebouwd). De
+regel: Rust is alleen de route waar het in de echte app, met de echte
+oversteek erbij, ongeveer 1,3 keer sneller is én hetzelfde resultaat geeft.
+
+Eén stuk haalde die lijn: het insluiten van een PNG. Dat staat hieronder, met
+een verbetering in gewoon JavaScript die uit hetzelfde profiel kwam (base64
+naar bytes). De rest is niet meegenomen; waarom staat onderaan.
+
+### PNG insluiten (`png_naar_xobject`)
+
+**Wat.** `embedPng` van de PDF-bibliotheek pakt de PNG in JavaScript uit,
+splitst in RGB en alfa en pakt beide bij het opslaan opnieuw in. Dat gebeurt
+op zestien plekken (opslaan van stempels en afbeeldingen, afdrukken,
+watermerk, huisstijlkaders, rapporten, scan naar PDF). Die plekken roepen nu
+`embedPngSnel(pdfDoc, bytes)` aan (`js/pdf/embed-png-rust.js`). Het commando
+`png_naar_xobject` (crate `open-pdf-image`, schil in `src-tauri/src/beeld.rs`,
+rauwe body heen en terug) geeft de twee Flate-streams terug; JavaScript bouwt
+alleen de woordenboeken en hangt ze als gewone `PDFImage` in het document,
+zodat de aanroepers verder gelijk blijven. Het inpakken (niveau 6, zoals de
+JS-route) is over een paar draden verdeeld: stukken van minstens 1 MB, elk een
+eigen Deflate-reeks, samen één gewone zlib-stroom.
+
+**Pariteit.** Zelfde sleutels en waarden in beide woordenboeken (alleen
+`/Length` verschilt), zelfde objectnummers, en na uitpakken dezelfde RGB- en
+alfabytes. Een alfastream komt er, net als in JS, alleen als ergens alfa
+onder 255 ligt. Getoetst op 41 vaste PNG's (grijs 1/2/4/8 bit, RGB, palet
+1/2/4/8 bit, grijs met alfa, RGBA; alle vijf de rijfilters; te kort palet); acht
+andere moeten juist teruggaan naar JS. `cargo test -p open-pdf-image` eist
+dat van Rust, `js/pdf/beeld-gevallen.test.mjs` houdt het bestand met gevallen
+gelijk aan de JS-route van vandaag, en `js/pdf/embed-png-rust.test.mjs` toetst
+de JS-kant en de terugval. De meting hieronder vergelijkt daarnaast twaalf
+beelden tot 35 megapixel, uitgepakt met de zlib van node.
+
+**Blijft in JavaScript:** de webversie, de gehoste versie en Android/iOS, een
+backend zonder het commando, zestien bit, geïnterlinieerd, elk `tRNS`-blok
+(dus ook een palet met transparantie: Rust stuurt dat terug), animatie, een
+PNG die de strenge decoder afkeurt (Rust kijkt de controlesommen na), een
+tekenreeks als invoer, en wat `kiesPngRoute()` niet naar Rust stuurt (zie de
+keuze hieronder). Een fout van de aanroep zelf geeft één waarschuwing, daarna
+JavaScript voor de rest van de sessie.
+
+**Meting in de echte app** (18-11, opslaan van een document met afbeeldingen;
+de XObjects zijn in beide routes gelijk). Winst van Rust tegenover `embedPng`,
+met de echte oversteek:
+
+| PNG | pixels | winst |
+|---|---:|---:|
+| elke soort | 32.768 | 0,69× (Rust 1,45 keer trager) |
+| elke soort | 60.000 – 131.072 | ongeveer gelijk |
+| foto-achtig (1,6 – 2,5 PNG-bytes per pixel) | 0,26 – 0,31 MP | 1,05 – 1,14× |
+| foto-achtig | 0,52 MP | 1,23× |
+| foto-achtig | 1,05 MP | 2,0× |
+| foto-achtig | 4 – 20 MP | 2,4 – 2,8× |
+| weinig bytes (grijs, palet, vlakke tekening; hooguit 0,5 PNG-bytes per pixel) | 0,31 MP | 1,8 – 2,4× |
+| weinig bytes | 4 – 20 MP | 4,8 – 6,8× |
+
+Onder 0,3 MP is een PNG met weinig bytes per pixel niet gemeten.
+
+**Keuze per beeld** (`kiesPngRoute({ pixels, pngBytes })`):
+
+- **Rust:** elke PNG vanaf 1.000.000 pixels (`MIN_PIXELS`): 2,0× bij 1,05 MP
+  en meer daarboven. Geen bovengrens: de winst groeit met de maat (boven
+  250 MP stuurt Rust het beeld zelf terug).
+- **Rust:** een PNG vanaf 300.000 pixels (`MIN_PIXELS_KLEINE_PNG`) met hooguit
+  0,5 PNG-bytes per pixel (`MAX_BYTES_PER_PIXEL_KLEINE_PNG`): er gaat dan
+  weinig over de grens en het uitpakken is het werk.
+- **JavaScript:** al het andere. Een foto-achtige PNG onder 1 MP haalt de lijn
+  niet (1,23× bij 0,52 MP), en bij kleine beelden is Rust gelijk of trager.
+- **JavaScript:** een PNG van meer dan 64 bytes per pixel. Niet gemeten; dat
+  komt alleen voor bij een PNG met grote blokken die geen beeld zijn.
+
+**Standaard.** Aan op de desktop, per beeld volgens de keuze hierboven
+(`RUST_STANDAARD.png` in `js/pdf/rust-routes.js`). `OPDS_RUST_PNG_EMBED=0` in
+de omgeving van de app dwingt JavaScript af: de backend biedt de route dan niet
+aan. In de ontwikkelconsole doet `window.__opdsRustPng = false` dat ook, en
+`'altijd'` laat de gemeten grenzen vallen om te vergelijken; de schakelaar
+wordt bij elke aanroep gelezen.
+
+**Zonder oversteek** (`scripts/bench-rust/12-beeld.mjs`, 18-11, RGBA-PNG's
+zoals een canvas ze geeft; JS = `embedPng` plus het inpakken bij opslaan, Rust
+in-proces): 1 MP 109–122 ms tegen 18–25 ms, 8 MP 1,0–1,3 s tegen 0,10–0,12 s,
+35 MP 5,0–5,1 s tegen 0,41–0,56 s. De streams zijn even groot (35 MP: 19 MB in
+beide routes). Het script rekent er een model van de oversteek bij; dat model
+geldt niet voor de app (zie hieronder).
+
+**Niet gemeten.** Een release-build van de app, macOS en Linux.
+
+### Base64 naar bytes (`bytesUitBase64`)
+
+Het CPU-profiel van het opslaan liet zien dat bij een afbeeldingsannotatie het
+omzetten van de data-URL naar bytes (`bytesUitDataUrl` in
+`js/annotations/afbeelding-bron.js`, met
+`Uint8Array.from(atob(..), c => c.charCodeAt(0))`: één functieaanroep per
+byte) 408 tot 699 ms op de interface-thread kostte voor een beeld van 4 MP,
+meer dan het insluiten zelf. Dat is nu `bytesUitBase64()`:
+`Uint8Array.fromBase64` waar de WebView die heeft, anders `atob` met een lus in
+een vooraf aangemaakte reeks; weigert `fromBase64` de invoer, dan beslist
+`atob`, zodat ongeldige invoer dezelfde fout geeft als voorheen. Dezelfde
+functie staat ook op de twee andere plekken in de saver waar een beeld uit een
+data-URL komt (de appearance van een parametrisch symbool, het
+watermerkbeeld). Gewoon JavaScript, dus ook voor de webversie en mobiel.
+
+Zelfde bytes: `js/annotations/afbeelding-bron.test.mjs` (lengtes van 0 tot
+3 MB, ook geen veelvoud van drie, zonder opvulling, met witruimte, ongeldige
+invoer; met en zonder `fromBase64`), en 200.000 willekeurige tekenreeksen in
+headless Chromium 147 tegen de oude vorm zonder één verschil. Gemeten
+(mediaan van 5):
+
+| base64 van | oude vorm | `atob` + lus | nu (Chromium 147, `fromBase64`) | nu (node 24, `atob` + lus) |
+|---|---:|---:|---:|---:|
+| 0,1 MB | 8,2 ms | 0,5 ms | 0,1 ms | 0,9 ms (oud: 25 ms) |
+| 1 MB | 105 ms | 5,2 ms | 1,0 ms | 6,4 ms (oud: 161 ms) |
+| 5 MB | 386 ms | 17 ms | 3,3 ms | 27 ms (oud: 752 ms) |
+| 20 MB | 1243 ms | 65 ms | 15 ms | 64 ms (oud: 2123 ms) |
+
+### De les: het model van de oversteek klopte niet
+
+De metingen van fase 3 buiten de app rekenden voor de oversteek tussen de
+WebView en Rust ongeveer 1 ms per aanroep plus een paar kopieën van de bytes.
+In de app gemeten kost zij 23 tot 31 ms voor 1 MB, 100 tot 180 ms voor 5 MB en
+370 tot 685 ms voor 20 MB heen, en ongeveer hetzelfde terug; een kleine
+tekstaanvraag kost vast ongeveer 4 ms. De tijden van JavaScript en van Rust
+zelf klopten, de oversteek en daarmee de voorspelde winst niet: met het model
+leek Rust voor een PNG vanaf 32.768 pixels 2 tot 12 keer sneller, in de app is
+het juist daar trager. Een route gaat dus pas aan na een meting in de echte
+app, en zo'n meting hoort bij elke volgende stap.
+
+### Niet meegenomen
+
+Het volledige werk van fase 3 staat op de lokale tak `integratie/rust3`, met
+de code, de pariteitstoetsen en de metingen, om later opnieuw te meten.
+
+**Paginatekst uit de worker voor de elf lezers.** Niet hetzelfde resultaat: op
+4 van de 35 echte bestanden (12 van de 214 pagina's) gaf de worker andere
+tekstitems dan pdf.js. Bij drie A0-tekeningen met tekst die 180 graden
+gedraaid is getekend kwamen er extra items van één spatie en werden reeksen
+cijfers op andere plekken gesplitst; bij een tekstdocument met ingesloten
+deelfonts stonden er spaties binnen een reeks. Daardoor verschilden
+paginalabels, herkende woorden, bladverwijzingen, formulierherkenning en de
+woordenverzamelingen van de vergelijkweergave. Sneller was het ook niet: een
+aanvraag kost vast ongeveer 4 ms, pdf.js leest een lichte pagina in 2 tot
+3 ms. Het zoeken zelf gebruikt de tekst uit de worker al langer en is niet
+gewijzigd.
+
+**Stempelbeelden decoderen.** De gedecodeerde pixels zijn gelijk, maar voor
+grijs, RGB en CMYK is Rust bij elke gemeten maat trager dan het canvas (0,4
+tot 0,8 keer zo snel), en de data-URL is voor een dekkend beeld 36 tot 62 %
+groter. Bij enkele grote stempels verschilde bovendien de schermopname van de
+pagina licht tussen de routes, hoewel de pixels gelijk zijn; de oorzaak is niet
+gevonden. Elk van de twee is reden genoeg.
+
+**Objectstromen inpakken bij het opslaan.** Zelfde objecten, maar in de
+debug-build tot 100.000 objecten trager dan pdf-lib (0,5 tot 0,9 keer zo
+snel): de overdracht van het tussenbestand weegt zwaarder dan gedacht. De
+inpakker is in die build niet geoptimaliseerd gebouwd; de schatting voor een
+release-build is 1,05 tot 1,1 keer, onder de lijn van 1,3. Dat moet eerst in
+een release-build van de app gemeten worden.
+
+**De JPEG van rasteruitvoer in de worker.** Geen winst, in de app bevestigd:
+geen paginaklasse waarin de worker-route duidelijk sneller is, en het geheugen
+dat de WebView minder vasthoudt verhuist naar de worker.
