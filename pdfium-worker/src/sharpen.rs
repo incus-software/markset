@@ -53,7 +53,14 @@ mod tests {
     use std::io::Read;
 
     fn fixture(name: &str) -> Vec<u8> {
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("sharpen").join(name);
+        // Markset: src-tauri includes this module too (verscherpen.rs); the
+        // fixtures stay in pdfium-worker, so look there as well.
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let path = [manifest.to_path_buf(), manifest.join("..").join("..").join("pdfium-worker")]
+            .into_iter()
+            .map(|dir| dir.join("tests").join("fixtures").join("sharpen").join(name))
+            .find(|p| p.exists())
+            .unwrap_or_else(|| manifest.join("tests").join("fixtures").join("sharpen").join(name));
         let raw = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let mut out = Vec::new();
         flate2::read::ZlibDecoder::new(&raw[..]).read_to_end(&mut out).unwrap();

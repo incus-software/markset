@@ -203,7 +203,7 @@ impl Papier {
             Papier::Letter => Some((215.9, 279.4)),
             Papier::Legal => Some((215.9, 355.6)),
             Papier::Tabloid => Some((279.4, 431.8)),
-            p => us_vel(p).map(|v| (v.2 as f64 * 25.4, v.3 as f64 * 25.4)),
+            p => us_vel(p).map(|v| (f64::from(v.2 * 254) / 10.0, f64::from(v.3 * 254) / 10.0)), // Markset: exact 0.1 mm (17 * 25.4 is 431.79999...)
         }
     }
 }
