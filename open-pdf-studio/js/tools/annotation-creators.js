@@ -386,7 +386,6 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         // Vet/cursief/onderstrepen/doorhalen, uitlijning en regelafstand uit
         // de standaardstijl (#1150); eerder altijd gewoon, links en boven.
         ...tekststijlUitVoorkeur(prefs, 'textbox'),
-        ...textStyleDefault(prefs, 'textbox'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.textboxBorderWidth,
         borderStyle: prefs.textboxBorderStyle,
         opacity: (prefs.textboxOpacity || 100) / 100
@@ -422,7 +421,6 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         fontFamily: prefs.calloutFontFamily || 'Arial',
         // Teken- en alineastijl uit de standaardstijl (#1150).
         ...tekststijlUitVoorkeur(prefs, 'callout'),
-        ...textStyleDefault(prefs, 'callout'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.calloutBorderWidth,
         borderStyle: prefs.calloutBorderStyle,
         opacity: (prefs.calloutOpacity || 100) / 100

@@ -9,7 +9,7 @@ import { leesOpslag, schrijfOpslag, VOORKEUREN_NAAM } from './opslag.js';
 import { voegSamenMetStandaarden } from './preferences-merge.js';
 import { usMeasureFallback } from '../../markset/us-units.js'; // Markset
 import { marksetPrefMigrations } from '../../markset/pref-migrations.js'; // Markset
-import { saveTextStyleDefault, textStyleDefault } from '../../markset/text-defaults.js'; // Markset
+import { saveTextStyleDefault, textStyleDefault, migrateTextStyles } from '../../markset/text-defaults.js'; // Markset
 import { styleTypeOf } from '../../markset/plain-text.js'; // Markset
 import { randkleurenUitVoorkeur } from '../annotations/fill-utils.js';
 import { writeStylePrefs, pasTekststijlToe } from './style-prefs.js';
@@ -77,6 +77,7 @@ export async function loadPreferences() {
       state.preferences = voegSamenMetStandaarden(DEFAULT_PREFERENCES, loaded);
     }
     Object.assign(state.preferences, marksetPrefMigrations(state.preferences)); // Markset: one-time updates (Light theme, units)
+    Object.assign(state.preferences, migrateTextStyles(state.preferences)); // Markset: text box/callout text style to upstream's keys, once
     // Markset: with US units, measurements without any scale read paper feet-and-inches, not mm.
     Object.assign(state.preferences, usMeasureFallback(state.preferences));
 

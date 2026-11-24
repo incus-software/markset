@@ -67,7 +67,8 @@ try {
   }
   assert.equal(result.vertices.length, 10);
   assert.deepEqual(result.vertices.slice(0, 2), result.vertices.slice(-2));
-  assert.match(result.content, /160[.,]00\s*ft/);
+  // Markset: feet show as feet-inches by default (imperialLengthFormat 'feetInch').
+  assert.match(result.content, /160[.,]00\s*ft|160'-0"/);
   console.log(JSON.stringify({ passed: true, values: result.reports.map(r => r.value), rejected: result.invalid.length,
     savedVertices: result.vertices.length / 2, savedLabel: result.content }));
 } finally {
