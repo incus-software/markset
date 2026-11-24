@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { withPageScale, withoutPageScale, pageScaleAt, sheetInches } from './page-scale.js';
+import { withPageScale, withoutPageScale, pageScaleAt, sheetInches, withoutCalibrationViewports } from './page-scale.js';
 import { verzamelSchaalBronnen, schaalOpPuntUitBronnen } from '../js/annotations/schaal-op-punt.js';
 import { formatPageSizeIn } from './us-units.js';
 
@@ -21,6 +21,22 @@ test('a calibration is stored per sheet and is also the document default', () =>
   assert.deepEqual(Object.keys(c.pages), ['3']);
   assert.equal(withoutPageScale(c, 3), null);
   assert.equal(withoutPageScale({ pixelsPerUnit: 2, unit: 'mm' }, 1), null);
+});
+
+test('"Override embedded PDF scales" stays on the document scale, not on the sheet', () => {
+  const on = withPageScale(null, 1, { ...cal(18), overridePdfScale: true });
+  assert.equal(on.overridePdfScale, true);
+  assert.equal('overridePdfScale' in on.pages[1], false);
+  // Applying again without the box ticked clears it.
+  assert.equal('overridePdfScale' in withPageScale(on, 1, cal(18)), false);
+});
+
+test('a saved calibration is not also read as the PDF\'s own scale', () => {
+  const cad = { name: 'Model', pixelsPerUnit: 4, unit: 'ft' };
+  const ours = { name: 'Markset calibration', pixelsPerUnit: 18, unit: 'ft' };
+  assert.deepEqual(withoutCalibrationViewports({ 1: [ours, cad], 2: [ours] }), { 1: [cad] });
+  assert.equal(withoutCalibrationViewports({ 2: [ours] }), undefined);
+  assert.equal(withoutCalibrationViewports(undefined), undefined);
 });
 
 test('the sheet calibration beats the PDF\'s own scale and a scale bar, not a drawn viewport', () => {
@@ -72,8 +88,10 @@ test('a sheet calibration is written as a standard viewport and read back', asyn
   assert.equal(writePageCalibrations(pdf, ms, lib), 1);
   const reloaded = await PDFDocument.load(await pdf.save());
   const vps = leesViewportsVanPagina(reloaded.getPage(0));
-  assert.equal(vps.length, 1); // the CAD viewport is set aside, ours covers the sheet
-  assert.equal(vps[0].name, MARKSET_VP_NAME);
+  // The CAD viewport is set aside, ours covers the sheet; the set-aside one is
+  // still read, as the PDF's own scale that a Reset returns to.
+  assert.deepEqual(vps.map(v => v.name), [MARKSET_VP_NAME, 'Plan']);
+  assert.deepEqual(withoutCalibrationViewports({ 1: vps })[1].map(v => v.name), ['Plan']);
   assert.ok(Math.abs(vps[0].pixelsPerUnit - 19.635) < 1e-6);
   assert.equal(vps[0].unit, 'ft');
   assert.equal(vps[0].width, 2592);
@@ -82,6 +100,23 @@ test('a sheet calibration is written as a standard viewport and read back', asyn
   // Opening on another computer: the viewport becomes sheet 1's calibration.
   const restored = restorePageCalibrations(null, { 1: vps });
   assert.ok(Math.abs(pageScaleAt({ measureScale: restored }, 1).pixelsPerUnit - 19.635) < 1e-6);
+});
+
+test('the app\'s own scale viewports stay in /VP next to the calibration', async () => {
+  const pdf = await cadPdf();
+  const p1 = pdf.getPage(0).node;
+  const vp = p1.lookup(PDFName.of('VP'));
+  const own = pdf.context.obj({ Type: 'Viewport', BBox: [0, 0, 2592, 1728], OPS_Bron: PDFName.of('Document'), OPS_OverridePdfScale: true });
+  vp.push(own);
+  writePageCalibrations(pdf, withPageScale(null, 1, cal(20)), lib);
+  const names = (arr) => Array.from({ length: arr.size() }, (_, k) => {
+    const d = arr.lookup(k);
+    return d.get(PDFName.of('OPS_Bron'))?.toString() || d.lookup(PDFName.of('Name')).decodeText();
+  });
+  assert.deepEqual(names(p1.lookup(PDFName.of('VP'))), ['/Document', MARKSET_VP_NAME]);
+  assert.deepEqual(names(p1.lookup(PDFName.of('OPS_OriginalVP'))), ['Plan']);
+  writePageCalibrations(pdf, null, lib); // reset
+  assert.deepEqual(names(p1.lookup(PDFName.of('VP'))), ['Plan', '/Document']);
 });
 
 test('reset gives the CAD viewport back', async () => {

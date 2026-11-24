@@ -8,7 +8,7 @@
 // lezer over (#629).
 
 import { PDFName, PDFArray, PDFDict, PDFNumber, PDFString, PDFHexString } from 'pdf-lib';
-import { restorePageCalibrations } from '../../markset/page-scale.js'; // Markset
+import { restorePageCalibrations, withoutCalibrationViewports } from '../../markset/page-scale.js'; // Markset
 import { opmaakUitGetalopmaken } from '../core/maat-opmaak.js';
 
 /** Millimeters per eenheid voor de eenheden die in een `/U`-label voorkomen. */
@@ -223,8 +223,15 @@ export function leesViewportsVanPagina(pagina) {
       console.warn(`[pdf-viewports] pagina met ${vp.size()} viewports: meer dan ${MAX_VIEWPORTS}, de lijst wordt overgeslagen`);
       return lijst;
     }
-    for (let j = 0; j < vp.size(); j++) {
-      const d = vp.lookup(j);
+    // Markset: a sheet calibrated in Markset keeps its own scale as a
+    // "Markset calibration" viewport and the PDF's original ones under
+    // /OPS_OriginalVP (markset/page-scale-pdf.js): those originals are the
+    // PDF's scale on that sheet, the one a Reset of the calibration returns to.
+    const bewaard = node.lookup(PDFName.of('OPS_OriginalVP'));
+    const reeksen = [vp];
+    if (bewaard instanceof PDFArray && bewaard.size() <= MAX_VIEWPORTS) reeksen.push(bewaard);
+    for (const reeks of reeksen) for (let j = 0; j < reeks.size(); j++) {
+      const d = reeks.lookup(j);
       if (!(d instanceof PDFDict)) continue;
       // Een eigen viewport (schaal-in-pdf.js, #629) spiegelt een schaalgebied,
       // viewport-annotatie of de documentschaal: die komen zelf terug.
@@ -369,6 +376,8 @@ export function rondViewportLezingAf(doc, kenmerk, viewports, userUnits) {
   if (viewports) { // Markset: a calibration saved in the PDF is that sheet's calibration again
     const ms = restorePageCalibrations(doc.measureScale, viewports);
     if (ms !== doc.measureScale) doc.measureScale = ms;
+    // ... and not also the PDF's own scale, or Reset would leave it in force.
+    doc.pdfViewports = withoutCalibrationViewports(doc.pdfViewports);
   }
   if (viewports && userUnits) {
     doc.pageUserUnits = Object.keys(userUnits).length ? userUnits : undefined;

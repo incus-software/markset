@@ -53,12 +53,25 @@ export function writePageCalibrations(pdfDoc, measureScale, lib) {
     const vp = node.lookup(PDFName.of('VP'));
     const entries = vp instanceof PDFArray ? Array.from({ length: vp.size() }, (_, k) => vp.get(k)) : [];
     const others = entries.filter(e => !isMarkset(ctx.lookup(e), PDFName));
+    // The app's own scale viewports (schaal-in-pdf.js marks them /OPS_Bron:
+    // the document scale with its "Override embedded PDF scales" flag, scale
+    // regions, drawn viewports) stay in /VP and are written again on every
+    // save; only another program's viewports move to /OPS_OriginalVP.
+    const source = (e) => ctx.lookup(e)?.get?.(PDFName.of('OPS_Bron'));
+    const own = others.filter(e => source(e) !== undefined);
+    const foreign = others.filter(e => source(e) === undefined);
     const saved = node.lookup(PDFName.of('OPS_OriginalVP'));
+    // Files saved before this kept the app's own viewports there too: those are stale.
+    const original = saved instanceof PDFArray
+      ? Array.from({ length: saved.size() }, (_, k) => saved.get(k)).filter(e => source(e) === undefined)
+      : null;
 
     if (!(s?.pixelsPerUnit > 0)) {
       // Not calibrated (any more): drop our viewport, restore the originals.
-      if (saved instanceof PDFArray) {
-        node.set(PDFName.of('VP'), saved);
+      if (original) {
+        const back = [...original, ...others];
+        if (back.length) node.set(PDFName.of('VP'), ctx.obj(back));
+        else node.delete(PDFName.of('VP'));
         node.delete(PDFName.of('OPS_OriginalVP'));
       } else if (entries.length !== others.length) {
         if (others.length) node.set(PDFName.of('VP'), ctx.obj(others));
@@ -67,7 +80,10 @@ export function writePageCalibrations(pdfDoc, measureScale, lib) {
       return;
     }
 
-    if (!(saved instanceof PDFArray) && others.length) node.set(PDFName.of('OPS_OriginalVP'), ctx.obj(others));
+    if (original) {
+      if (original.length) node.set(PDFName.of('OPS_OriginalVP'), ctx.obj(original));
+      else node.delete(PDFName.of('OPS_OriginalVP'));
+    } else if (foreign.length) node.set(PDFName.of('OPS_OriginalVP'), ctx.obj(foreign));
     const box = page.getMediaBox();
     const f = measureFormats(s.pixelsPerUnit, s.unit || 'mm');
     const fmt = (o) => {
@@ -87,7 +103,10 @@ export function writePageCalibrations(pdfDoc, measureScale, lib) {
       Name: PDFString.of(MARKSET_VP_NAME),
       Measure: measure,
     });
-    node.set(PDFName.of('VP'), ctx.obj([viewport]));
+    // Document and page scales first, then the calibration, then the scale
+    // regions and drawn viewports, which are smaller and more specific.
+    const whole = own.filter(e => ['/Document', '/Page'].includes(String(source(e))));
+    node.set(PDFName.of('VP'), ctx.obj([...whole, viewport, ...own.filter(e => !whole.includes(e))]));
     written++;
   });
   return written;
