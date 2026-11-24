@@ -327,6 +327,7 @@ markset/place-on-pages/placement.test.mjs
 markset/pdf-text-safety.test.mjs
 markset/vite-brand.test.mjs
 markset/compare/diff-classify.test.mjs
+markset/compare/overlay-styles.test.mjs
 markset/pdf-conformance.test.mjs
 js/pdf/frame-planner.test.mjs
 js/pdf/pdf-viewport-heropenen.test.mjs
