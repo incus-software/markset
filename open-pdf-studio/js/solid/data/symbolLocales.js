@@ -12,7 +12,6 @@ export const INDUSTRIES = [
 
 export const COUNTRIES = [
   { id: 'us', name: 'United States', flag: '🇺🇸' }, // Markset
-  { id: 'nl', name: 'Netherlands', flag: '🇳🇱' }, // Markset: English
 ];
 
 // Standaardselectie bij een verse installatie.

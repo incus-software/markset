@@ -306,6 +306,7 @@ markset/us-units-hooks.test.mjs
 markset/svg-to-pdf.test.mjs
 markset/statusbar-fit.test.mjs
 markset/library/library.test.mjs
+markset/library/us-only.test.mjs
 markset/smart/smart.test.mjs
 markset/smart/plugin-hooks.test.mjs
 markset/plugin-review-api.test.mjs
