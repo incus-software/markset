@@ -161,10 +161,10 @@
   --theme-border: #d1d5db;
   --theme-text: #1f2937;
   --theme-text-secondary: #6b7280;
-  --theme-accent: #a82d6e;
-  --theme-accent-hover: #922560;
+  --theme-accent: #0000FF;
+  --theme-accent-hover: #0000CC;
   --theme-hover: #e5e7eb;
-  --theme-active: #3b82f6;
+  --theme-active: #0000FF;
 
   --theme-titlebar-bg-start: #ffffff;
   --theme-titlebar-bg-end: #f5f5f5;
@@ -178,8 +178,8 @@
   --theme-window-btn-color: #1f2937;
   --theme-window-btn-hover: rgba(0, 0, 0, 0.08);
 
-  --theme-file-tab-bg: #a82d6e;
-  --theme-file-tab-hover: #922560;
+  --theme-file-tab-bg: #0000FF;
+  --theme-file-tab-hover: #0000CC;
   --theme-file-tab-text: #ffffff;
 
   --theme-ribbon-bg-start: #ffffff;
@@ -195,23 +195,23 @@
   --theme-ribbon-tab-active-border: #d1d5db;
   --theme-ribbon-btn-hover: #e5e7eb;
   --theme-ribbon-btn-hover-border: #d1d5db;
-  --theme-ribbon-btn-active-bg: #dbeafe;
-  --theme-ribbon-btn-active-border: #93c5fd;
-  --theme-ribbon-btn-active-text: #1d4ed8;
+  --theme-ribbon-btn-active-bg: #EBEBFF;
+  --theme-ribbon-btn-active-border: #A3A3FF;
+  --theme-ribbon-btn-active-text: #0000CC;
   --theme-ribbon-icon-stroke: #6b7280;
   --theme-ribbon-group-label: #9ca3af;
   --theme-ribbon-group-border: #d1d5db;
   --theme-ribbon-input-bg: #ffffff;
   --theme-ribbon-input-border: #d1d5db;
   --theme-ribbon-input-text: #1f2937;
-  --theme-ribbon-input-focus-border: #a82d6e;
+  --theme-ribbon-input-focus-border: #0000FF;
   --theme-ribbon-input-focus-bg: #ffffff;
   --theme-ribbon-input-label: #9ca3af;
   --theme-ribbon-dropdown-arrow: #9ca3af;
 
-  --theme-ctx-tab-border: #a82d6e;
+  --theme-ctx-tab-border: #0000FF;
   --theme-ctx-tab-text: #8a2258;
-  --theme-ctx-tab-hover-bg: rgba(168, 45, 110, 0.1);
+  --theme-ctx-tab-hover-bg: rgba(0, 0, 255, 0.1);
   --theme-ctx-tab-active-text: #8a2258;
 
   --theme-app-menu-bg: #fafafa;
@@ -229,11 +229,11 @@
   --theme-tab-border: #d1d5db;
   --theme-tab-hover: #e5e7eb;
   --theme-tab-active-bg: #ffffff;
-  --theme-tab-active-accent: #a82d6e;
+  --theme-tab-active-accent: #0000FF;
   --theme-tab-text: #6b7280;
   --theme-tab-active-text: #1f2937;
   --theme-tab-close-color: #6b7280;
-  --theme-tab-modified: #a82d6e;
+  --theme-tab-modified: #0000FF;
   --theme-tab-empty-text: #9ca3af;
   --theme-tab-add-color: #6b7280;
   --theme-tab-add-border: #d1d5db;
@@ -249,18 +249,18 @@
   --theme-panel-tab-hover-text: #1f2937;
   --theme-panel-tab-active-bg: #ffffff;
   --theme-panel-tab-active-text: #1f2937;
-  --theme-panel-accent: #a82d6e;
+  --theme-panel-accent: #0000FF;
   --theme-panel-header-text: #1f2937;
   --theme-panel-toggle-bg: #e5e7eb;
   --theme-panel-toggle-hover: #d1d5db;
   --theme-panel-toggle-text: #1f2937;
   --theme-panel-resize: #d1d5db;
-  --theme-panel-resize-hover: #a82d6e;
+  --theme-panel-resize-hover: #0000FF;
 
   --theme-thumbnail-bg: #f5f5f5;
   --theme-thumbnail-hover: #e5e7eb;
   --theme-thumbnail-active-bg: #e5e7eb;
-  --theme-thumbnail-active-border: #a82d6e;
+  --theme-thumbnail-active-border: #0000FF;
   --theme-thumbnail-selected-bg: #e8e0f0;
   --theme-thumbnail-selected-border: #b07cc8;
   --theme-thumbnail-selected-label: #4a3560;
@@ -315,10 +315,10 @@
   --theme-border: #0f3460;
   --theme-text: #eaeaea;
   --theme-text-secondary: #8b8b8b;
-  --theme-accent: #a82d6e;
-  --theme-accent-hover: #922560;
+  --theme-accent: #4F57FF;
+  --theme-accent-hover: #3D45F0;
   --theme-hover: #334155;
-  --theme-active: #3b82f6;
+  --theme-active: #7B82FF;
 
   /* Title bar */
   --theme-titlebar-bg-start: #16213e;
@@ -334,8 +334,8 @@
   --theme-window-btn-hover: rgba(255, 255, 255, 0.1);
 
   /* File tab */
-  --theme-file-tab-bg: #a82d6e;
-  --theme-file-tab-hover: #922560;
+  --theme-file-tab-bg: #4F57FF;
+  --theme-file-tab-hover: #3D45F0;
   --theme-file-tab-text: #ffffff;
 
   /* Ribbon */
@@ -352,24 +352,24 @@
   --theme-ribbon-tab-active-border: #0f3460;
   --theme-ribbon-btn-hover: #334155;
   --theme-ribbon-btn-hover-border: #475569;
-  --theme-ribbon-btn-active-bg: #1e3a5f;
-  --theme-ribbon-btn-active-border: #60a5fa;
-  --theme-ribbon-btn-active-text: #93c5fd;
+  --theme-ribbon-btn-active-bg: #1D2040;
+  --theme-ribbon-btn-active-border: #7B82FF;
+  --theme-ribbon-btn-active-text: #A4A9FF;
   --theme-ribbon-icon-stroke: #8b8b8b;
   --theme-ribbon-group-label: #64748b;
   --theme-ribbon-group-border: #0f3460;
   --theme-ribbon-input-bg: #0f172a;
   --theme-ribbon-input-border: #0f3460;
   --theme-ribbon-input-text: #eaeaea;
-  --theme-ribbon-input-focus-border: #a82d6e;
+  --theme-ribbon-input-focus-border: #7B82FF;
   --theme-ribbon-input-focus-bg: #0f172a;
   --theme-ribbon-input-label: #8b8b8b;
   --theme-ribbon-dropdown-arrow: #8b8b8b;
 
   /* Contextual tabs (Format, Arrange) */
-  --theme-ctx-tab-border: #a82d6e;
-  --theme-ctx-tab-text: #a82d6e;
-  --theme-ctx-tab-hover-bg: rgba(168, 45, 110, 0.15);
+  --theme-ctx-tab-border: #7B82FF;
+  --theme-ctx-tab-text: #A4A9FF;
+  --theme-ctx-tab-hover-bg: rgba(123, 130, 255, 0.15);
   --theme-ctx-tab-active-text: #c94d8a;
 
   /* App Menu */
@@ -389,11 +389,11 @@
   --theme-tab-border: #0f3460;
   --theme-tab-hover: #1e293b;
   --theme-tab-active-bg: #1a1a2e;
-  --theme-tab-active-accent: #a82d6e;
+  --theme-tab-active-accent: #7B82FF;
   --theme-tab-text: #8b8b8b;
   --theme-tab-active-text: #eaeaea;
   --theme-tab-close-color: #8b8b8b;
-  --theme-tab-modified: #a82d6e;
+  --theme-tab-modified: #7B82FF;
   --theme-tab-empty-text: #64748b;
   --theme-tab-add-color: #8b8b8b;
   --theme-tab-add-border: #0f3460;
@@ -411,19 +411,19 @@
   --theme-panel-tab-hover-text: #eaeaea;
   --theme-panel-tab-active-bg: #16213e;
   --theme-panel-tab-active-text: #eaeaea;
-  --theme-panel-accent: #a82d6e;
+  --theme-panel-accent: #7B82FF;
   --theme-panel-header-text: #eaeaea;
   --theme-panel-toggle-bg: #334155;
   --theme-panel-toggle-hover: #475569;
   --theme-panel-toggle-text: #eaeaea;
   --theme-panel-resize: #0f3460;
-  --theme-panel-resize-hover: #a82d6e;
+  --theme-panel-resize-hover: #7B82FF;
 
   /* Thumbnails */
   --theme-thumbnail-bg: #1a1a2e;
   --theme-thumbnail-hover: #334155;
   --theme-thumbnail-active-bg: #1e293b;
-  --theme-thumbnail-active-border: #a82d6e;
+  --theme-thumbnail-active-border: #7B82FF;
   --theme-thumbnail-selected-bg: #2a2a4e;
   --theme-thumbnail-selected-border: #6b3a7d;
   --theme-thumbnail-selected-label: #c0c0c0;

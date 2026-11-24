@@ -1,11 +1,11 @@
 import { createSignal, createMemo } from 'solid-js';
-import { BUILT_IN_CATEGORIES } from '../data/symbolLibrary.js';
-import { NEN1414_CATEGORIES } from '../data/nen1414Library.js';
-import { NL_CATEGORIES } from '../data/nlSymbolLibrary.js';
-import { INB_CATEGORIES } from '../data/inbSymbolLibrary.js';
+// Markset: the upstream NL, NEN 1414, INB and built-in palette groups are not
+// offered; Markset ships US libraries only. Their data files stay, because the
+// renderers and parametric templates still use them to draw markups already
+// placed in existing PDFs (see systeem-symbol-cache.js).
 import { MARKSET_CATEGORIES } from '../../../markset/library/index.js'; // Markset
 import { pluginCategories } from '../../../markset/smart/plugin-categories.js'; // Markset
-import { matchesLocale, DEFAULT_INDUSTRY, DEFAULT_COUNTRY } from '../data/symbolLocales.js';
+import { matchesLocale, DEFAULT_INDUSTRY, DEFAULT_COUNTRY, COUNTRIES } from '../data/symbolLocales.js';
 import { state } from '../../core/state.js';
 import { savePreferences } from '../../core/preferences.js';
 import { registerPaletteDock } from './paletteOrder.js';
@@ -115,10 +115,6 @@ const allCategories = createMemo(() => {
   return [
     ...MARKSET_CATEGORIES, // Markset: bundled US Starter Library first
     ...pluginCategories(), // Markset: groups added by plugins
-    ...NL_CATEGORIES,
-    ...INB_CATEGORIES,
-    ...BUILT_IN_CATEGORIES,
-    ...NEN1414_CATEGORIES,
     ...custom
   ];
 });
@@ -260,7 +256,12 @@ function initSymbolPalette() {
   if (prefs.symbolPaletteVisible != null) setSymbolPaletteVisibleRaw(prefs.symbolPaletteVisible);
   if (prefs.disabledSymbolGroups) setDisabledGroupsRaw(new Set(prefs.disabledSymbolGroups));
   if (prefs.symbolLibraryIndustry != null) setSelectedIndustryRaw(prefs.symbolLibraryIndustry);
-  if (prefs.symbolLibraryCountry != null) setSelectedCountryRaw(prefs.symbolLibraryCountry);
+  // Markset: a country saved before the US-only change (e.g. 'nl') falls back
+  // to the default, so no hidden non-US choice stays selected.
+  if (prefs.symbolLibraryCountry != null) {
+    setSelectedCountryRaw(COUNTRIES.some(c => c.id === prefs.symbolLibraryCountry)
+      ? prefs.symbolLibraryCountry : DEFAULT_COUNTRY);
+  }
   const mode = prefs.symbolPaletteMode || 'docked-right';
   setSymbolPaletteModeRaw(mode);
   if (prefs.symbolPaletteFloatX != null) {

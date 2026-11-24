@@ -499,7 +499,8 @@
     "autoDetect": "Auto-detect from title block",
     "detecting": "Detecting...",
     "scaleDetected": "Scale detected!",
-    "scaleNotFound": "No scale found in title block"
+    "scaleNotFound": "No scale found in title block",
+    "firstTimeHint": "After you set the scale, measure one known dimension to check it."
   },
   "pageSetup": {
     "title": "Page Setup",
