@@ -3568,6 +3568,11 @@
   margin: 0 0 12px 0;
 }
 
+/* Markset: one-line check hint the first time a sheet is calibrated */
+.calibration-first-hint {
+  margin: 12px 0 0 0;
+}
+
 .calibration-row {
   display: flex;
   gap: 8px;

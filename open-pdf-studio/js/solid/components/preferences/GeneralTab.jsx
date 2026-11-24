@@ -108,7 +108,7 @@ export default function GeneralTab(props) {
             onInput={e => { const n = parseInt(e.target.value, 10); if (n >= 1024 && n <= 65535) p.mcpPort[1](n); }} />
           <span style={{ 'margin-left': '8px', color: '#666' }}>{statusTekst()}</span>
         </div>
-        <div class="pref-row" style={{ color: '#666', 'font-size': '11px' }}>{t('general.aiLinkHint')}</div>
+        <div class="pref-row" style={{ color: '#666', 'font-size': '11px' }}>{t('general.aiLinkHintOff') /* Markset: off-by-default wording; English only, other locales fall back */}</div>
       </fieldset>
       <fieldset class="pref-fieldset">
         <legend>{t('general.author')}</legend>
