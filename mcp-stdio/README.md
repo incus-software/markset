@@ -58,7 +58,7 @@ If you used a non-default port, set it first: `OPS_MCP_PORT=9300 node mcp-stdio/
 
 `.mcp.json` already lives in the repo root, so just open this repo in Claude
 Code and approve the **open-pdf-studio** server when prompted. Then ask Claude
-to call e.g. `app_accounts_status` or `app_list_tabs`.
+to call e.g. `app_list_tabs`.
 
 Change the port via the `env.OPS_MCP_PORT` field in `.mcp.json`.
 
@@ -85,7 +85,7 @@ Restart Claude Desktop. The **open-pdf-studio** tools appear in the 🔌 menu.
 
 ---
 
-## Agent tasks and accounts
+## Agent tasks
 
 - **`app_agent_task_pending`** → **`app_agent_task_result`** — structured tasks
   from extensions, without a chat message. An
@@ -97,8 +97,6 @@ Restart Claude Desktop. The **open-pdf-studio** tools appear in the 🔌 menu.
   the extension that asked, as a proposal: nothing is drawn until it applies
   it. A task is cancelled when the user switches or closes the document or
   when its source, page or scale changes.
-- **`app_accounts_status`** / **`app_accounts_fetch`** — check sign-in and call
-  any `/me/*` Accounts API from the signed-in app.
 
 A few of the many PDF tools: `app_open_pdf`, `app_new_blank_pdf`,
 `app_go_to_page`, `app_set_zoom` / `app_fit_width`, `app_create_annotation`,
