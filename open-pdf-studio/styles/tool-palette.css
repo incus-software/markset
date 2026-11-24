@@ -186,7 +186,7 @@
   transition: opacity 0.15s, border-color 0.15s;
 }
 .tp-dock-target.visible { opacity: 1; }
-.tp-dock-target.active { border-color: var(--theme-accent); background: rgba(168,45,110,0.08); }
+.tp-dock-target.active { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 8%, transparent); }
 .tp-dock-target-left { left: 6px; }
 .tp-dock-target-right { right: 6px; }
 .tp-dock-target-icon { color: var(--theme-text-secondary); display: flex; }
