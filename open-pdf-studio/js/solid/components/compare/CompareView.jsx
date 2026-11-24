@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, For, Show } from 'solid-js';
 import {
   compareActive,
   compareOldPath,
@@ -58,6 +58,15 @@ import { diffAnnotationsForPair } from '../../../compare/compare-annotations.js'
 // Markset: colour-blind-safe compare colours and the sheet-size warning.
 import { changeTypeColor, OLD_HEX, NEW_HEX } from '../../../../markset/compare/diff-classify.js';
 import { compareSizeMismatch } from '../../../../markset/compare/size-warning.js';
+// Markset: overlay display styles (Tint / Difference / Fade) and change-list helpers.
+import {
+  compareOverlayStyle,
+  compareFadePos,
+  setCompareOverlayStyle,
+  setCompareFadePos,
+  oldLayerCss,
+} from '../../../../markset/compare/overlay-styles.js';
+import { sheetZone, changeSizeInches, stepChange } from '../../../../markset/compare/change-list.js';
 import {
   isSinglePaneMode,
   splitFraction,
@@ -148,6 +157,10 @@ export default function CompareView() {
   const [splitBase, setSplitBase] = createSignal({ w: 0, h: 0 });
   // Overlay and split line share one scroll body and one page wrapper.
   const singlePane = () => isSinglePaneMode(compareMode());
+  // Markset: the display style the overlay canvases were last painted in. The
+  // OLD layer's CSS follows this, not the live choice, so switching style does
+  // not show the old paint under the new blend while the sheets re-render.
+  const [paintedStyle, setPaintedStyle] = createSignal(compareOverlayStyle());
   let highlightTimer = null;
 
   // Instant CSS-transform preview while zooming. The bitmap stays at the
@@ -411,6 +424,7 @@ export default function CompareView() {
         scale: 1.5 * zoomAtRender,
         offset: compareOffset(),
         skipDetection,
+        overlayStyle: compareOverlayStyle(), // Markset
       };
       if (!opts.oldPath || !opts.newPath) return;
       if (compareMode() === 'split') {
@@ -428,6 +442,7 @@ export default function CompareView() {
             opts,
             overlayHighlightCanvasRef,
           );
+          setPaintedStyle(opts.overlayStyle); // Markset
           repaintHighlights();
         }
       } else {
@@ -511,6 +526,12 @@ export default function CompareView() {
       queueMicrotask(doRender);
     }
   });
+
+  // Markset: a new overlay display style repaints the sheets; the changes stay
+  // the same, so detection is skipped. (Fade's slider is CSS only.)
+  createEffect(on(compareOverlayStyle, () => {
+    if (compareActive() && compareMode() === 'overlay') doRender({ skipDetection: true });
+  }, { defer: true }));
 
   // Zoom: instant CSS preview + debounced HQ re-render.
   createEffect(() => {
@@ -821,9 +842,11 @@ export default function CompareView() {
         style={`position:absolute; inset:0; display:${compareFocused() ? 'flex' : 'none'}; flex-direction:column; background:var(--page-area-bg, #2a2a2a);`}
         onWheel={handleWheel}
       >
+        {/* Markset: the toolbar wraps (flex-wrap) instead of running off-screen
+            when the side panels leave the compare view narrow. */}
         <div
           class="compare-toolbar"
-          style="display:flex; align-items:center; gap:6px; padding:5px 10px; background:linear-gradient(#ffffff, #f5f5f5); border-bottom:1px solid #d4d4d4; color:#222; font-size:12px;"
+          style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; row-gap:4px; padding:5px 10px; background:linear-gradient(#ffffff, #f5f5f5); border-bottom:1px solid #d4d4d4; color:#222; font-size:12px;"
         >
           {/* Titel + weergavemodus */}
           <strong>{t('compare.title') || 'Compare PDFs'}</strong>
@@ -835,6 +858,40 @@ export default function CompareView() {
             <option value="side" selected={compareMode() === 'side'}>{t('compare.sideBySide') || 'Side-by-side'}</option>
             <option value="split" selected={compareMode() === 'split'}>{t('compare.split') || 'Split line'}</option>
           </select>
+
+          {/* Markset: overlay display style, and the fade slider for Fade. */}
+          <Show when={compareMode() === 'overlay'}>
+            <Sep />
+            <span style="color:#555;" title={t('compare.displayHint') || 'How the two sheets are shown on top of each other'}>{t('compare.display') || 'Display'}</span>
+            <select
+              class="compare-overlay-style"
+              style="font-size:12px;"
+              title={compareOverlayStyle() === 'difference'
+                ? (t('compare.styleDifferenceHint') || 'Only changes in colour: orange = only in old, blue = only in new. Unchanged lines are grey.')
+                : compareOverlayStyle() === 'fade'
+                  ? (t('compare.styleFadeHint') || 'Slide between the old and the new sheet to watch changes appear and disappear.')
+                  : (t('compare.styleTintHint') || 'Orange = only in old. Blue = only in new. Dark = unchanged.')}
+              onChange={(e) => setCompareOverlayStyle(e.currentTarget.value)}
+            >
+              <option value="tint" selected={compareOverlayStyle() === 'tint'}>{t('compare.styleTint') || 'Tint'}</option>
+              <option value="difference" selected={compareOverlayStyle() === 'difference'}>{t('compare.styleDifference') || 'Difference'}</option>
+              <option value="fade" selected={compareOverlayStyle() === 'fade'}>{t('compare.styleFade') || 'Fade'}</option>
+            </select>
+            <Show when={compareOverlayStyle() === 'fade'}>
+              <span style="color:#555;">{t('compare.oldDoc') || 'Old'}</span>
+              <input
+                type="range"
+                class="compare-fade-slider"
+                min="0" max="100" step="1"
+                style="width:110px;"
+                aria-label={t('compare.fadeSlider') || 'Fade between old and new'}
+                title={t('compare.fadeSlider') || 'Fade between old and new'}
+                value={Math.round(compareFadePos() * 100)}
+                onInput={(e) => setCompareFadePos(Number(e.currentTarget.value) / 100)}
+              />
+              <span style="color:#555;">{t('compare.newDoc') || 'New'}</span>
+            </Show>
+          </Show>
 
           <Sep />
 
@@ -940,9 +997,14 @@ export default function CompareView() {
                     <canvas ref={overlayNewCanvasRef} style="display:block;"></canvas>
                     {/* Markset: the OLD sheet (orange) multiplies over NEW (blue), so
                         unchanged linework reads dark and changes keep their colour. */}
+                    {/* Markset: how it shows depends on the display style
+                        (multiply for Tint, hidden for Difference, opacity for Fade). */}
                     <canvas
                       ref={overlayOldCanvasRef}
-                      style={`position:absolute; left:0; top:0; pointer-events:none; mix-blend-mode:multiply; display:${compareMode() === 'overlay' ? 'block' : 'none'};`}
+                      style={(() => {
+                        const css = oldLayerCss(paintedStyle(), compareFadePos());
+                        return `position:absolute; left:0; top:0; pointer-events:none; mix-blend-mode:${css.blend}; opacity:${css.opacity}; display:${compareMode() === 'overlay' ? css.display : 'none'};`;
+                      })()}
                     ></canvas>
                     <Show when={compareMode() === 'split'}>
                       {/* OLD left of the line: a clip box as wide as the
@@ -1118,6 +1180,50 @@ function ChangeListPanel(props) {
 
   const total = () => (props.changes() || []).length;
 
+  // Markset: the changes in list order (shown types only), for stepping
+  // through them with the previous/next buttons.
+  const orderedVisible = () => {
+    const g = groupedByType();
+    return ['added', 'removed', 'modified']
+      .filter((type) => visibleFor(type))
+      .flatMap((type) => g[type].map((item) => item.change));
+  };
+  let listRef;
+  const step = (dir) => {
+    const next = stepChange(orderedVisible(), props.focused(), dir);
+    if (!next || next === props.focused()) return;
+    const type = groupedByType()[next.type] ? next.type : 'modified';
+    if (collapsed()[type]) setCollapsed({ ...collapsed(), [type]: false });
+    props.onFocus(next);
+    queueMicrotask(() => {
+      const idx = (props.changes() || []).indexOf(next);
+      // Scroll only the list: scrollIntoView would also shift the clipped
+      // compare view sideways when the toolbar is wider than the window.
+      const row = listRef?.querySelector(`[data-change-idx="${idx}"]`);
+      if (!row) return;
+      const top = row.getBoundingClientRect().top - listRef.getBoundingClientRect().top + listRef.scrollTop;
+      if (top < listRef.scrollTop) listRef.scrollTop = top;
+      else if (top + row.offsetHeight > listRef.scrollTop + listRef.clientHeight) {
+        listRef.scrollTop = top + row.offsetHeight - listRef.clientHeight;
+      }
+    });
+  };
+  const summary = () => {
+    if (compareDetecting()) return props.t('compare.detecting') || 'Looking for changes…';
+    const n = total();
+    if (n === 0) return props.t('compare.sheetNoChanges') || 'No changes on this sheet';
+    return props.t('compare.sheetChanges', { count: n }) || `${n} changes on this sheet`;
+  };
+  // Where on the sheet, and how big on paper: "Upper left · 2.1" × 0.8"".
+  const describe = (c) => {
+    const zone = sheetZone(c);
+    const size = changeSizeInches(c);
+    const parts = [];
+    if (zone) parts.push(props.t(`compare.zone.${zone}`) || zone);
+    if (size) parts.push(size);
+    return parts.length ? parts.join(' · ') : `~${Math.round(c.width)}×${Math.round(c.height)} px @ (${Math.round(c.x)}, ${Math.round(c.y)})`;
+  };
+
   return (
     <div
       class="compare-change-list"
@@ -1143,12 +1249,32 @@ function ChangeListPanel(props) {
         <TextDiffList t={props.t} onFocus={props.onTextFocus} focused={props.focused} />
       </Show>
       <Show when={comparePanelTab() === 'changes'}>
+      {/* Markset: count for this sheet, and step through the changes. */}
+      <div style="display:flex; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid #d4d4d4; background:#ffffff;">
+        <span class="compare-sheet-summary" role="status" style="flex:1; min-width:0; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{summary()}</span>
+        <button
+          class="pref-btn pref-btn-secondary"
+          disabled={compareDetecting() || orderedVisible().length === 0}
+          title={props.t('compare.prevChange') || 'Previous change'}
+          aria-label={props.t('compare.prevChange') || 'Previous change'}
+          style="min-width:0; padding:2px 8px;"
+          onClick={() => step(-1)}
+        >{'‹'}</button>
+        <button
+          class="pref-btn pref-btn-secondary"
+          disabled={compareDetecting() || orderedVisible().length === 0}
+          title={props.t('compare.nextChange') || 'Next change'}
+          aria-label={props.t('compare.nextChange') || 'Next change'}
+          style="min-width:0; padding:2px 8px;"
+          onClick={() => step(1)}
+        >{'›'}</button>
+      </div>
       <div style="display:flex; gap:4px; padding:6px 8px; border-bottom:1px solid #d4d4d4; background:#fafafa;">
         <TypeToggle type="added" count={groupedByType().added.length} />
         <TypeToggle type="removed" count={groupedByType().removed.length} />
         <TypeToggle type="modified" count={groupedByType().modified.length} />
       </div>
-      <div style="flex:1; overflow:auto;">
+      <div ref={listRef} style="flex:1; overflow:auto;">
         <Show
           when={total() > 0}
           fallback={
@@ -1180,6 +1306,7 @@ function ChangeListPanel(props) {
                         const isFocused = () => props.focused() === c;
                         return (
                           <div
+                            data-change-idx={item.index}
                             onClick={(e) => { e.stopPropagation(); props.onFocus(c); }}
                             style={`height:50px; padding:6px 10px; border-bottom:1px solid #e0e0e0; display:flex; align-items:center; gap:8px; cursor:pointer; background:${isFocused() ? '#dbeafe' : '#ffffff'};`}
                             onMouseEnter={(e) => { if (!isFocused()) e.currentTarget.style.background = '#eaf3ff'; }}
@@ -1197,7 +1324,7 @@ function ChangeListPanel(props) {
                               <div style="color:#666; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                 {c.source === 'annotation'
                                   ? `✎ ${props.t('compare.annotation') || 'Annotatie'}`
-                                  : `~${Math.round(c.width)}×${Math.round(c.height)} px @ (${Math.round(c.x)}, ${Math.round(c.y)})`}
+                                  : describe(c) /* Markset: sheet zone and paper size */}
                               </div>
                             </div>
                           </div>

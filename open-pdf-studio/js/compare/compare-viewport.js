@@ -18,6 +18,7 @@ import { setChanges, setCompareDetecting } from './compare-store.js';
 // Markset: difference-based change detection, size check and orange/blue overlay.
 import { markChangedPixels, pageSizeMismatch, tintInk, OLD_TINT_CSS, NEW_TINT_CSS } from '../../markset/compare/diff-classify.js';
 import { setCompareSizeMismatch } from '../../markset/compare/size-warning.js';
+import { normalizeOverlayStyle, composeDifference } from '../../markset/compare/overlay-styles.js';
 import { pdfjsBronnen } from '../core/basis-url.js';
 
 // Cap detection resolution to keep CPU bounded on huge pages.
@@ -181,10 +182,17 @@ export async function renderCompareOverlay(canvasOld, canvasNew, opts, canvasHig
   // Markset: a true overlay. NEW is tinted blue; when the caller passes an
   // OLD canvas it gets the old sheet, aligned like change detection and tinted
   // orange, for the view to stack with mix-blend-mode: multiply.
+  // Display style (markset/compare/overlay-styles.js): Tint is the default;
+  // Difference greys shared lines; Fade leaves both sheets untinted.
   if (canvasOld) {
     await _renderAlignedOld(canvasOld, canvasNew, opts);
-    tintInk(canvasOld, OLD_TINT_CSS);
-    tintInk(canvasNew, NEW_TINT_CSS);
+    const style = normalizeOverlayStyle(opts.overlayStyle);
+    if (style === 'difference') {
+      composeDifference(canvasOld, canvasNew, OLD_TINT_CSS, NEW_TINT_CSS);
+    } else if (style === 'tint') {
+      tintInk(canvasOld, OLD_TINT_CSS);
+      tintInk(canvasNew, NEW_TINT_CSS);
+    }
   }
 
   // Size the highlights canvas to match NEW; the actual rectangles are drawn
@@ -382,7 +390,9 @@ async function runChangeDetection(opts, seq = _detectSeq) {
   const { changes } = await _getDetectClient().run(marked ? marked[0] : oldData, marked ? marked[1] : newData, { id: seq, transferOld: true });
   if (!changes) return null;
   // Tag the detection scale so the UI can map bbox px back to display px.
-  const out = changes.map(c => ({ ...c, detectScale }));
+  // Markset: and the sheet size in the same px, so the change list can say
+  // where on the sheet a change is (markset/compare/change-list.js).
+  const out = changes.map(c => ({ ...c, detectScale, sheetW: newEntry.width, sheetH: newEntry.height }));
   out.sizeMismatch = sizeMismatch; // Markset
   return out;
 }
