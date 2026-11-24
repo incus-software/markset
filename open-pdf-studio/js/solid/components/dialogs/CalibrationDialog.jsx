@@ -123,6 +123,8 @@ export default function CalibrationDialog(props) {
   // /UserUnit van de pagina: 1:N wordt daarmee pagina-eenheden (#884).
   const [userUnit, setUserUnit] = createSignal(
     userUnitVanPagina(getActiveDocument(), getActiveDocument()?.currentPage));
+  // Markset: this sheet has no scale yet, so show a one-line check hint.
+  const firstCalibration = !(pageScaleAt(getActiveDocument(), calPage()) || getActiveDocument()?.measureScale);
 
   onMount(async () => {
     // Pre-fill pixels from reference line if provided
@@ -410,6 +412,12 @@ export default function CalibrationDialog(props) {
             </span>
           </Show>
         </div>
+      </Show>
+
+      <Show when={firstCalibration}>
+        <p class="calibration-help calibration-first-hint">
+          {t('calibration.firstTimeHint')}
+        </p>
       </Show>
     </Dialog>
   );
