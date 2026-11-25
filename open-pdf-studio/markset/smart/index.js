@@ -68,7 +68,7 @@ export function frozenForSave(ann) {
   const t = getTemplate(ann?.symbolId);
   if (!t) return ann?.frozen || null;
   if (!isMarkset(t) || !(ann.width > 0) || !(ann.height > 0)) return null;
-  const box = { x: 0, y: 0, width: Math.abs(ann.width), height: Math.abs(ann.height) };
+  const box = { x: 0, y: 0, width: Math.abs(ann.width), height: Math.abs(ann.height), rotation: ann.rotation || 0 };
   try { return freezeCmds(renderTemplate(t, ann.params, box), box, ann.params || {}); } catch { return null; }
 }
 
@@ -188,7 +188,7 @@ export function writeVectorParametricAppearance({ ann, annotDict, context, pdf, 
   const twoPoint = [ann.startX, ann.startY, ann.endX, ann.endY].every(Number.isFinite);
   if (!isMarkset(t) || rot % 90 || (rot && twoPoint) || !(ann.width > 0) || !(ann.height > 0)) return false;
   const sideways = rot === 90 || rot === 270;
-  const box = { x: 0, y: 0, width: Math.abs(sideways ? ann.height : ann.width), height: Math.abs(sideways ? ann.width : ann.height) };
+  const box = { x: 0, y: 0, width: Math.abs(sideways ? ann.height : ann.width), height: Math.abs(sideways ? ann.width : ann.height), rotation: ann.rotation || 0 };
   const cmds = renderTemplate(t, ann.params, box);
   const svg = cmdsToSvg(cmds.filter(c => c?.kind !== 'image'), box, { color: ann.strokeColor || '#000000' });
   const ap = svg && svgToPdfAppearance(svg, box.width, box.height);

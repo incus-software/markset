@@ -14,7 +14,9 @@ import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { applyDynamicScaling } from '../annotations/dynamic-scaling.js';
 import { getTemplate } from '../symbols/registry.js';
 import { pxPerMmAt } from '../symbols/real-size.js';
-import { syncTwoPointGeometry, syncTwoPointLengthParam } from '../symbols/two-point.js';
+import { syncTwoPointGeometry, syncTwoPointLengthParam, placesOnlyWithScale } from '../symbols/two-point.js';
+import { findMeasureScale } from '../annotations/measurement.js'; // Markset
+import { updateStatusMessage } from '../ui/chrome/status-bar.js'; // Markset
 import { pendingParams, pendingSymbolId } from '../solid/stores/parametricSymbolStore.js';
 import { activeCountCategory as _activeCountCategory, nextCountNumber as _nextCountNumber } from '../solid/stores/countStore.js';
 import { ifcCategoryForParametric, ifcCategoryForAnnotationType } from '../solid/data/ifcCategoryMap.js';
@@ -458,6 +460,12 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       if (!template) return null;
       const page = getActiveDocument()?.currentPage || 1;
       const params = pendingParams();
+
+      // Markset: a symbol drawn at its real size needs the sheet's scale.
+      if (placesOnlyWithScale(template) && !findMeasureScale(page, startX, startY)) {
+        updateStatusMessage('This symbol is drawn at real size: set the sheet’s scale first (Set Scale or Calibrate on the Annotation tab).', 6000);
+        return null;
+      }
 
       if (template?.placement === 'two-point') {
         const snappedEnd = snap(startX, startY, endX, endY);

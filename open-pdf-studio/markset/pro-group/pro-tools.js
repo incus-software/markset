@@ -26,7 +26,7 @@ export const PRO_TOOL_PLACEHOLDERS = [
 ];
 
 /** Section headings in palette order. Any other section a plugin names follows them. */
-export const PRO_SECTIONS = ['Review & Seal', 'Construction Admin', 'Expert Witness', 'General'];
+export const PRO_SECTIONS = ['Review & Seal', 'Construction Admin', 'Expert Witness', 'Trade Tools', 'General'];
 const NO_SECTION = 'More';
 
 const [active, setActive] = createSignal({}); // id -> { tool?, onClick?, label?, icon?, description?, section? }

@@ -41,10 +41,11 @@ test('tools are listed under their sections, in a fixed order, with unnamed ones
     registerProTool({ id: 'revisions', section: 'Construction Admin', label: 'Revisions', onClick() {} }),
     registerProTool({ id: 'old-plugin-tool', label: 'Old tool', onClick() {} }),
     registerProTool({ id: 'mine', section: 'My Section', label: 'Mine', onClick() {} }),
+    registerProTool({ id: 'trade', section: 'Trade Tools', label: 'Trade', onClick() {} }),
   ];
   const sections = proSections();
   assert.deepEqual(sections.map((s) => s.name),
-    ['Review & Seal', 'Construction Admin', 'Expert Witness', 'General', 'My Section', 'More']);
+    ['Review & Seal', 'Construction Admin', 'Expert Witness', 'Trade Tools', 'General', 'My Section', 'More']);
   assert.deepEqual(sections[0].tools.map((t) => t.id).slice(0, 2), ['review-stamp', 'seal']);
   assert.deepEqual(sections.find((s) => s.name === 'Expert Witness').tools.map((t) => t.id), ['case-file']);
   assert.deepEqual(sections.at(-1).tools.map((t) => t.id), ['old-plugin-tool']);
