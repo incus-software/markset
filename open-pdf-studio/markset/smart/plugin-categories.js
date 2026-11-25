@@ -9,6 +9,8 @@
 //   onAdd?: () => void,                 // the group header's "+" button
 //   addTitle?: string,                  // its tooltip
 //   onEdit?: (symbol) => void,          // right-click on one of its symbols
+//   proSection?: string,                // also on the Markset Pro ribbon tab,
+//                                       // as a gallery button in this section
 // }
 import { createSignal } from 'solid-js';
 
@@ -28,6 +30,7 @@ function normalize(d) {
     onAdd: typeof d.onAdd === 'function' ? d.onAdd : null,
     addTitle: d.addTitle ? String(d.addTitle) : 'New...',
     onEdit: typeof d.onEdit === 'function' ? d.onEdit : null,
+    proSection: typeof d.proSection === 'string' && d.proSection.trim() ? d.proSection.trim() : null,
   };
 }
 
