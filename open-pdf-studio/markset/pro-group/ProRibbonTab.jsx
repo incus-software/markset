@@ -4,8 +4,12 @@
 // the Pro plugin the tools show greyed out; clicking one explains Markset Pro.
 // Plugin symbol groups that name a Pro section (proSection) show in that
 // section as a gallery button: a click opens their symbols, as in the palette.
+// Like the built-in tabs, the groups sit in AdaptiveGroups: in a window too
+// narrow for all of them (1280 px with the trade library), the rightmost
+// groups fold into a "More" button instead of overlapping their neighbours.
 import { For, Show, createSignal, onMount, onCleanup } from 'solid-js';
 import RibbonGroup from '../../js/solid/components/ribbon/RibbonGroup.jsx';
+import AdaptiveGroups from '../../js/solid/components/ribbon/AdaptiveGroups.jsx';
 import RibbonButton from '../../js/solid/components/ribbon/RibbonButton.jsx';
 import RibbonButtonStack from '../../js/solid/components/ribbon/RibbonButtonStack.jsx';
 import { autoShrinkLabel } from '../../js/solid/components/ribbon/autoShrinkLabel.js';
@@ -89,6 +93,7 @@ export default function ProRibbonTab() {
   const sections = () => ribbonSections(proSections(), pluginCategories());
   return (
     <div class="ribbon-content active" id="tab-pro" role="tabpanel">
+      <AdaptiveGroups>
       <For each={sections()}>
         {(section) => (
           <RibbonGroup label={section.name}>
@@ -105,6 +110,7 @@ export default function ProRibbonTab() {
           </RibbonGroup>
         )}
       </For>
+      </AdaptiveGroups>
     </div>
   );
 }
