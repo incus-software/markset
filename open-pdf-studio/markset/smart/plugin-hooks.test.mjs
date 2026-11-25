@@ -157,3 +157,48 @@ test('on a page shown rotated, a symbol is drawn turned back so it reads upright
     assert.equal(smartSubject({ symbolId: 'no-such-template' }), '');
   } finally { remove(); }
 });
+
+test('a two-point template sees its rotation and can turn its text upright (canvas, SVG and PDF)', async () => {
+  const { keepsPlacing } = await import('../../js/symbols/two-point.js');
+  const { cmdsToSvg } = await import('./cmds-svg.js');
+  const seen = [];
+  const RUN = {
+    id: 'test-plugin-run', name: 'Run', nameEn: 'Run', placement: 'two-point', chainPlacement: true,
+    defaultSize: { width: 100, height: 10 }, params: [],
+    render: (p, b) => { seen.push(b.rotation); return [{ kind: 'text', text: 'HR', x: b.x + b.width / 2, y: b.y + b.height / 2, size: 6, ...(Math.cos((b.rotation || 0) * Math.PI / 180) < 0 ? { rotate: 180 } : {}) }]; },
+    markset: { role: 'drawing', bandHeightIn: 10 / 72, lengthIn: 2 },
+  };
+  registerPluginTemplate(RUN);
+  assert.equal(keepsPlacing(getTemplate(RUN.id)), true);
+  assert.equal(keepsPlacing({ placement: 'two-point' }), false);
+  assert.equal(keepsPlacing({ chainPlacement: true }), false);
+  const ann = { type: 'parametricSymbol', symbolId: RUN.id, params: {}, x: 0, y: 0, width: 100, height: 10, rotation: 180, startX: 100, startY: 5, endX: 0, endY: 5 };
+  const frozen = frozenForSave(ann);
+  assert.equal(seen.at(-1), 180);
+  assert.equal(frozen.cmds[0].rotate, 180);
+  const svg = cmdsToSvg(frozen.cmds, { x: 0, y: 0, width: 100, height: 10 });
+  assert.match(svg, /transform="rotate\(180 50 5\)"/);
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([200, 200]);
+  const dict = pdf.context.obj({});
+  assert.equal(writeVectorParametricAppearance({ ann, annotDict: dict, context: pdf.context, pdf: { PDFName }, rectW: 100, rectH: 10 }), true);
+  void page;
+});
+
+test('screened fills and fill-only shapes reach the SVG and the PDF appearance; real-size symbols can ask for a scale', async () => {
+  const { placesOnlyWithScale } = await import('../../js/symbols/two-point.js');
+  const { cmdsToSvg } = await import('./cmds-svg.js');
+  const { svgToPdfAppearance } = await import('../svg-to-pdf.js');
+  assert.equal(placesOnlyWithScale({ needsScale: true }), true);
+  assert.equal(placesOnlyWithScale({ realSizeMm: () => ({ width: 1, height: 1 }) }), false);
+  assert.equal(placesOnlyWithScale(null), false);
+  const b = { x: 0, y: 0, width: 100, height: 100 };
+  const svg = cmdsToSvg([
+    { kind: 'circle', cx: 50, cy: 50, r: 40, lineWidth: 0.5, fill: '#000000', fillOpacity: 0.12, dash: [4, 2] },
+    { kind: 'polyline', close: true, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], fill: true, stroke: false },
+  ], b);
+  assert.match(svg, /<circle[^>]*stroke-dasharray="4 2"[^>]*fill="#000000" fill-opacity="0.12"/);
+  assert.match(svg, /<path[^>]*fill="#000"[^>]*stroke="none"/);
+  const ap = svgToPdfAppearance(svg, 100, 100);
+  assert.ok(ap.gstates.some((g) => g.ca === 0.12), 'the screen becomes a transparency state');
+});

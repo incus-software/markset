@@ -41,6 +41,7 @@ import {
 } from './type-length-input.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { getTemplate } from '../symbols/registry.js';
+import { keepsPlacing } from '../symbols/two-point.js'; // Markset
 import { hideMenu } from '../bridge.js';
 import { syncDocScale } from '../annotations/scale-bar.js';
 import { recalculateAllMeasurements, getMeasureScale, findMeasureScale } from '../annotations/measurement.js';
@@ -1199,6 +1200,8 @@ function _finishDrawing(ctx, e, coords) {
       m.setTool('select');
       startTextEditing(ann);
     });
+  } else if (ann?.type === 'parametricSymbol' && keepsPlacing(getTemplate(ann.symbolId))) {
+    // Markset: chained two-point runs keep the tool until Enter or Esc.
   } else {
     // Auto-reset to select tool for non-text annotations
     import('./manager.js').then(m => m.setTool('select'));
