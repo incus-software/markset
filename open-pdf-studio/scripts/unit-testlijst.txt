@@ -976,3 +976,4 @@ js/pdf/pdfjs-canvas-render.test.mjs
 js/pdf/zoom-render-plan.test.mjs
 
 markset/startup-update-check.test.mjs
+markset/tool-label.test.mjs
