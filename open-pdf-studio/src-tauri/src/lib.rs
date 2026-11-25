@@ -3,7 +3,6 @@
 // default limit of 128. The 98-tool public catalog requires a limit of 512.
 #![recursion_limit = "512"]
 
-mod accounts;
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 mod verkenner_pad;
 mod systeem_lettertypen;
@@ -3948,13 +3947,6 @@ pub fn run(opts: StartupOpts) {
             webview_opname::capture_webview_png,
             mcp_koppeling::mcp_instellen,
             mcp_koppeling::mcp_status,
-            accounts::accounts_sign_in,
-            accounts::accounts_get_user,
-            accounts::accounts_sign_out,
-            accounts::accounts_fetch,
-            accounts::accounts_upload_file,
-            accounts::accounts_download_file,
-            accounts::accounts_brand_logo,
             email::email_pdf,
             email::verzendkopie_schrijven,
             window_mgmt::spawn_window_with_pdf,

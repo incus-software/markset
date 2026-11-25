@@ -40,7 +40,7 @@ test('zoekvolgorde: ingebouwd in vaste volgorde, dan de rest in DOM-volgorde, zo
     ['view', 'drawing', 'comment', 'organize', 'arrange', 'format', 'help', 'acme.kozijn', 'kozijnen']);
   assert.deepEqual(tabVolgorde(['acme.kozijn', 'home', 'acme.kozijn']), ['home', 'acme.kozijn'], 'dubbele één keer');
   assert.deepEqual(tabVolgorde([], 'home'), []);
-  assert.equal(INGEBOUWDE_TABBLADEN.length, 9);
+  assert.equal(INGEBOUWDE_TABBLADEN.length, 10); // Markset: + 'pro'
 });
 
 test('activatedTab: tabknop, dan een wissel door de klik, dan het zoeken', () => {

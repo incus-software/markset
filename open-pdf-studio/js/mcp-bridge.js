@@ -2571,17 +2571,6 @@ async function handleFacadeElement(params) {
   return uit;
 }
 
-/** Accounts sign-in state — deactivated (cloud accounts feature removed from
- *  this build). Reports signed-out so external MCP clients degrade gracefully. */
-async function handleAccountsStatus() {
-  return { ok: true, signedIn: false, user: null, brand: null, unavailable: true };
-}
-
-/** Authenticated accounts API call — deactivated (cloud accounts feature removed
- *  from this build). */
-async function handleAccountsFetch() {
-  return { ok: false, error: 'accounts feature not available in this build' };
-}
 
 /** Return take-off totals for a named schedule (or all schedules). Numeric
  *  columns are summed into grand totals and per-group subtotals; image
@@ -4172,8 +4161,6 @@ const HANDLERS = {
   'mcp:call-extension-command':   (p) => import('./plugins/structured-commands.js').then((m) => m.handleCallExtensionCommand(p)),
   'mcp:cancel-extension-command': (p) => import('./plugins/structured-commands.js').then((m) => m.handleCancelExtensionCommand(p)),
   // Accounts introspection — deactivated (cloud accounts feature removed)
-  'mcp:accounts-status':    handleAccountsStatus,
-  'mcp:accounts-fetch':     handleAccountsFetch,
   // Agenttaken van extensies (#556); de regels staan in plugins/agent-tasks.js
   'mcp:agent-task-pending': (p) => import('./plugins/agent-tasks.js').then((m) => m.handleAgentTaskPending(p)),
   'mcp:agent-task-result':  (p) => import('./plugins/agent-tasks.js').then((m) => m.handleAgentTaskResult(p)),

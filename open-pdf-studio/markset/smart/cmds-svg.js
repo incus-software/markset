@@ -24,6 +24,9 @@ export function cmdsToSvg(cmds, box, { color = '#000', lineWidth = 1 } = {}) {
   if (!Array.isArray(cmds) || !(box?.width > 0) || !(box?.height > 0)) return null;
   const out = [];
   const lw = (c) => n(c.lineWidth != null ? c.lineWidth : lineWidth);
+  // A fill (true: the symbol colour), screened by fillOpacity; stroke: false draws the fill only.
+  const fillOf = (c) => (c.fill ? ` fill="${typeof c.fill === 'string' ? c.fill : color}"${c.fillOpacity >= 0 && c.fillOpacity < 1 ? ` fill-opacity="${n(c.fillOpacity)}"` : ''}` : '');
+  const strokeOf = (c) => (c.stroke === false ? ' stroke="none"' : '');
   const dash = (c) => (Array.isArray(c.dash) && c.dash.length ? ` stroke-dasharray="${c.dash.map(n).join(' ')}"` : '');
   for (const c of cmds) {
     switch (c?.kind) {
@@ -31,13 +34,12 @@ export function cmdsToSvg(cmds, box, { color = '#000', lineWidth = 1 } = {}) {
         out.push(`<path d="M${n(c.x1)} ${n(c.y1)} L${n(c.x2)} ${n(c.y2)}" stroke-width="${lw(c)}"${dash(c)}/>`);
         break;
       case 'circle':
-        if (c.r > 0) out.push(`<circle cx="${n(c.cx)}" cy="${n(c.cy)}" r="${n(c.r)}" stroke-width="${lw(c)}"${c.fill ? ` fill="${typeof c.fill === 'string' ? c.fill : color}"` : ''}/>`);
+        if (c.r > 0) out.push(`<circle cx="${n(c.cx)}" cy="${n(c.cy)}" r="${n(c.r)}" stroke-width="${lw(c)}"${dash(c)}${fillOf(c)}${strokeOf(c)}/>`);
         break;
       case 'polyline': {
         if (!Array.isArray(c.points) || c.points.length < 2) break;
         const d = c.points.map((p, i) => `${i ? 'L' : 'M'}${n(p.x)} ${n(p.y)}`).join(' ') + (c.close ? ' Z' : '');
-        const fill = c.fill ? ` fill="${typeof c.fill === 'string' ? c.fill : color}"` : '';
-        out.push(`<path d="${d}" stroke-width="${lw(c)}"${dash(c)}${fill}/>`);
+        out.push(`<path d="${d}" stroke-width="${lw(c)}"${dash(c)}${fillOf(c)}${strokeOf(c)}/>`);
         break;
       }
       case 'arc': {
@@ -60,7 +62,8 @@ export function cmdsToSvg(cmds, box, { color = '#000', lineWidth = 1 } = {}) {
         const text = String(c.text ?? '');
         if (!text.trim()) break;
         const anchor = c.align === 'start' || c.align === 'left' ? 'start' : c.align === 'end' || c.align === 'right' ? 'end' : 'middle';
-        out.push(`<text x="${n(c.x)}" y="${n(c.y)}" font-family="Helvetica, Arial, sans-serif" font-size="${n(c.size || 12)}"` +
+        const turn = Number(c.rotate) ? ` transform="rotate(${n(Number(c.rotate))} ${n(c.x)} ${n(c.y)})"` : '';
+        out.push(`<text x="${n(c.x)}" y="${n(c.y)}"${turn} font-family="Helvetica, Arial, sans-serif" font-size="${n(c.size || 12)}"` +
           `${c.bold ? ' font-weight="bold"' : ''} text-anchor="${anchor}" dominant-baseline="middle" fill="${color}" stroke="none">${esc(text)}</text>`);
         break;
       }

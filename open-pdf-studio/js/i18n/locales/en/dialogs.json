@@ -543,7 +543,8 @@
     "scaleDetected": "Scale detected!",
     "scaleNotFound": "No scale found in title block",
     "currentScale": "Current scale: {{scale}}",
-    "feetInchHint": "Feet and inches are allowed, for example 12'-6 3/8\""
+    "feetInchHint": "Feet and inches are allowed, for example 12'-6 3/8\"",
+    "firstTimeHint": "After you set the scale, measure one known dimension to check it."
   },
   "pageSetup": {
     "title": "Page Setup",

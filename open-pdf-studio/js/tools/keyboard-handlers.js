@@ -624,6 +624,13 @@ export async function handleKeydown(e) {
     if (e.defaultPrevented) return;
   }
 
+  // Markset: Enter ends chained two-point placement, as Esc does.
+  if (e.key === 'Enter' && state.currentTool === 'parametricSymbol' && !state.isDrawing) {
+    e.preventDefault();
+    setTool('select');
+    return;
+  }
+
   // Enter key - complete area/perimeter measurement
   if (e.key === 'Enter' && state.measurePoints && state.measurePoints.length >= 2) {
     e.preventDefault();

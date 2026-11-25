@@ -1206,25 +1206,8 @@ fn handle_tools_list() -> Value {
                     "additionalProperties": false
                 }
             },
-            {
-                "name": "app_accounts_status",
-                "description": "Report the LIVE app's OpenAEC sign-in state: { ok, signedIn, user:{sub,name,email}|null, brand|null }. Use to verify login from outside the WebView.",
-                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-            },
-            {
-                "name": "app_accounts_fetch",
-                "description": "Make an authenticated OpenAEC Accounts API call from the LIVE signed-in app (GET/POST/DELETE to /me/* paths, e.g. /me/apps, /me/files, /me/brand, /me/storage, /me/credits). Returns { ok, response }. Requires sign-in. Makes the whole Accounts API drivable/testable via MCP.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path":   { "type": "string", "description": "API path, e.g. /me/apps" },
-                        "method": { "type": "string", "enum": ["GET", "POST", "DELETE"], "description": "HTTP method (default GET)" },
-                        "body":   { "type": "object", "description": "Optional JSON body for POST." }
-                    },
-                    "required": ["path"],
-                    "additionalProperties": false
-                }
-            },
+            // Markset: the OpenAEC account tools (app_accounts_status/fetch) are
+            // removed along with accounts.rs; Markset has no accounts.
             // Agenttaken van extensies (#556)
             agent_task_pending_tool(),
             agent_task_result_tool(),
@@ -2882,8 +2865,6 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_shift_pages"        => tool_app_request(state, "mcp:shift-pages",         &arguments, Duration::from_secs(120)).await,
         "app_bookmarks"          => tool_app_request(state, "mcp:bookmarks",           &arguments, Duration::from_secs(15)).await,
         "app_watermarks"         => tool_app_request(state, "mcp:watermarks",          &arguments, Duration::from_secs(30)).await,
-        "app_accounts_status"    => tool_app_request(state, "mcp:accounts-status",     &arguments, Duration::from_secs(5)).await,
-        "app_accounts_fetch"     => tool_app_request(state, "mcp:accounts-fetch",      &arguments, Duration::from_secs(30)).await,
         // Agenttaken van extensies (#556): alleen de wachtrij, dus korte grenzen.
         "app_agent_task_pending" => tool_app_request(state, "mcp:agent-task-pending",  &arguments, Duration::from_secs(10)).await,
         "app_agent_task_result"  => tool_app_request(state, "mcp:agent-task-result",   &arguments, Duration::from_secs(10)).await,
@@ -3801,7 +3782,7 @@ mod tests {
             assert!(a["readOnlyHint"].is_boolean() && a["destructiveHint"].is_boolean(), "{} zonder hints", t["name"]);
             assert_eq!(a["openWorldHint"], false);
         }
-        for dev in ["app_get_recent_console", "list_test_pdfs", "app_accounts_fetch"] {
+        for dev in ["app_get_recent_console", "list_test_pdfs"] {
             assert!(!arr.iter().any(|t| t["name"] == dev), "{dev} hoort niet in het publieke profiel");
         }
         let alles = tools_list_voor(Profiel::Ontwikkeling);
@@ -3907,9 +3888,8 @@ mod tests {
         assert_eq!(antwoord["inputSchema"]["required"], json!(["id"]));
         assert_eq!(antwoord["inputSchema"]["properties"]["error"]["required"], json!(["message"]));
         assert_eq!(antwoord["inputSchema"]["properties"]["error"]["additionalProperties"], false);
-        // Direct na de accountgereedschappen, in deze volgorde.
+        // In deze volgorde (Markset: de accountgereedschappen ervoor zijn weg).
         let pos = |naam: &str| tools.iter().position(|t| t["name"] == naam).unwrap();
-        assert_eq!(pos("app_agent_task_pending"), pos("app_accounts_fetch") + 1);
         assert_eq!(pos("app_agent_task_result"), pos("app_agent_task_pending") + 1);
         use crate::mcp_tool_meta::{beschikbaar, meta, Profiel};
         for naam in ["app_agent_task_pending", "app_agent_task_result"] {

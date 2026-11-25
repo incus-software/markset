@@ -7,6 +7,24 @@ function finite(value, fallback = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
 
+/**
+ * Markset: a two-point template with `chainPlacement: true` (a line drawn
+ * along a run of walls) keeps its tool after a run is placed, so runs go
+ * down one after another until Enter or Esc.
+ */
+export function keepsPlacing(template) {
+  return template?.placement === 'two-point' && template.chainPlacement === true;
+}
+
+/**
+ * Markset: a template with `needsScale: true` (a symbol drawn at its real
+ * size, a run that shows its measured length) is only placed where the sheet
+ * has a scale; the 1 pt-per-mm fallback would make its size or length wrong.
+ */
+export function placesOnlyWithScale(template) {
+  return template?.needsScale === true;
+}
+
 /** Return explicit endpoints, or reconstruct them from a legacy rotated bbox. */
 export function twoPointEndpoints(annotation) {
   if (Number.isFinite(annotation?.startX) && Number.isFinite(annotation?.startY)

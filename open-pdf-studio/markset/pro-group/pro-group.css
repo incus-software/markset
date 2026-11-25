@@ -39,3 +39,41 @@
 .mpg-section-header:hover { color: var(--theme-text, #000); }
 .mpg-section-header .sp-cat-arrow { transform-origin: center; }
 .mpg-section-count { margin-left: auto; font-weight: 400; color: var(--theme-text-secondary, #5f6672); }
+
+/* Markset Pro ribbon tab: tools without the Pro plugin are greyed out but
+   stay clickable (the click explains Markset Pro). */
+.ribbon-btn.mpr-locked { cursor: pointer; }
+.ribbon-btn.mpr-locked .ribbon-btn-icon { opacity: 0.5; }
+.ribbon-btn.mpr-locked .ribbon-btn-label { color: var(--theme-text-secondary, #5f6672); }
+.ribbon-btn.mpr-tool .ribbon-btn-icon svg { width: 100%; height: 100%; }
+
+/* Markset Pro ribbon tab: a plugin symbol group as a gallery button whose
+   popup lists its symbols (position: fixed, placed by ribbon-popup.js). */
+.mpr-gallery { position: relative; display: flex; }
+.mpr-gallery-btn { position: relative; padding-bottom: 10px; }
+.mpr-gallery-arrow { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); line-height: 0; color: var(--theme-ribbon-text); }
+.mpr-gallery-popup {
+  display: none; position: fixed; z-index: 1000;
+  width: 340px; max-height: 60vh; overflow-y: auto; padding: 6px;
+  background: var(--theme-ribbon-content-bg);
+  border: 1px solid var(--theme-ribbon-btn-hover-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.mpr-gallery-popup.show { display: block; }
+.mpr-gallery-title {
+  padding: 2px 4px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--theme-ribbon-text);
+}
+.mpr-gallery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.mpr-gallery-item {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 5px 3px; border: 1px solid transparent; border-radius: 3px;
+  background: none; cursor: pointer; color: var(--theme-ribbon-text); font: inherit;
+}
+.mpr-gallery-item:hover { background: var(--theme-ribbon-btn-hover); border-color: var(--theme-ribbon-btn-hover-border); }
+.mpr-gallery-icon { display: flex; align-items: center; justify-content: center; width: 100%; height: 34px; }
+.mpr-gallery-icon svg { max-width: 100%; max-height: 34px; }
+.mpr-gallery-name {
+  font-size: 10px; line-height: 1.2; text-align: center; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}

@@ -111,6 +111,18 @@ export { drawPolygonShape, drawCloudShape, buildPolygonPath, buildCloudPath } fr
 // Klein en gedeeld; bij eerste laden triggeren we één redraw zodat de reeds
 // gedecodeerde thumbnail meteen verschijnt (performant: geen her-decode).
 const _scheduleThumbCache = new Map();
+/**
+ * Markset: a draw command's fill. `fill` is true (the symbol's colour) or a
+ * CSS colour; `fillOpacity` (0-1) screens it so the drawing below shows.
+ */
+function fillCmd(ctx, c) {
+  ctx.save();
+  if (typeof c.fill === 'string') ctx.fillStyle = c.fill;
+  if (c.fillOpacity >= 0 && c.fillOpacity < 1) ctx.globalAlpha *= c.fillOpacity;
+  ctx.fill();
+  ctx.restore();
+}
+
 function getScheduleThumb(url) {
   if (!url) return null;
   const hit = _scheduleThumbCache.get(url);
@@ -1843,8 +1855,11 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       }
       // Een ruimtetag toont naam, nummer en oppervlakte van zijn ruimte
       // (ruimte-koppeling.js); andere symbolen hun eigen params.
+      // Markset: the box carries the rotation, so a two-point template can
+      // keep its text upright on a run drawn right to left.
       const cmds = template.render(tagWeergaveParams(annotation, getActiveDocument()?.annotations) || {}, {
-        x: annotation.x, y: annotation.y, width: annotation.width, height: annotation.height
+        x: annotation.x, y: annotation.y, width: annotation.width, height: annotation.height,
+        rotation: annotation.rotation || 0,
       }) || [];
       ctx.save();
       // Apply rotation around centre (consistent with stamp/signature)
@@ -1913,9 +1928,11 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
             // Per-cmd dikte (fijnwerk zoals het diameterteken van de
             // wapeningskorf); zonder eigen waarde geldt de annotatie-dikte.
             ctx.lineWidth = cmdLw(c);
+            if (Array.isArray(c.dash)) ctx.setLineDash(c.dash); // Markset
             ctx.beginPath();
             ctx.arc(c.cx, c.cy, c.r, 0, Math.PI * 2);
-            ctx.stroke();
+            if (c.fill) fillCmd(ctx, c); // Markset: a screened (see-through) fill
+            if (c.stroke !== false) ctx.stroke();
             ctx.restore();
             break;
           }
@@ -1930,10 +1947,9 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
             if (c.close) ctx.closePath();
             if (c.fill) {
               // fill may be `true` (symbol colour) or a CSS colour string.
-              if (typeof c.fill === 'string') ctx.fillStyle = c.fill;
-              ctx.fill();
+              fillCmd(ctx, c);
             }
-            ctx.stroke();
+            if (c.stroke !== false) ctx.stroke(); // Markset: fill-only shapes
             ctx.restore();
             break;
           }
@@ -2011,6 +2027,12 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
             ctx.textAlign = c.align || 'center'; // Markset: left-aligned stamp text
             ctx.textBaseline = 'middle';
             if (inHotLabel(c.x, c.y)) ctx.fillStyle = EDITABLE_NUMBER_COLOR;
+            // Markset: text turned about its anchor (degrees, clockwise).
+            if (Number(c.rotate)) {
+              ctx.translate(c.x, c.y);
+              ctx.rotate(Number(c.rotate) * Math.PI / 180);
+              ctx.translate(-c.x, -c.y);
+            }
             ctx.fillText(c.text || '', c.x, c.y);
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';

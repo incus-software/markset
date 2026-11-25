@@ -1,6 +1,7 @@
 import { Show, Switch, Match, ErrorBoundary, createEffect, createSignal, onMount, onCleanup, lazy } from 'solid-js';
 import RibbonTab from './RibbonTab.jsx';
 import HomeTab from './HomeTab.jsx';
+import ProRibbonTab from '../../../../markset/pro-group/ProRibbonTab.jsx'; // Markset
 import ExtensionRibbonTab, { ExtensionTabStrip, isExtensieTabblad } from './ExtensionRibbonTab.jsx';
 import { volgendeTab } from './ribbon-toetsenbord.js';
 import { maakWielStapper, wielTab, lintTabs, heeftEigenWiel } from './ribbon-wiel.js';
@@ -69,7 +70,7 @@ zetLintUitvoerder((knopId, tab) => {
 });
 
 // De ingebouwde tab-id's ('measure' is de oude naam van 'comment').
-const INGEBOUWDE_TABBLADEN = new Set(['home', 'view', 'drawing', 'comment', 'measure', 'organize', 'help', 'format', 'arrange', 'image']);
+const INGEBOUWDE_TABBLADEN = new Set(['home', 'view', 'drawing', 'comment', 'measure', 'organize', 'pro', 'help', 'format', 'arrange', 'image']);
 
 export default function Ribbon() {
   const { t } = useTranslation('ribbon');
@@ -216,6 +217,10 @@ export default function Ribbon() {
         <RibbonTab label={t('tabs.organize')} dataTab="organize"
           isActive={activeTab() === 'organize'}
           onClick={() => kiesTab('organize')} />
+        {/* Markset: the Pro tools, also listed at the top of the Toolpalette. */}
+        <RibbonTab label={t('tabs.pro')} dataTab="pro"
+          isActive={activeTab() === 'pro'}
+          onClick={() => kiesTab('pro')} />
         <RibbonTab label={t('tabs.help')} dataTab="help"
           isActive={activeTab() === 'help'}
           onClick={() => kiesTab('help')} />
@@ -271,6 +276,7 @@ export default function Ribbon() {
           <Match when={activeTab() === 'home'}><HomeTab /></Match>
           <Match when={activeTab() === 'view'}><ViewTab /></Match>
           <Match when={activeTab() === 'organize'}><OrganizeTab /></Match>
+          <Match when={activeTab() === 'pro'}><ProRibbonTab /></Match>
           <Match when={activeTab() === 'help'}><HelpTab /></Match>
           <Match when={activeTab() === 'format'}><FormatTab /></Match>
           <Match when={activeTab() === 'arrange'}><ArrangeTab /></Match>

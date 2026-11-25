@@ -1,6 +1,6 @@
 [package]
 name = "open-pdf-studio"
-version = "2026.45.0"
+version = "2026.48.10"
 description = "A free, open-source PDF annotation editor"
 authors = ["OpenAEC Foundation"]
 license = "LGPL-3.0-or-later"
@@ -77,9 +77,7 @@ pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfi
 libloading = "0.9"
 clap = { version = "4", features = ["derive"] }
 
-# OpenAEC Accounts ("Sign in with OpenAEC", accounts.rs): PKCE + OS-keyring
-# token storage + multipart uploads to the Accounts API.
-keyring = { version = "3", features = ["windows-native"] }
+# Markset: the OpenAEC Accounts sign-in (accounts.rs, keyring) is removed.
 sha2 = { version = "0.10", features = ["oid"] }
 # Digitale handtekeningen (#374): RustCrypto op de der 0.7-lijn. pkcs12 0.1,
 # cms 0.2 en x509-cert 0.2 hangen daar zelf aan; niet mengen met der 0.8.

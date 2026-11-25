@@ -56,6 +56,11 @@ export default function AboutDialog() {
           </div>
         </div>
 
+        {/* Markset: measurements and Compare are aids, not guaranteed dimensions */}
+        <p class="bs-about-description">
+          {t('aboutPanel.accuracyNote')}
+        </p>
+
         <div class="bs-about-company">
           <h3 class="bs-about-company-name">{t('aboutPanel.companyName')}</h3>
           <p class="bs-about-company-desc">
