@@ -424,8 +424,6 @@
     "selectGroup": "Select all of this kind",
     "selectHint": "Ctrl+click adds or removes a change, Shift+click selects a range, Ctrl+A selects all",
     "cloudsButton": "Place clouds",
-    "sizeMismatch": "Sheet sizes differ: {{old}} vs {{new}}",
-    "sizeMismatchHint": "Changes may be misreported. Use Align (dx/dy) to line the sheets up, or compare sheets plotted at the same size.",
     "display": "Display",
     "displayHint": "How the two sheets are shown on top of each other",
     "styleTint": "Tint",
