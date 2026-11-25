@@ -7,6 +7,7 @@ mod pdf_beveiliging;
 mod atomic_file;
 pub mod beveiligde_pdf;
 pub mod beheerd;
+pub mod store_package; // Markset: Microsoft Store installs
 pub mod cad_export;
 pub mod cad_import;
 pub mod crashlog;
@@ -3073,7 +3074,8 @@ pub fn run(opts: StartupOpts) {
         }
         // Managed mode (OPENAEC_BEHEERD=1): the SuperCloud refreshes the image,
         // so no updater plugin at all: no check, no prompt, no download.
-        if !beheerd::is_beheerd() {
+        // Markset: a Microsoft Store install is updated by the Store, so the same.
+        if !beheerd::is_beheerd() && !store_package::is_store_package() {
             builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
         } else {
             eprintln!("[openaec] managed mode: updater disabled");
@@ -3464,6 +3466,7 @@ pub fn run(opts: StartupOpts) {
             window_mgmt::detach_diag,
             instantie::instance_role,
             beheerd::managed_mode,
+            store_package::store_package,
             instantie::tab_drop_target,
             startup_diagnostics::startup_diagnostic,
             startup_diagnostics::startup_diagnostics_path,

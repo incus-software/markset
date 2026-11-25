@@ -84,7 +84,8 @@ test('Rust zet window.__OPENAEC__ en registreert de updater niet in beheerde mod
   assert.match(rust, /pub const VAR_BEHEERD: &str = crate::beheerd::OMGEVINGSVARIABELE;/);
   assert.match(rust, /let beheerd = crate::beheerd::waarde_is_aan\(/);
   const lib = lees('src-tauri/src/lib.rs');
-  assert.match(lib, /if !beheerd::is_beheerd\(\) \{\n\s+builder = builder\.plugin\(tauri_plugin_updater/);
+  // Markset: ook niet in een Microsoft Store-installatie (store_package.rs).
+  assert.match(lib, /if !beheerd::is_beheerd\(\) && !store_package::is_store_package\(\) \{\r?\n\s+builder = builder\.plugin\(tauri_plugin_updater/);
   assert.match(lib, /builder\.plugin\(openaec_omgeving::plugin\(\)\)/);
   // Alleen in een container of beheerd: op een bureaublad blijft SIGTERM standaard.
   assert.match(lib, /if openaec_omgeving::huidige\(\)\.sigterm_afhandelen\(\) \{\n\s+openaec_omgeving::installeer_sigterm/);
