@@ -83,6 +83,16 @@ export function createRenderQueue({
   const stillWanted = (entry) => entry.epoch === epochOf(entry.docKey)
     && (entry.keepWhenHidden || isShown(entry.docKey));
 
+  // The caller can withdraw a request it no longer needs (a zoom level the
+  // user already left): while queued it is skipped, so it never costs a
+  // worker. Once started it runs to the end and is delivered, because a
+  // finished render is still worth caching (the next zoom can use it).
+  const callerWants = (entry) => {
+    if (typeof entry.isWanted !== 'function') return true;
+    try { return entry.isWanted() !== false; } catch { return true; }
+  };
+  const worthStarting = (entry) => stillWanted(entry) && callerWants(entry);
+
   const cancel = (entry, reason) => {
     entry.reject(new RenderCancelledError(reason));
   };
@@ -143,7 +153,7 @@ export function createRenderQueue({
   function pump() {
     // Drop what is no longer wanted before it costs a worker.
     for (let i = queued.length - 1; i >= 0; i--) {
-      if (!stillWanted(queued[i])) {
+      if (!worthStarting(queued[i])) {
         const [entry] = queued.splice(i, 1);
         cancel(entry, 'render of a closed or hidden document dropped from the queue');
       }
@@ -173,6 +183,9 @@ export function createRenderQueue({
      * @param {boolean} [options.keepWhenHidden]  still run and deliver when the document is
      *   not shown (closing it still cancels)
      * @param {(value:any) => void} [options.dispose]  frees a result that is discarded
+     * @param {() => boolean} [options.isWanted]  returns false once the caller no longer
+     *   needs the result: a request still queued is then dropped; one already started
+     *   runs on and is delivered
      * @returns {Promise<any>} rejects with RenderCancelledError when dropped
      */
     schedule(run, {
@@ -182,10 +195,11 @@ export function createRenderQueue({
       groupLimit = Infinity,
       keepWhenHidden = false,
       dispose = null,
+      isWanted = null,
     } = {}) {
       return new Promise((resolve, reject) => {
         const entry = {
-          run, docKey, priority, group, groupLimit, keepWhenHidden, dispose,
+          run, docKey, priority, group, groupLimit, keepWhenHidden, dispose, isWanted,
           resolve, reject, seq: ++seq, epoch: epochOf(docKey),
         };
         if (!stillWanted(entry)) {

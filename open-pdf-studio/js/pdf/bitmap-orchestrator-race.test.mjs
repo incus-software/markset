@@ -22,6 +22,8 @@ for (const change of ['switch page', 'close viewport']) {
       isExtremePage: () => false,
       computeZoomBucket: scale => scale,
       ensureBitmap: (_path, page) => ({ bitmap: page }),
+      // The whole page renders once at the exact (capped) scale (zoom-render-plan.js).
+      ensureExactBitmap: (_path, page) => ({ bitmap: page }),
       ensureProgressiveBitmapForCurrentView: () => progressive.push(viewport.pageNum),
     };
     Object.assign(viewport, {

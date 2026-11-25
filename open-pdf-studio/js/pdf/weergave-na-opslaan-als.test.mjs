@@ -31,6 +31,7 @@ globalThis.__vpTest = {
   impl: {
     ensureBitmapForCurrentView: () => { aanvragen.push(vp.viewport.filePath); },
     ensureTileForCurrentView: () => {},
+    ensureViewForCurrentZoom: () => { aanvragen.push(vp.viewport.filePath); },
   },
 };
 

@@ -367,8 +367,7 @@ async function _herschaalNaarNieuweDpr() {
     // Raster bitmaps are cached per zoom*dpr bucket; the new dpr lands in a new
     // bucket, so kick the orchestrator to render a sharp bitmap for it.
     import('./bitmap-orchestrator.js').then(orch => {
-      orch.ensureBitmapForCurrentView();
-      if (_canvas) orch.ensureTileForCurrentView(_canvas);
+      orch.ensureViewForCurrentZoom(_canvas);
     }).catch(() => {});
   }
 }
@@ -426,8 +425,7 @@ function _kickOrchestratorAfterZoom() {
   _zoomOrchTimer = setTimeout(() => {
     _zoomOrchTimer = null;
     import('./bitmap-orchestrator.js').then(orch => {
-      orch.ensureBitmapForCurrentView();
-      if (_canvas) orch.ensureTileForCurrentView(_canvas);
+      orch.ensureViewForCurrentZoom(_canvas);
     }).catch(() => {});
   }, 150);
 }
