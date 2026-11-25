@@ -70,10 +70,17 @@ try {
   await page.waitForFunction(() => window.scaleTestDoc()?.filePath === '/scale-reopened.pdf' && window.scaleTestDoc()?.measureScale?.overridePdfScale === true);
   assert.equal(await scale(), .1, 'real saver/loadPDF retain override');
   await open(); assert.equal(await toggle.isChecked(), true);
+  // Markset: a calibration belongs to its sheet and always beats the PDF's own
+  // scale there (markset/page-scale.js), so unticking the box clears the flag
+  // but keeps this sheet calibrated; Reset (below) brings the embedded scale back.
+  const override = () => page.evaluate(async () => (await import('/js/core/state.ts')).getActiveDocument().measureScale?.overridePdfScale === true);
   await toggle.uncheck(); await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
-  assert.equal(await scale(), initial, 'original embedded scale can be restored');
+  assert.equal(await override(), false, 'unticking clears the override');
+  assert.notEqual(await scale(), initial, 'Markset: the sheet calibration still wins');
+  const calibrated = await scale();
   await open(); await toggle.check(); await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  assert.equal(await scale(), initial, 'cancel does not apply checkbox');
+  assert.equal(await scale(), calibrated, 'cancel does not apply checkbox');
+  assert.equal(await override(), false, 'cancel does not apply checkbox');
   await open(); await toggle.check(); await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
   await open(); await dialog.getByRole('button', { name: 'Reset', exact: true }).click();
   assert.equal(await scale(), initial, 'reset restores embedded scale');

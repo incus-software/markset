@@ -15,10 +15,19 @@ const pick = (s) => ({
   pixelsPerUnit: s.pixelsPerUnit, unit: s.unit || 'mm', method: s.method || 'reference', scaleRatio: s.scaleRatio ?? null,
 });
 
-/** The document scale after calibrating `page`: the new scale is also the document default. */
+/**
+ * The document scale after calibrating `page`: the new scale is also the
+ * document default. "Override embedded PDF scales" stays on the document
+ * scale, so that default beats the PDF's own scale on sheets without a
+ * calibration of their own (a sheet's own calibration always does).
+ */
 export function withPageScale(measureScale, page, scaleData) {
   if (!(scaleData?.pixelsPerUnit > 0) || !(page > 0)) return scaleData;
-  return { ...pick(scaleData), pages: { ...(measureScale?.pages || {}), [page]: pick(scaleData) } };
+  return {
+    ...pick(scaleData),
+    ...(scaleData.overridePdfScale === true ? { overridePdfScale: true } : {}),
+    pages: { ...(measureScale?.pages || {}), [page]: pick(scaleData) },
+  };
 }
 
 /** The document scale after Reset on `page`: only that page's calibration goes. */
@@ -61,6 +70,21 @@ export function restorePageCalibrations(measureScale, viewports) {
     out = { ...(out || {}), pages: { ...(out?.pages || {}), [page]: s } };
   }
   return out;
+}
+
+/**
+ * The PDF's own viewports without the "Markset calibration" ones, which
+ * restorePageCalibrations has made the pages' calibrations; undefined when
+ * none are left (like doc.pdfViewports).
+ */
+export function withoutCalibrationViewports(viewports) {
+  if (!viewports) return viewports;
+  const out = {};
+  for (const [page, list] of Object.entries(viewports)) {
+    const rest = (list || []).filter(v => v?.name !== MARKSET_VP_NAME);
+    if (rest.length) out[page] = rest;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**

@@ -7,8 +7,8 @@ import { volgPopup } from './ribbon-popup.js';
 
 const THEME_OPTIONS = [
   { value: 'default', labelKey: 'theme.default', swatches: ['#36363E', '#44444C', '#D97706', '#FAFAF9'] },
-  { value: 'light', labelKey: 'theme.light', swatches: ['#f5f5f5', '#ffffff', '#a82d6e', '#1f2937'] },
-  { value: 'dark', labelKey: 'theme.dark', swatches: ['#1a1a2e', '#16213e', '#a82d6e', '#eaeaea'] },
+  { value: 'light', labelKey: 'theme.light', swatches: ['#f5f5f5', '#ffffff', '#0000FF', '#1f2937'] },
+  { value: 'dark', labelKey: 'theme.dark', swatches: ['#1a1a2e', '#16213e', '#4F57FF', '#eaeaea'] },
   { value: 'blue', labelKey: 'theme.blue', swatches: ['#0d1b2a', '#1b263b', '#00b4d8', '#e0e1dd'] },
   { value: 'amber-navy', labelKey: 'theme.amberNavy', swatches: ['#1a1a2e', '#242445', '#D97706', '#C4B199'] },
   { value: 'warm-ember', labelKey: 'theme.warmEmber', swatches: ['#3E3636', '#4a4242', '#D97706', '#F5F0EB'] },

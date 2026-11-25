@@ -333,6 +333,7 @@ markset/us-units-hooks.test.mjs
 markset/svg-to-pdf.test.mjs
 markset/statusbar-fit.test.mjs
 markset/library/library.test.mjs
+markset/library/us-only.test.mjs
 markset/smart/smart.test.mjs
 markset/smart/plugin-hooks.test.mjs
 markset/plugin-review-api.test.mjs
@@ -353,6 +354,7 @@ markset/place-on-pages/placement.test.mjs
 markset/pdf-text-safety.test.mjs
 markset/vite-brand.test.mjs
 markset/compare/diff-classify.test.mjs
+markset/compare/overlay-styles.test.mjs
 markset/pdf-conformance.test.mjs
 js/pdf/frame-planner.test.mjs
 js/pdf/pdf-viewport-heropenen.test.mjs
@@ -970,3 +972,5 @@ js/pdf/annotatie-datums-rondgang.test.mjs
 js/pdf/bitmap-orchestrator-race.test.mjs
 js/pdf/pdfjs-canvas-render.test.mjs
 js/pdf/zoom-render-plan.test.mjs
+
+markset/startup-update-check.test.mjs

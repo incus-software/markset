@@ -1,12 +1,11 @@
 import { createSignal, createMemo } from 'solid-js';
-import { BUILT_IN_CATEGORIES } from '../data/symbolLibrary.js';
-import { nen1414Categorieen, laadNen1414 } from '../data/nen1414-laden.js';
-import { NL_CATEGORIES } from '../data/nlSymbolLibrary.js';
-import { INB_CATEGORIES } from '../data/inbSymbolLibrary.js';
+// Markset: the upstream NL, NEN 1414, INB and built-in palette groups are not
+// offered; Markset ships US libraries only. Their data files stay, because the
+// renderers and parametric templates still use them to draw markups already
+// placed in existing PDFs (see systeem-symbol-cache.js).
 import { MARKSET_CATEGORIES } from '../../../markset/library/index.js'; // Markset
 import { pluginCategories } from '../../../markset/smart/plugin-categories.js'; // Markset
-import { GDT_CATEGORIES } from '../data/gdtSymbolLibrary.js';
-import { matchesLocale, DEFAULT_INDUSTRY, DEFAULT_COUNTRY } from '../data/symbolLocales.js';
+import { matchesLocale, DEFAULT_INDUSTRY, DEFAULT_COUNTRY, COUNTRIES } from '../data/symbolLocales.js';
 import { state } from '../../core/state.js';
 import { savePreferences } from '../../core/preferences.js';
 import { registerPaletteDock } from './paletteOrder.js';
@@ -109,12 +108,8 @@ function setCustomGroups(groups) {
   savePreferences();
 }
 
-// De NEN 1414-groepen komen erbij zodra hun chunk geladen is (#454);
-// initSymbolPalette start die lading na het tekenen van het venster.
-const [nen1414Groepen, setNen1414Groepen] = createSignal(nen1414Categorieen() || []);
-function laadNen1414Groepen() {
-  return laadNen1414().then((cats) => { if (cats?.length) setNen1414Groepen(cats); });
-}
+// Markset: upstream loads the NEN 1414 groups here (#454); Markset offers US
+// libraries only, so they are not loaded.
 
 // --- All categories (built-in + custom) ---
 const allCategories = createMemo(() => {
@@ -126,11 +121,6 @@ const allCategories = createMemo(() => {
   return [
     ...MARKSET_CATEGORIES, // Markset: bundled US Starter Library first
     ...pluginCategories(), // Markset: groups added by plugins
-    ...NL_CATEGORIES,
-    ...INB_CATEGORIES,
-    ...BUILT_IN_CATEGORIES,
-    ...nen1414Groepen(),
-    ...GDT_CATEGORIES,
     ...custom
   ];
 });
@@ -296,7 +286,12 @@ function initSymbolPalette() {
   if (prefs.symbolPaletteVisible != null) setSymbolPaletteVisibleRaw(prefs.symbolPaletteVisible);
   if (prefs.disabledSymbolGroups) setDisabledGroupsRaw(new Set(prefs.disabledSymbolGroups));
   if (prefs.symbolLibraryIndustry != null) setSelectedIndustryRaw(prefs.symbolLibraryIndustry);
-  if (prefs.symbolLibraryCountry != null) setSelectedCountryRaw(prefs.symbolLibraryCountry);
+  // Markset: a country saved before the US-only change (e.g. 'nl') falls back
+  // to the default, so no hidden non-US choice stays selected.
+  if (prefs.symbolLibraryCountry != null) {
+    setSelectedCountryRaw(COUNTRIES.some(c => c.id === prefs.symbolLibraryCountry)
+      ? prefs.symbolLibraryCountry : DEFAULT_COUNTRY);
+  }
   const mode = prefs.symbolPaletteMode || 'docked-right';
   setSymbolPaletteModeRaw(mode);
   if (prefs.symbolPaletteFloatX != null) {
@@ -306,7 +301,6 @@ function initSymbolPalette() {
   if (symbolPaletteVisible() && mode.startsWith('docked-')) {
     registerPaletteDock('symbols', mode.replace('docked-', ''));
   }
-  laadNen1414Groepen();
 }
 
 export {

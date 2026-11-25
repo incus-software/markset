@@ -162,9 +162,8 @@ pub const TOOLS: &[ToolMeta] = &[
     wijzigt("app_mouse_drag", "Drag"),
     wijzigt("app_key", "Press key"),
     wijzigt("app_type", "Type text"),
-    // Alleen in de ontwikkelroute: testgereedschap, en de interne koppeling met
-    // het OpenAEC-account (app_accounts_fetch is een generieke API-aanroep met
-    // een methode-parameter — hoort niet in een openbaar profiel).
+    // Alleen in de ontwikkelroute: testgereedschap. (Markset: de OpenAEC-
+    // accountgereedschappen zijn verwijderd, samen met accounts.rs.)
     ontwikkel("app_get_recent_console", "Read app console", true),
     ontwikkel("app_zoom_anchor_test", "Zoom anchor test", true),
     ontwikkel("app_clear_caches", "Clear render caches", false),
@@ -175,8 +174,6 @@ pub const TOOLS: &[ToolMeta] = &[
     ontwikkel("screenshot_page", "Render test page", true),
     ontwikkel("screenshot_all", "Render all test pages", true),
     ontwikkel("get_pdf_metadata", "Read test PDF metadata", true),
-    ontwikkel("app_accounts_status", "OpenAEC sign-in state", true),
-    ontwikkel("app_accounts_fetch", "OpenAEC account API call", false),
 ];
 
 pub fn meta(naam: &str) -> Option<&'static ToolMeta> {

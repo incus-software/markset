@@ -5,14 +5,18 @@ import { readFileSync } from 'node:fs';
 import { MCP_STANDAARD } from './mcp-standaard.js';
 import { voegSamenMetStandaarden } from './preferences-merge.js';
 
-test('AI-koppeling staat bij een nieuwe installatie standaard aan', () => {
-  assert.equal(MCP_STANDAARD.mcpEnabled, true);
+test('Markset: AI-koppeling staat bij een nieuwe installatie standaard uit', () => {
+  assert.equal(MCP_STANDAARD.mcpEnabled, false);
   assert.equal(MCP_STANDAARD.mcpPort, 9223);
 });
 
-test('nieuwe installatie (niets opgeslagen) krijgt de koppeling aan', () => {
-  assert.equal(voegSamenMetStandaarden(MCP_STANDAARD, null).mcpEnabled, true);
-  assert.equal(voegSamenMetStandaarden(MCP_STANDAARD, {}).mcpEnabled, true);
+test('Markset: nieuwe installatie (niets opgeslagen) krijgt de koppeling uit', () => {
+  assert.equal(voegSamenMetStandaarden(MCP_STANDAARD, null).mcpEnabled, false);
+  assert.equal(voegSamenMetStandaarden(MCP_STANDAARD, {}).mcpEnabled, false);
+});
+
+test('een opgeslagen "aan" blijft aan na het samenvoegen met de standaarden', () => {
+  assert.equal(voegSamenMetStandaarden(MCP_STANDAARD, { mcpEnabled: true }).mcpEnabled, true);
 });
 
 test('een opgeslagen "uit" blijft uit na het samenvoegen met de standaarden', () => {

@@ -261,6 +261,7 @@ export interface Preferences {
   // Startup
   startupTool: 'select' | 'hand';
   restoreLastSession: boolean;
+  checkUpdatesOnStartup: boolean; // Markset
   dontAskDefaultPdf: boolean;
 
   // Zoeken: doorzoek de PDF-tekst en/of de tekst in annotaties

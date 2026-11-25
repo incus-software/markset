@@ -16,7 +16,9 @@ import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { applyDynamicScaling } from '../annotations/dynamic-scaling.js';
 import { getTemplate } from '../symbols/registry.js';
 import { pxPerMmAt } from '../symbols/real-size.js';
-import { syncTwoPointGeometry, syncTwoPointLengthParam } from '../symbols/two-point.js';
+import { syncTwoPointGeometry, syncTwoPointLengthParam, placesOnlyWithScale } from '../symbols/two-point.js';
+import { findMeasureScale } from '../annotations/measurement.js'; // Markset
+import { updateStatusMessage } from '../ui/chrome/status-bar.js'; // Markset
 import { pendingParams, pendingSymbolId } from '../solid/stores/parametricSymbolStore.js';
 import { activeCountCategory as _activeCountCategory, nextCountNumber as _nextCountNumber } from '../solid/stores/countStore.js';
 import { ifcCategoryForParametric, ifcCategoryForAnnotationType } from '../solid/data/ifcCategoryMap.js';
@@ -386,7 +388,6 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         // Vet/cursief/onderstrepen/doorhalen, uitlijning en regelafstand uit
         // de standaardstijl (#1150); eerder altijd gewoon, links en boven.
         ...tekststijlUitVoorkeur(prefs, 'textbox'),
-        ...textStyleDefault(prefs, 'textbox'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.textboxBorderWidth,
         borderStyle: prefs.textboxBorderStyle,
         opacity: (prefs.textboxOpacity || 100) / 100
@@ -422,7 +423,6 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
         fontFamily: prefs.calloutFontFamily || 'Arial',
         // Teken- en alineastijl uit de standaardstijl (#1150).
         ...tekststijlUitVoorkeur(prefs, 'callout'),
-        ...textStyleDefault(prefs, 'callout'), // Markset: saved text color, font, style, alignment
         lineWidth: prefs.calloutBorderWidth,
         borderStyle: prefs.calloutBorderStyle,
         opacity: (prefs.calloutOpacity || 100) / 100
@@ -467,6 +467,12 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       if (!template) return null;
       const page = getActiveDocument()?.currentPage || 1;
       const params = pendingParams();
+
+      // Markset: a symbol drawn at its real size needs the sheet's scale.
+      if (placesOnlyWithScale(template) && !findMeasureScale(page, startX, startY)) {
+        updateStatusMessage('This symbol is drawn at real size: set the sheet’s scale first (Set Scale or Calibrate on the Annotation tab).', 6000);
+        return null;
+      }
 
       if (template?.placement === 'two-point') {
         const snappedEnd = snap(startX, startY, endX, endY);
