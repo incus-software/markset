@@ -1,6 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proTools, proSections, PRO_SECTIONS, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS, defaultClosedSections } from './pro-tools.js';
+import { proTools, proSections, PRO_SECTIONS, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS, defaultClosedSections, ribbonColumns, ribbonSections } from './pro-tools.js';
+import { registerSymbolCategory, pluginCategories } from '../smart/plugin-categories.js';
+
+test('ribbon tab: plugin symbol groups with a proSection become galleries in that section', () => {
+  const sym = { id: 's', name: 'S', svg: '<svg/>' };
+  const sections = [
+    { name: 'Review & Seal', tools: [{ id: 'seal' }] },
+    { name: 'General', tools: [{ id: 'firm-kit' }] },
+  ];
+  const walls = registerSymbolCategory({ id: 't-walls', name: 'Walls', proSection: '  Trade Tools ', symbols: [sym] });
+  const plain = registerSymbolCategory({ id: 't-plain', name: 'Plain', symbols: [sym] });
+  const empty = registerSymbolCategory({ id: 't-empty', name: 'Empty', proSection: 'Trade Tools', symbols: [] });
+  const notes = registerSymbolCategory({ id: 't-notes', name: 'Notes', proSection: 'Review & Seal', symbols: [sym] });
+  try {
+    const out = ribbonSections(sections, pluginCategories());
+    // "Trade Tools" is not in PRO_SECTIONS on this branch, so it sorts after the
+    // named sections; either way it holds only the non-empty group that asked for it.
+    const by = Object.fromEntries(out.map((s) => [s.name, s]));
+    assert.deepEqual(by['Trade Tools'].galleries.map((c) => c.id), ['t-walls']);
+    assert.deepEqual(by['Trade Tools'].tools, []);
+    assert.deepEqual(by['Review & Seal'].galleries.map((c) => c.id), ['t-notes']);
+    assert.deepEqual(by['Review & Seal'].tools.map((t) => t.id), ['seal'], 'tools stay');
+    assert.equal(out.some((s) => s.galleries.some((c) => c.id === 't-plain')), false, 'no proSection: palette only');
+    assert.equal(out[0].name, 'Review & Seal');
+  } finally {
+    walls.remove(); plain.remove(); empty.remove(); notes.remove();
+  }
+});
+
+test('ribbon tab: short sections get large buttons, long ones stacks of three small', () => {
+  const tools = (n) => Array.from({ length: n }, (_, i) => ({ id: `t${i}` }));
+  assert.deepEqual(ribbonColumns(tools(6)).map((c) => c.length), [1, 1, 1, 1, 1, 1]);
+  assert.deepEqual(ribbonColumns(tools(7)).map((c) => c.length), [3, 3, 1]);
+  assert.deepEqual(ribbonColumns(tools(26)).flat().map((t) => t.id), tools(26).map((t) => t.id), 'every tool, in order');
+  assert.deepEqual(ribbonColumns([]), []);
+});
 
 test('Pro tools are listed greyed out until the plugin turns them on', () => {
   const before = proTools();

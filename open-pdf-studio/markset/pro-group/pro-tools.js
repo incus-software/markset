@@ -51,15 +51,39 @@ export function proSections(tools = proTools()) {
     if (!by.has(name)) by.set(name, []);
     by.get(name).push(t);
   }
-  const rank = (n) => {
-    if (n === NO_SECTION) return PRO_SECTIONS.length + 1;
-    const i = PRO_SECTIONS.indexOf(n);
-    return i >= 0 ? i : PRO_SECTIONS.length;
-  };
   return [...by.keys()]
     .map((name, i) => ({ name, i }))
-    .sort((a, b) => rank(a.name) - rank(b.name) || a.i - b.i)
+    .sort((a, b) => sectionRank(a.name) - sectionRank(b.name) || a.i - b.i)
     .map(({ name }) => ({ name, tools: by.get(name) }));
+}
+
+/** Sort key of a section: the PRO_SECTIONS in order, then others, then "More". */
+function sectionRank(name) {
+  if (name === NO_SECTION) return PRO_SECTIONS.length + 1;
+  const i = PRO_SECTIONS.indexOf(name);
+  return i >= 0 ? i : PRO_SECTIONS.length;
+}
+
+/**
+ * The sections of the Markset Pro ribbon tab, as [{ name, tools, galleries }]:
+ * proSections() plus the plugin symbol groups that name a Pro section
+ * (registerSymbolCategory's `proSection`). Each such group becomes a gallery
+ * button in its section; a section with only galleries is added in its place.
+ * Empty groups (no symbols yet) are left out.
+ */
+export function ribbonSections(sections = proSections(), categories = []) {
+  const out = sections.map((s) => ({ ...s, galleries: [] }));
+  for (const c of categories) {
+    const name = typeof c?.proSection === 'string' ? c.proSection.trim() : '';
+    if (!name || !c.symbols?.length) continue;
+    let s = out.find((x) => x.name === name);
+    if (!s) { s = { name, tools: [], galleries: [] }; out.push(s); }
+    s.galleries.push(c);
+  }
+  return out
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => sectionRank(a.s.name) - sectionRank(b.s.name) || a.i - b.i)
+    .map(({ s }) => s);
 }
 
 /**
@@ -105,4 +129,19 @@ export const PRO_URL = 'https://usemarkset.com';
 /** Message shown when a greyed-out Pro tool is clicked (with a "Visit usemarkset.com" button). */
 export function proUpsellMessage(tool) {
   return `${tool.label} is part of Markset Pro. ${tool.description || ''}\n\nMarkset Pro is an add-on: get it at usemarkset.com, install it, and enter your license key in its License tool.`;
+}
+
+/**
+ * How a section's tools sit in its ribbon group: a short section (up to
+ * six tools) gets one large button per tool; a longer one gets columns of
+ * up to three small buttons, so the trade library does not run off the
+ * ribbon. Each column is an array of tools; in a long section every column,
+ * even one of a single tool, is small buttons.
+ */
+export const RIBBON_LARGE_MAX = 6;
+export function ribbonColumns(tools, { large = RIBBON_LARGE_MAX, perColumn = 3 } = {}) {
+  if (tools.length <= large) return tools.map((t) => [t]);
+  const cols = [];
+  for (let i = 0; i < tools.length; i += perColumn) cols.push(tools.slice(i, i + perColumn));
+  return cols;
 }
