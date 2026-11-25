@@ -82,7 +82,8 @@ test('alleen nen1414-laden.js importeert de bibliotheek, en dan dynamisch', () =
     assert.doesNotMatch(lees(pad), /from '[^']*nen1414Library\.js'/, pad);
   }
   assert.match(lees('./nen1414-laden.js'), /import\('\.\/nen1414Library\.js'\)/);
+  // Markset: the palette offers US libraries only, so symbolStore does not
+  // load the NEN 1414 groups at all (markset/FORK-NOTES.md, 2026-11-25).
   const store = lees('../stores/symbolStore.js');
-  assert.match(store, /\.\.\.nen1414Groepen\(\),/);
-  assert.match(store, /laadNen1414Groepen\(\);\n\}/);
+  assert.doesNotMatch(store, /nen1414Groepen|laadNen1414/);
 });

@@ -13,7 +13,7 @@
 // id naar het paneel uit `aria-controls` (`tab-<naam>` geeft `<naam>`).
 
 /** De ingebouwde tabbladen, in de volgorde waarin het zoeken ze langsloopt. */
-export const INGEBOUWDE_TABBLADEN = Object.freeze(['home', 'view', 'drawing', 'comment', 'organize', 'arrange', 'format', 'image', 'help']);
+export const INGEBOUWDE_TABBLADEN = Object.freeze(['home', 'view', 'drawing', 'comment', 'organize', 'pro', 'arrange', 'format', 'image', 'help']);
 
 /** Lees een lint-opdracht; null als het geen lint-opdracht is. */
 export function leesLintOpdracht(command) {

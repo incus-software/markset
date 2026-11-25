@@ -28,7 +28,8 @@
     "contact": "Contact",
     "copyright": "© 2026 OpenAEC Foundation",
     "license": "Licensed under MIT. Free for personal and commercial use.",
-    "version": "Version"
+    "version": "Version",
+    "accuracyNote": "Measurements depend on the scale you calibrate and the accuracy of the PDF. Use them to check drawings, not to replace dimensions on the issued documents. Compare highlights differences it detects and can miss changes. Review revised sheets yourself."
   },
   "whatsNew": {
     "title": "What's new",

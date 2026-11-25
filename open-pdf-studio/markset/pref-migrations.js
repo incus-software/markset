@@ -37,6 +37,17 @@ const MIGRATIONS = [
     },
   },
   {
+    // The AI link (MCP) became off by default on 2026-11-24. Preferences
+    // saved before then hold `true` only because it was the default (the
+    // whole preferences object is saved), so turn it off once. Anyone who
+    // uses an AI tool switches it back on in Preferences, and that choice
+    // is kept from then on.
+    id: 'ai-link-off-2026-11',
+    apply(prefs) {
+      return prefs.mcpEnabled === true ? { mcpEnabled: false } : {};
+    },
+  },
+  {
     // The dimension (measure distance) line default went from 2 pt to 1 pt
     // on 2026-11-19: 2 pt drew twice as heavy as the drawing's own
     // dimension strings. A saved 2 is the old default, so halve it once.

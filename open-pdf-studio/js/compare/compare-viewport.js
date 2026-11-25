@@ -568,10 +568,10 @@ export async function computePairChanges(opts, clients) {
       type: c.type, source: 'vector', x: c.x, y: c.y, width: c.width, height: c.height,
       lengthMm: c.lengthPt * MM_PER_PT, old: c.old,
     }));
-    return { changes, alignment, alignInfo, truncated: false, mmPerPx: plan.mmPerPx, method: 'vector' };
+    return _sheetTagged({ changes, alignment, alignInfo, truncated: false, mmPerPx: plan.mmPerPx, method: 'vector' }, newSize);
   }
 
-  if (rust) return _pixelResult(rust.clusters, plan, rust.head.old_px, alignment, alignInfo, !!rust.head.truncated);
+  if (rust) return _sheetTagged(_pixelResult(rust.clusters, plan, rust.head.old_px, alignment, alignInfo, !!rust.head.truncated), newSize);
 
   // Scale correction: render the old page at the scale it is shown at.
   let oldDet = oldMask;
@@ -588,7 +588,15 @@ export async function computePairChanges(opts, clients) {
     options: { ...params, transform },
   });
   if (!r.changes) return null;
-  return _pixelResult(r.changes.clusters, plan, oldPx, alignment, alignInfo, !!r.changes.truncated);
+  return _sheetTagged(_pixelResult(r.changes.clusters, plan, oldPx, alignment, alignInfo, !!r.changes.truncated), newSize);
+}
+
+// Markset: the change list says where on the sheet a change is and how big it
+// is on paper (markset/compare/change-list.js). Changes are in page points,
+// so the sheet size goes along in points and detectScale is 1.
+function _sheetTagged(result, newSize) {
+  result.changes = result.changes.map((c) => ({ ...c, detectScale: 1, sheetW: newSize.width, sheetH: newSize.height }));
+  return result;
 }
 
 // Change records in page points from mask clusters (new-mask pixels, `old`

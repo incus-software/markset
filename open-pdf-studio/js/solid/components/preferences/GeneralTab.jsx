@@ -92,6 +92,14 @@ export default function GeneralTab(props) {
             <span>{t('general.restoreLastSession')}</span>
           </label>
         </div>
+        {/* Markset: off by default; a quiet check that only speaks up when an update exists. */}
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" id="pref-check-updates-startup" disabled={!isTauri()}
+              checked={p.checkUpdatesOnStartup[0]()} onChange={e => p.checkUpdatesOnStartup[1](e.target.checked)} />
+            <span>{t('general.checkUpdatesOnStartup', 'Check for updates when Markset starts')}</span>
+          </label>
+        </div>
         <Show when={meldLegeStart({ inTauri: isTauri() })}>
           <div class="pref-row"><span class="pref-hint">{tCommon(WEB_SESSIE_SLEUTEL)}</span></div>
         </Show>
@@ -134,7 +142,7 @@ export default function GeneralTab(props) {
             onInput={e => { const n = parseInt(e.target.value, 10); if (n >= 1024 && n <= 65535) p.mcpPort[1](n); }} />
           <span style={{ 'margin-left': '8px', color: '#666' }}>{statusTekst()}</span>
         </div>
-        <div class="pref-row" style={{ color: '#666', 'font-size': '11px' }}>{t('general.aiLinkHint')}</div>
+        <div class="pref-row" style={{ color: '#666', 'font-size': '11px' }}>{t('general.aiLinkHintOff') /* Markset: off-by-default wording; English only, other locales fall back */}</div>
       </fieldset>
       <fieldset class="pref-fieldset">
         <legend>{t('general.author')}</legend>

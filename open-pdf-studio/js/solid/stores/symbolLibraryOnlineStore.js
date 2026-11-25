@@ -133,7 +133,12 @@ export const libraryCountries = createMemo(() => {
   const idx = indexData();
   const lang = language();
   if (!idx || !idx.countries.length) return COUNTRIES;
-  return idx.countries
+  // Markset: US libraries only. The online index lists every country it has
+  // collections for; offer only the ones in COUNTRIES (the United States).
+  const allowed = new Set(COUNTRIES.map(c => c.id));
+  const listed = idx.countries.filter(c => allowed.has(c.id));
+  if (!listed.length) return COUNTRIES;
+  return listed
     .map(c => ({ id: c.id, name: pickLocalized(c.names, lang), flag: c.flag }))
     .sort((a, b) => a.name.localeCompare(b.name, lang));
 });

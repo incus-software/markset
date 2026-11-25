@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { register } from 'node:module';
 import { PDFDocument, degrees } from 'pdf-lib';
-import * as mupdf from 'mupdf';
+// Markset: MuPDF (AGPL) is not installed in Markset (markset/test-packages.mjs);
+// without it these tests are skipped instead of failing on the import.
+const mupdf = await import('mupdf').catch(() => null);
+const skip = mupdf ? false : 'mupdf is not installed (Markset leaves MuPDF out)';
 import { textEditScreenRotation, textEditLineAnchor, applyPageRotation } from './text-edit-appearance.js';
 register('../core/app-test-hooks.mjs', import.meta.url);
 const { installeerBrowserStubs } = await import('../core/app-test-hooks.mjs');
@@ -12,7 +15,7 @@ const near = (a,b) => assert.ok(Math.abs(a-b)<0.001, `${a} != ${b}`);
 
 for (const pageAngle of [0, 90, 180, 270]) {
   for (const textAngle of [0, 90, 270, 37.5, -22.5]) {
-    test(`save/reopen preserves ${textAngle} degrees on /Rotate ${pageAngle}`, async () => {
+    test(`save/reopen preserves ${textAngle} degrees on /Rotate ${pageAngle}`, { skip }, async () => {
       const pdf = await PDFDocument.create();
       pdf.addPage([595,842]).setRotation(degrees(pageAngle));
       const edit = { id:'rotation', page:1, originalText:'', newText:'Angle\nNext',

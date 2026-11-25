@@ -20,13 +20,18 @@ function plat(obj, prefix = '', out = {}) {
   return out;
 }
 
+// Markset: its own compare texts (overlay display styles, change list;
+// markset/compare/) are in English only, like Markset's other strings; the
+// other languages fall back to English for them.
+const MARKSET_EN_ONLY = /^(display|displayHint|style[A-Z].*|fadeSlider|sheetChanges_(one|other)|sheetNoChanges|detecting|prevChange|nextChange|zone\..+)$/;
+
 test('all 40 languages have the same compare keys as English, none empty', () => {
   const talen = readdirSync(LOCALES);
   assert.equal(talen.length, 40);
-  const en = plat(compare('en'));
+  const en = Object.fromEntries(Object.entries(plat(compare('en'))).filter(([k]) => !MARKSET_EN_ONLY.test(k)));
   assert.ok(Object.keys(en).length >= 90);
   for (const taal of talen) {
-    const b = plat(compare(taal));
+    const b = Object.fromEntries(Object.entries(plat(compare(taal))).filter(([k]) => !MARKSET_EN_ONLY.test(k)));
     assert.deepEqual(Object.keys(b).sort(), Object.keys(en).sort(), taal);
     for (const [k, v] of Object.entries(b)) assert.ok(typeof v === 'string' && v.trim(), `${taal} ${k} is empty`);
     assert.ok(b['report.cloudsPlaced'].includes('{{count}}'), `${taal} report.cloudsPlaced keeps {{count}}`);
@@ -62,7 +67,8 @@ test('every compare key the code uses exists', () => {
   const run = lees(join(HIER, 'compare-report-run.js'));
   for (const m of run.matchAll(/\b(?:t|tr|tEn)\('([A-Za-z.]+)'/g)) gebruikt.add(m[1]);
   assert.ok(gebruikt.size >= 40, `found ${gebruikt.size}`);
-  const ontbreekt = [...gebruikt].filter((k) => !(k in en));
+  // Markset: a plural key (sheetChanges) exists as sheetChanges_one/_other.
+  const ontbreekt = [...gebruikt].filter((k) => !(k in en) && !(`${k}_one` in en && `${k}_other` in en));
   assert.deepEqual(ontbreekt, []);
   // Templated keys.
   for (const k of ['line', 'scan', 'text']) assert.ok(en[`preset.${k}`]);

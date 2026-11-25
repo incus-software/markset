@@ -10,7 +10,13 @@ import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { softMaskFixture, maskVariants } from './soft-mask-fixture.mjs';
-import * as mupdf from 'mupdf';
+// Markset: MuPDF (AGPL) is not installed in Markset (markset/test-packages.mjs),
+// and it is this check's reference renderer, so without it there is nothing to compare.
+const mupdf = await import('mupdf').catch(() => null);
+if (!mupdf) {
+  console.log('SKIP: mupdf is not installed (Markset leaves MuPDF out)');
+  process.exit(0);
+}
 import { patchKnockoutBounds } from './pdfjs-knockout-bounds.mjs';
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
