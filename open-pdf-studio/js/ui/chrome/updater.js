@@ -13,6 +13,11 @@ import { maakInstallerUpdate, updateRoute } from './installer-update.js';
 
 let checking = false;
 
+/** Markset: installed from the Microsoft Store? Then the Store updates it. */
+async function isStorePackage() {
+  try { return (await invoke('store_package')) === true; } catch { return false; }
+}
+
 /**
  * Is the OpenAEC Installer on this computer (OpenAEC-Blueprint#33)? Only asked on
  * Windows. Rust registers the plugin only where the installer may update this copy
@@ -73,6 +78,11 @@ export async function checkForUpdates(silent = true) {
     if (!silent) await showUpdatesManagedMessage();
     return;
   }
+  // Markset: a Microsoft Store install has no updater of its own.
+  if (await isStorePackage()) {
+    if (!silent) await showUpdatesManagedMessage('ribbon:help.updatesStore');
+    return;
+  }
   checking = true;
 
   try {
@@ -108,10 +118,10 @@ export async function checkForUpdates(silent = true) {
   }
 }
 
-async function showUpdatesManagedMessage() {
+async function showUpdatesManagedMessage(key = 'ribbon:help.updatesManaged') {
   const i18next = (await import('i18next')).default;
   window.__TAURI__?.dialog?.message?.(
-    i18next.t('ribbon:help.updatesManaged'),
+    i18next.t(key),
     { title: i18next.t('ribbon:help.updatesLabel'), kind: 'info' });
 }
 

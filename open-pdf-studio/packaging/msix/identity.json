@@ -1,0 +1,6 @@
+{
+  "_note": "The Store's package identity for Markset: Partner Center > Markset > Product management > Product identity. Values are case-sensitive. Until they are filled in, scripts/build-msix.mjs only makes a local test package (node scripts/build-msix.mjs --test).",
+  "identityName": "",
+  "publisher": "",
+  "publisherDisplayName": ""
+}
