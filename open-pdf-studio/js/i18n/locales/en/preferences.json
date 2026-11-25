@@ -19,6 +19,7 @@
     "applicationTheme": "Application Theme",
     "startup": "Startup",
     "restoreLastSession": "Restore last session when application starts",
+    "checkUpdatesOnStartup": "Check for updates when Markset starts",
     "author": "Author",
     "defaultAuthorName": "Author Name",
     "language": "Language",

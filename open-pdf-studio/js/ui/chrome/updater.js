@@ -132,7 +132,7 @@ async function showPortableUpdateMessage(version) {
 function showNoUpdateMessage() {
   if (window.__TAURI__?.dialog?.message) {
     window.__TAURI__.dialog.message(
-      'You are running the latest version of Open PDF Studio.',
+      'You are running the latest version of Markset.', // Markset
       { title: 'Software Update', kind: 'info' }
     );
   }
