@@ -309,6 +309,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   // Startup
   restoreLastSession: false,
+  // Markset: off by default; the app goes online only when asked.
+  checkUpdatesOnStartup: false,
   dontAskDefaultPdf: false,
 
   // Screenshot annotate: intercept the system PrtScn key as a global hotkey

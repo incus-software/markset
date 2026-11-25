@@ -77,6 +77,14 @@ export default function GeneralTab(props) {
             <span>{t('general.restoreLastSession')}</span>
           </label>
         </div>
+        {/* Markset: off by default; a quiet check that only speaks up when an update exists. */}
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" id="pref-check-updates-startup" disabled={!isTauri()}
+              checked={p.checkUpdatesOnStartup[0]()} onChange={e => p.checkUpdatesOnStartup[1](e.target.checked)} />
+            <span>{t('general.checkUpdatesOnStartup', 'Check for updates when Markset starts')}</span>
+          </label>
+        </div>
         <Show when={meldLegeStart({ inTauri: isTauri() })}>
           <div class="pref-row"><span class="pref-hint">{tCommon(WEB_SESSIE_SLEUTEL)}</span></div>
         </Show>

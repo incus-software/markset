@@ -492,6 +492,13 @@ async function init() {
     // Geen automatische update-check meer bij het opstarten: het update-venster
     // verscheen ongevraagd. Updaten kan nog handmatig via Help → Controleren op
     // updates (checkForUpdates(false)).
+    // Markset: unless the user turned on "Check for updates when Markset starts";
+    // then a quiet check that only opens the update window when there is one.
+    if (state.preferences.checkUpdatesOnStartup) {
+      setTimeout(() => {
+        import('./ui/chrome/updater.js').then((m) => m.checkForUpdates(true)).catch(() => {});
+      }, 5000);
+    }
     // What's New dialog — fire-and-forget, never blocks startup.
     setTimeout(() => {
       import('./help/whats-new-trigger.js')
