@@ -12,10 +12,17 @@
 export const REDEN_VOORBEELD = 'preview-pdf';
 /** Geweigerd: het bestand heeft geen pagina's. */
 export const REDEN_GEEN_PAGINAS = 'no-pages';
+/**
+ * Geweigerd: het bestand is beveiligd en kon niet ontsleuteld worden (geen
+ * wachtwoord gegeven, of ontsleutelen kan hier niet). Ongelezen kopiëren zou
+ * lege pagina's geven (#1134).
+ */
+export const REDEN_BEVEILIGD = 'protected';
 
 const UITLEG = {
   [REDEN_VOORBEELD]: 'refused: a preview PDF of the CAD import can lack content; run the import itself',
   [REDEN_GEEN_PAGINAS]: 'refused: the file has no pages',
+  [REDEN_BEVEILIGD]: 'refused: the file is protected and was not unlocked',
 };
 
 /**
@@ -49,6 +56,17 @@ export function meegenomen(carried) {
     layers: b.lagen,
     signaturesRemoved: b.handtekeningen,
     fromOpenDocument: !!b.uitApp,
+    // Alleen een deel van het bestand (#963): wat naar de andere pagina's wees.
+    ...(b.weggelaten ? {
+      omitted: {
+        pages: b.weggelaten.paginas,
+        bookmarks: b.weggelaten.bladwijzers,
+        namedDestinations: b.weggelaten.bestemmingen,
+        links: b.weggelaten.koppelingen,
+        fields: b.weggelaten.velden,
+        layers: b.weggelaten.lagen,
+      },
+    } : {}),
   }));
 }
 

@@ -1,16 +1,17 @@
 import { For, Show, onMount, createSignal, createMemo } from 'solid-js';
-import { openDialog } from '../../../stores/dialogStore.js';
+import { openDialog, showMessage } from '../../../stores/dialogStore.js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { useTranslation } from '../../../../i18n/useTranslation.js';
 import {
   schedules, addScheduleFromTemplate, addBlankSchedule, renameSchedule, removeSchedule,
-  buildResultForSchedule, setConfiguringId,
+  buildResultForSchedule, setConfiguringId, applyScheduleTagUpdates,
   STANDARD_SCHEDULE_TEMPLATES,
 } from '../../../stores/schedulesStore.js';
 import { initScheduleDrop, SCHEDULE_DND_MIME } from '../../../../quantities/schedule-drop.js';
-import { formatCell, fmtTotal, isImageCell } from '../../../../quantities/schedule-templates.js';
+import { formatRowCell, fmtTotal, isImageCell } from '../../../../quantities/schedule-templates.js';
 import { scheduleResultToCsv } from '../../../../quantities/schedule-csv.js';
-import { saveFileDialog, writeBinaryFile } from '../../../../core/platform.js';
+import { saveFileDialog, writeBinaryFile, openFileDialog, readBinaryFile } from '../../../../core/platform.js';
+import { readTagUpdates } from '../../../../quantities/takeoff-tags.js';
 import ScheduleWizard from '../../ScheduleWizard.jsx';
 
 export default function SchedulesPanel() {
@@ -62,11 +63,47 @@ export default function SchedulesPanel() {
   async function exportCsv(s) {
     const r = buildResultForSchedule(s);
     if (!r || !r.columns.length) return;
-    const csv = '﻿' + scheduleResultToCsv(r); // BOM voor Excel/UTF-8
+    // BOM voor Excel/UTF-8; de ID-kolom maakt het terugzetten van bewerkte
+    // kenmerken mogelijk (importTags).
+    const csv = '﻿' + scheduleResultToCsv(r, { ids: true });
     const safe = (s.name || t('schedules.newName')).replace(/[\\/:*?"<>|]/g, '_');
     const path = await saveFileDialog(`${safe}.csv`, [{ name: 'CSV', extensions: ['csv'] }]);
     if (!path) return;
     await writeBinaryFile(path, new TextEncoder().encode(csv));
+  }
+
+  // Kenmerken (label, IFC-categorie, locatie, telcategorie) uit een bewerkte
+  // export terugzetten op de markeringen (#629).
+  const TAG_FOUTEN = { 'empty': 'importTagsEmpty', 'no-id-column': 'importTagsNoId', 'no-tag-columns': 'importTagsNoColumns' };
+  async function importTags(s) {
+    const r = buildResultForSchedule(s);
+    if (!r) return;
+    const titel = t('schedules.importTagsTitle');
+    const path = await openFileDialog(['csv', 'txt']);
+    if (!path || Array.isArray(path)) return;
+    let tekst;
+    try {
+      const bytes = await readBinaryFile(path);
+      tekst = new TextDecoder('utf-8').decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+    } catch (e) {
+      console.error('Tag file not read:', e);
+      showMessage(t('schedules.importTagsRead'), titel);
+      return;
+    }
+    const gelezen = readTagUpdates(tekst, r.columns);
+    if (!gelezen.ok) {
+      showMessage(t(`schedules.${TAG_FOUTEN[gelezen.error] || 'importTagsRead'}`), titel);
+      return;
+    }
+    const uit = applyScheduleTagUpdates(gelezen.updates);
+    if (!uit) return;
+    const regels = [uit.changed ? t('schedules.importTagsDone', { count: uit.changed }) : t('schedules.importTagsNone')];
+    if (uit.notFound) regels.push(t('schedules.importTagsNotFound', { count: uit.notFound }));
+    if (uit.locked) regels.push(t('schedules.importTagsLocked', { count: uit.locked }));
+    if (uit.unknownCountCategories.length) {
+      regels.push(t('schedules.importTagsUnknownCount', { names: uit.unknownCountCategories.join(', ') }));
+    }
+    showMessage(regels.join('\n'), titel);
   }
 
   return (
@@ -89,114 +126,119 @@ export default function SchedulesPanel() {
         </button>
       </div>
 
-      {/* Lijst van staten */}
-      <Show when={schedules().length > 0}
-        fallback={<div class="measurements-empty">{t('schedules.empty')}</div>}>
-        <div class="schedules-hint">{t('schedules.dragHint')}</div>
-        <For each={schedules()}>
-          {(s) => (
-            <div class="schedules-entry">
-              <div class="schedules-item" draggable={editingId() !== s.id} onDragStart={(e) => onDragStart(e, s)} title={t('schedules.dragHint')}>
-                <span class="schedules-grip" innerHTML={gripIcon}></span>
-                <button class="schedules-item-btn schedules-expand" title={t('schedules.preview')}
-                  onClick={() => toggleExpand(s.id)}>{expandedId() === s.id ? '▾' : '▸'}</button>
-                <Show when={editingId() === s.id}
-                  fallback={
-                    <span class="schedules-name" onDblClick={() => setEditingId(s.id)}>{s.name}</span>
-                  }>
-                  <input
-                    class="schedules-rename-input"
-                    value={s.name}
-                    autofocus
-                    onBlur={(e) => commitRename(s, e.currentTarget.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitRename(s, e.currentTarget.value);
-                      else if (e.key === 'Escape') setEditingId(null);
-                    }}
-                  />
-                </Show>
-                <button class="schedules-item-btn" title={t('wizard.configure')}
-                  onClick={() => setConfiguringId(s.id)}>⚙</button>
-                <button class="schedules-item-btn" title={t('schedules.exportCsv')}
-                  onClick={() => exportCsv(s)}>⭳</button>
-                <button class="schedules-item-btn" title={t('schedules.rename')}
-                  onClick={() => setEditingId(s.id)}>{renameIcon}</button>
-                <button class="schedules-item-btn schedules-item-del" title={t('schedules.delete')}
-                  onClick={() => { if (expandedId() === s.id) setExpandedId(null); removeSchedule(s.id); }}>&times;</button>
-              </div>
+      {/* De lijst schuift als geheel; kop en toevoegbalk blijven staan (#1155). */}
+      <div class="schedules-container">
+        {/* Lijst van staten */}
+        <Show when={schedules().length > 0}
+          fallback={<div class="measurements-empty">{t('schedules.empty')}</div>}>
+          <div class="schedules-hint">{t('schedules.dragHint')}</div>
+          <For each={schedules()}>
+            {(s) => (
+              <div class="schedules-entry">
+                <div class="schedules-item" draggable={editingId() !== s.id} onDragStart={(e) => onDragStart(e, s)} title={t('schedules.dragHint')}>
+                  <span class="schedules-grip" innerHTML={gripIcon}></span>
+                  <button class="schedules-item-btn schedules-expand" title={t('schedules.preview')}
+                    onClick={() => toggleExpand(s.id)}>{expandedId() === s.id ? '▾' : '▸'}</button>
+                  <Show when={editingId() === s.id}
+                    fallback={
+                      <span class="schedules-name" onDblClick={() => setEditingId(s.id)}>{s.name}</span>
+                    }>
+                    <input
+                      class="schedules-rename-input"
+                      value={s.name}
+                      autofocus
+                      onBlur={(e) => commitRename(s, e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename(s, e.currentTarget.value);
+                        else if (e.key === 'Escape') setEditingId(null);
+                      }}
+                    />
+                  </Show>
+                  <button class="schedules-item-btn" title={t('wizard.configure')}
+                    onClick={() => setConfiguringId(s.id)}>⚙</button>
+                  <button class="schedules-item-btn" title={t('schedules.exportCsv')}
+                    onClick={() => exportCsv(s)}>⭳</button>
+                  <button class="schedules-item-btn" title={t('schedules.importTags')}
+                    onClick={() => importTags(s)}>⭱</button>
+                  <button class="schedules-item-btn" title={t('schedules.rename')}
+                    onClick={() => setEditingId(s.id)}>{renameIcon}</button>
+                  <button class="schedules-item-btn schedules-item-del" title={t('schedules.delete')}
+                    onClick={() => { if (expandedId() === s.id) setExpandedId(null); removeSchedule(s.id); }}>&times;</button>
+                </div>
 
-              {/* Inline voorbeeld-tabel met thumbnails, live bijgewerkt */}
-              <Show when={expandedId() === s.id && previewResult()}>
-                {(r) => (
-                  <div class="schedules-preview">
-                    <Show when={r().columns.length > 0}
-                      fallback={<div class="schedule-empty">{t('wizard.noColumns')}</div>}>
-                      <Show when={r().count > 0}
-                        fallback={<div class="schedule-empty">{t('wizard.noElements')}</div>}>
-                        <table class="schedules-preview-table">
-                          <thead><tr>
-                            <For each={r().columns}>
-                              {(col) => <th class={col.align === 'right' ? 'sp-num' : ''}>{col.label}{col.unit ? ` (${col.unit})` : ''}</th>}
-                            </For>
-                          </tr></thead>
-                          <For each={r().groups}>
-                            {(group) => (
-                              <tbody>
-                                <Show when={group.key !== null}>
-                                  <tr class="sp-group"><td colspan={r().columns.length}>{group.key} <span class="sp-count">({group.rows.length})</span></td></tr>
-                                </Show>
-                                <Show when={r().itemize}>
-                                  <For each={group.rows}>
-                                    {(row) => (
-                                      <tr>
-                                        <For each={r().columns}>
-                                          {(col) => (
-                                            <td class={col.align === 'right' ? 'sp-num' : ''}>
-                                              <Show when={col.kind === 'image' && isImageCell(row.vals[col.key])}
-                                                fallback={formatCell(row.vals[col.key], col)}>
-                                                <img class="sp-thumb" src={row.vals[col.key]} alt="" loading="lazy" />
-                                              </Show>
-                                            </td>
-                                          )}
-                                        </For>
-                                      </tr>
-                                    )}
-                                  </For>
-                                </Show>
-                                <tr class="sp-total">
-                                  <For each={r().columns}>
-                                    {(col, i) => (
-                                      <td class={col.align === 'right' ? 'sp-num' : ''}>
-                                        {i() === 0 ? (group.key !== null ? `Σ ${group.key}` : t('wizard.subtotal')) : fmtTotal(group.subtotals[col.key], col)}
-                                      </td>
-                                    )}
-                                  </For>
-                                </tr>
-                              </tbody>
-                            )}
-                          </For>
-                          <tbody>
-                            <tr class="sp-total sp-grand">
+                {/* Inline voorbeeld-tabel met thumbnails, live bijgewerkt */}
+                <Show when={expandedId() === s.id && previewResult()}>
+                  {(r) => (
+                    <div class="schedules-preview">
+                      <Show when={r().columns.length > 0}
+                        fallback={<div class="schedule-empty">{t('wizard.noColumns')}</div>}>
+                        <Show when={r().count > 0}
+                          fallback={<div class="schedule-empty">{t('wizard.noElements')}</div>}>
+                          <table class="schedules-preview-table">
+                            <thead><tr>
                               <For each={r().columns}>
-                                {(col, i) => (
-                                  <td class={col.align === 'right' ? 'sp-num' : ''}>
-                                    {i() === 0 ? t('wizard.grandTotal') : fmtTotal(r().grandTotals[col.key], col)}
-                                  </td>
-                                )}
+                                {(col) => <th class={col.align === 'right' ? 'sp-num' : ''}>{col.label}{col.unit ? ` (${col.unit})` : ''}</th>}
                               </For>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <div class="schedules-preview-foot">{r().count} {t('wizard.elements')}</div>
+                            </tr></thead>
+                            <For each={r().groups}>
+                              {(group) => (
+                                <tbody>
+                                  <Show when={group.key !== null}>
+                                    <tr class="sp-group"><td colspan={r().columns.length}>{group.key} <span class="sp-count">({group.rows.length})</span></td></tr>
+                                  </Show>
+                                  <Show when={r().itemize}>
+                                    <For each={group.rows}>
+                                      {(row) => (
+                                        <tr>
+                                          <For each={r().columns}>
+                                            {(col) => (
+                                              <td class={col.align === 'right' ? 'sp-num' : ''}>
+                                                <Show when={col.kind === 'image' && isImageCell(row.vals[col.key])}
+                                                  fallback={formatRowCell(row, col)}>
+                                                  <img class="sp-thumb" src={row.vals[col.key]} alt="" loading="lazy" />
+                                                </Show>
+                                              </td>
+                                            )}
+                                          </For>
+                                        </tr>
+                                      )}
+                                    </For>
+                                  </Show>
+                                  <tr class="sp-total">
+                                    <For each={r().columns}>
+                                      {(col, i) => (
+                                        <td class={col.align === 'right' ? 'sp-num' : ''}>
+                                          {i() === 0 ? (group.key !== null ? `Σ ${group.key}` : t('wizard.subtotal')) : fmtTotal(group.subtotals[col.key], col)}
+                                        </td>
+                                      )}
+                                    </For>
+                                  </tr>
+                                </tbody>
+                              )}
+                            </For>
+                            <tbody>
+                              <tr class="sp-total sp-grand">
+                                <For each={r().columns}>
+                                  {(col, i) => (
+                                    <td class={col.align === 'right' ? 'sp-num' : ''}>
+                                      {i() === 0 ? t('wizard.grandTotal') : fmtTotal(r().grandTotals[col.key], col)}
+                                    </td>
+                                  )}
+                                </For>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <div class="schedules-preview-foot">{r().count} {t('wizard.elements')}</div>
+                        </Show>
                       </Show>
-                    </Show>
-                  </div>
-                )}
-              </Show>
-            </div>
-          )}
-        </For>
-      </Show>
+                    </div>
+                  )}
+                </Show>
+              </div>
+            )}
+          </For>
+        </Show>
+      </div>
 
       <ScheduleWizard />
     </div>

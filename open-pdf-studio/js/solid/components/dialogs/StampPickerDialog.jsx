@@ -1,13 +1,50 @@
-import { For } from 'solid-js';
+import { For, Show, createSignal, createMemo, onMount, onCleanup } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { BUILT_IN_STAMPS } from '../../../annotations/stamps.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { stampTemplates } from '../../../annotations/stamp-template-backend.js';
+import StampTemplatePreview from './StampTemplatePreview.jsx';
+import { stempelKiezerInhoud } from '../../../annotations/stamp-picker-filter.js';
+import { state } from '../../../core/state.js';
 
 export default function StampPickerDialog(props) {
   const { t } = useTranslation('dialogs');
 
   const cancel = () => { closeDialog('stamp-picker'); };
+
+  // Dynamic templates (#629): built-in, personal and shared.
+  const [templates, setTemplates] = createSignal([]);
+  const [loaded, setLoaded] = createSignal(false);
+  let unsubscribe = null;
+  let closed = false;
+  onCleanup(() => { closed = true; unsubscribe?.(); });
+  onMount(async () => {
+    const store = await stampTemplates();
+    if (closed) return;
+    const update = () => setTemplates(store.list());
+    update();
+    setLoaded(true);
+    unsubscribe = store.onChange(update);
+  });
+
+  // Ingebouwde stempels verbergen zodra er eigen stempels zijn (#998).
+  const content = createMemo(() => stempelKiezerInhoud({
+    hideBuiltIn: state.preferences?.hideBuiltInStamps === true,
+    builtInStamps: BUILT_IN_STAMPS,
+    templates: templates(),
+    geladen: loaded(),
+  }));
+
+  function handleDynamicClick(template) {
+    closeDialog('stamp-picker');
+    if (props.data?.onDynamic) props.data.onDynamic(template);
+  }
+
+  function handleManageClick() {
+    closeDialog('stamp-picker');
+    if (props.data?.onManage) props.data.onManage();
+  }
 
   function handleStampClick(stamp) {
     if (props.data?.onSelect) props.data.onSelect(stamp);
@@ -26,12 +63,15 @@ export default function StampPickerDialog(props) {
       dialogClass="stamp-picker-dialog"
       onClose={cancel}
     >
+      <Show when={content().verborgen}>
+        <div class="stamp-picker-hint">{t('stampPicker.builtInHidden')}</div>
+      </Show>
       <div style={{
         display: 'grid',
         'grid-template-columns': 'repeat(2, 1fr)',
         gap: '8px'
       }}>
-        <For each={BUILT_IN_STAMPS}>
+        <For each={content().builtInStamps}>
           {(stamp) => (
             <button
               style={{
@@ -70,6 +110,23 @@ export default function StampPickerDialog(props) {
           {t('stampPicker.customFromImage')}
         </button>
       </div>
+      <div class="stamp-picker-section">{t('stampPicker.dynamicTitle')}</div>
+      <div class="stamp-picker-dynamic">
+        <For each={content().templates}>
+          {(tpl) => (
+            <button class="stamp-picker-dynamic-item" title={tpl.name} onClick={() => handleDynamicClick(tpl)}>
+              <StampTemplatePreview template={tpl} width={150} height={48} maxScale={1.5} />
+              <span class="stamp-picker-dynamic-name">{tpl.name}</span>
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={content().hintGeenEigen}>
+        <div class="stamp-picker-hint">{t('stampPicker.hideBuiltInNoOwn')}</div>
+      </Show>
+      <Show when={props.data?.onManage}>
+        <button class="pref-btn stamp-picker-manage" onClick={handleManageClick}>{t('stampPicker.manage')}</button>
+      </Show>
     </Dialog>
   );
 }

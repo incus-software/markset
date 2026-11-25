@@ -1,25 +1,32 @@
-import { Show, Switch, Match, onMount, onCleanup } from 'solid-js';
+import { Show, Switch, Match, onMount, onCleanup, lazy } from 'solid-js';
 import { isAppMenuOpen, closeAppMenu, getActivePanel, setActivePanel } from '../../stores/appMenuStore.js';
 import { openDialog } from '../../stores/dialogStore.js';
-import ImportPanel from './ImportPanel.jsx';
-import ExportPanel from './ExportPanel.jsx';
-import OpenPanel from './OpenPanel.jsx';
+// De panelen van het Bestand-menu laden pas als het menu voor het eerst
+// opengaat, als eigen chunk (#454).
+const ImportPanel = lazy(() => import('./ImportPanel.jsx'));
+const ExportPanel = lazy(() => import('./ExportPanel.jsx'));
+const OpenPanel = lazy(() => import('./OpenPanel.jsx'));
 import { openPDFFile } from '../../../pdf/loader.js';
 import { savePDF, savePDFAs } from '../../../pdf/saver.js';
+import { ifcxOpslaanLabel, opslaanAlsIfcx } from '../../../pdf/ifcx-opslaan.js';
 import { showPreferencesDialog } from '../../../core/preferences.js';
 import { showDocPropertiesDialog, showNewDocDialog, showPrintDialog } from '../../../ui/chrome/dialogs.js';
 import { hasUnsavedChanges, getUnsavedDocumentNames } from '../../../ui/chrome/tabs.js';
 import { closeWindow, isTauri } from '../../../core/platform.js';
 import { meldSchoonAfsluiten } from '../../../herstel/haken.js';
+import { aanbod as herstelAanbod, toonHerstelVenster } from '../../../herstel/herstel.js';
 import { knopUit, meldingTekst } from '../../../core/webfuncties.js';
 import i18next from '../../../i18n/config.js';
 import { state } from '../../../core/state.js';
 import { persistAllReaderPositions } from '../../../pdf/reader-mode-view.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { openVirusscannerMelding } from '../../../help/virusscanner-melding.js';
 import {
   annotationsListIcon, annotationLayersIcon, facingPagesIcon, stampIcon,
 } from '../../data/ribbonIcons.js';
 import { sneltoetsVoor } from '../../stores/keybindingStore.js';
+import { kanAllesSluiten } from '../../../ui/chrome/tabs-sluiten-model.js';
+import { compareActive } from '../../../compare/compare-store.js';
 
 function MenuItem(props) {
   // Zelfde regel als bij de lintknoppen: wat de webversie niet kan staat uit
@@ -52,6 +59,7 @@ const ICONS = {
   new: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6m-3 3h6"/></svg>',
   open: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>',
   save: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z"/><path d="M17 3v4a1 1 0 01-1 1H8"/><path d="M7 14h10v7H7z"/></svg>',
+  pdfa: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M8 15l2.5 2.5L16 12"/></svg>',
   saveAs: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z"/><path d="M17 3v4a1 1 0 01-1 1H8"/><path d="M12 12v6m-3-3h6"/></svg>',
   print: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>',
   import: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
@@ -59,6 +67,7 @@ const ICONS = {
   docProperties: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8m8 4H8m2-8H8"/></svg>',
   preferences: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
   about: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  closeAll: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="14" height="14"/><path d="M7 7V3h14v14h-4"/><path d="M7.5 11.5l5 5m0-5l-5 5"/></svg>',
   exit: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
   extensions: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
   annotateScreenshot: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12" cy="13" r="3"/></svg>',
@@ -66,6 +75,7 @@ const ICONS = {
   drawingSets: menuSized(annotationLayersIcon),
   sheetLinks: menuSized(facingPagesIcon),
   approvalRouting: menuSized(stampIcon),
+  sharedReview: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6l2 2h10v10H3z"/><circle cx="9" cy="14" r="2"/><circle cx="15" cy="14" r="2"/></svg>',
 };
 
 function actionAndClose(fn) {
@@ -136,6 +146,8 @@ export default function AppMenu() {
             <MenuItem icon={ICONS.save} label={t('save')} shortcut={sneltoetsVoor('file.save')} disabled={state.documents[state.activeDocumentIndex]?.hostAlleenLezen === true} onClick={() => actionAndClose(savePDF)} />
             <MenuItem icon={ICONS.saveAs} label={t('saveAs')} shortcut={sneltoetsVoor('file.saveAs')} onClick={() => actionAndClose(savePDFAs)} />
             <MenuItem icon={ICONS.saveAs} label={t('saveFlattenedCopy')} onClick={() => actionAndClose(() => import('../../../../markset/flattened-copy.js').then((m) => m.saveFlattenedCopy()))} /> {/* Markset */}
+            <MenuItem id="menu-save-as-ifcx" icon={ICONS.saveAs} label={ifcxOpslaanLabel(t('saveAs'))} disabled={!state.documents[state.activeDocumentIndex]} onClick={() => actionAndClose(opslaanAlsIfcx)} />
+            <MenuItem id="menu-pdfa" icon={ICONS.pdfa} label={t('pdfa')} disabled={!state.documents[state.activeDocumentIndex]} onClick={() => actionAndClose(() => openDialog('pdfa'))} />
             <MenuItem id="menu-print" icon={ICONS.print} label={t('print')} shortcut={sneltoetsVoor('file.print')} onClick={() => actionAndClose(showPrintDialog)} />
             <Divider />
             <MenuItem icon={ICONS.annotateScreenshot} label={t('annotateScreenshot')} onClick={() => actionAndClose(() => import('../../../tools/screenshot-annotate.js').then((m) => m.annotateClipboardScreenshot()))} />
@@ -150,12 +162,22 @@ export default function AppMenu() {
             <MenuItem icon={ICONS.drawingSets} label={t('drawingSets')} onClick={() => actionAndClose(() => openDialog('drawing-sets'))} />
             <MenuItem icon={ICONS.sheetLinks} label={t('sheetLinks')} onClick={() => actionAndClose(() => openDialog('sheet-links'))} />
             <MenuItem icon={ICONS.approvalRouting} label={t('approvalRouting')} onClick={() => actionAndClose(() => openDialog('approval-routing'))} />
+            <MenuItem icon={ICONS.sharedReview} label={t('sharedReview')} onClick={() => actionAndClose(() => openDialog('shared-review'))} />
+            <Show when={isTauri()}><MenuItem icon={ICONS.sharedReview} label={t('dialogs:centralReview.title')} onClick={() => actionAndClose(() => openDialog('central-review'))} /></Show>
+            {/* Niet-opgeslagen werk dat nog bewaard is: hier terug te vinden nadat het venster is uitgesteld. */}
+            <Show when={herstelAanbod().length > 0}>
+              <MenuItem id="menu-recover-unsaved" icon={ICONS.about} label={t('dialogs:recovery.menu', { count: herstelAanbod().length })} onClick={() => actionAndClose(toonHerstelVenster)} />
+            </Show>
             <Divider />
             <MenuItem icon={ICONS.preferences} label={t('preferences')} shortcut={sneltoetsVoor('app.preferences')} onClick={() => actionAndClose(showPreferencesDialog)} />
             <Divider />
             <MenuItem icon={ICONS.about} label={t('about')} onClick={() => actionAndClose(() => openDialog('about'))} />
             <MenuItem id="menu-whats-new" icon={ICONS.about} label={t('whatsNew.title')} onClick={() => actionAndClose(() => import('../../../help/whats-new-trigger.js').then(m => m.openWhatsNewManual()))} />
+            {/* Alleen in de app: de webversie heeft geen installatieprogramma (#761). */}
+            <Show when={isTauri()}><MenuItem id="menu-virus-warning" icon={ICONS.about} label={t('dialogs:virusNotice.menu')} onClick={() => actionAndClose(openVirusscannerMelding)} /></Show>
             <Divider />
+            {/* Alle tabbladen sluiten (#1156): de app blijft open. */}
+            <MenuItem id="menu-close-all" icon={ICONS.closeAll} label={t('closeAll')} shortcut={sneltoetsVoor('file.closeAll')} disabled={!kanAllesSluiten({ aantalTabItems: state.documents.length, vergelijkActief: compareActive() })} onClick={() => actionAndClose(() => import('../../../ui/chrome/tabs-sluiten.js').then((m) => m.sluitAlleTabs()).catch((e) => console.warn('[tabs] alles sluiten mislukt:', e)))} />
             <MenuItem icon={ICONS.exit} label={t('exit')} shortcut="Alt+F4" onClick={handleExit} />
           </div>
         </div>

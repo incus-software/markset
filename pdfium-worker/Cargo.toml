@@ -2,13 +2,21 @@
 name = "pdfium-worker"
 version = "2026.48.11"
 edition = "2021"
+license = "LGPL-3.0-or-later"
 
 [[bin]]
 name = "pdfium-worker"
 path = "src/main.rs"
 
 [dependencies]
-pdfium-render = { version = "0.9.4", features = ["thread_safe", "image_025"] }
+# Bindings voor PDFium 7881: de nieuwste binding die niet nieuwer is dan de
+# meegeleverde PDFium (chromium/8076, zie
+# open-pdf-studio/src-tauri/binaries/pdfium-runtime.json). De standaard-
+# feature pdfium_latest wijst sinds 0.9.5 naar 8125 en bindt dan bij het laden
+# ook functies die 8076 niet exporteert (FPDF_StructElement_GetRawType): het
+# binden faalt en PDFium blijft weg. Bij een PDFium-revisiewissel hier mee
+# omhoog; open-pdf-studio/scripts/pdfium-runtime.test.mjs bewaakt dat.
+pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_7881", "thread_safe", "image_025"] }
 memmap2 = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -18,3 +26,14 @@ anyhow = "1"
 lopdf = { version = "0.34", default-features = false, features = ["nom_parser"] }
 flate2 = "1"
 memchr = "2"
+# fdlibm-afstamming (MIT/Apache): cos/sin/atan2/exp/log zoals V8 ze rekent,
+# zodat de Rust-poort van Vergelijken dezelfde getallen geeft als js/compare/.
+libm = "0.2"
+# Zoektekst (src/page_text): NFKC zoals normalizeUnicode van pdf.js en de
+# Unicode-categorieën van zijn tekenindeling. Beide MIT/Apache, stonden al in
+# Cargo.lock.
+# Symbolen zoeken en formuliervormen herkennen op een paginabeeld
+# (src/raster_scan): het rekenwerk, gedeeld met de app-crate.
+open-pdf-scan = { path = "../open-pdf-scan" }
+unicode-normalization = "0.1.26"
+unicode-properties = "0.1.4"

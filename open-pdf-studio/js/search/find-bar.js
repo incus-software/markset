@@ -3,12 +3,13 @@
  */
 
 import { state, getActiveDocument } from '../core/state.js';
-import { executeSearch, executeProgressiveSearch, findNext, findPrevious, getCurrentResult, clearSearch, getResultsForPage } from './find-controller.js';
+import { executeProgressiveSearch, findNext, findPrevious, getCurrentResult, clearSearch, getResultsForPage } from './find-controller.js';
 import { renderPage, renderContinuous } from '../pdf/renderer.js';
-import { matchFractions, matchBoxInPageFrame, boxToLayerPercent } from './match-rect.js';
+import { matchFractions, matchFractionsUitVakken, matchBoxInPageFrame, boxToLayerPercent } from './match-rect.js';
 import { groepeerPerPagina, BRON_ANNOTATIE } from './search-sources.js';
 import { annotationBounds } from '../annotations/spatial-index.js';
 import { stopAlleWielScrollers } from '../pdf/wiel-scroll.js';
+import { scrollGedrag } from '../core/vloeiend-scrollen.js';
 import {
   setFindBarResultGroups as setResultGroups,
   setFindBarCurrentResultPage as setCurrentResultPage,
@@ -387,7 +388,7 @@ async function navigateToResult(result) {
       if (pageWrapper) {
         // Een lopende wieluitloop zou deze vloeiende sprong afbreken (#522).
         stopAlleWielScrollers();
-        pageWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        pageWrapper.scrollIntoView({ behavior: scrollGedrag(), block: 'center' });
       }
     } else {
       // Render the page in single page mode
@@ -419,7 +420,7 @@ function scrollToMatch(result) {
   // Een lopende wieluitloop zou de sprong naar de treffer afbreken (#522).
   stopAlleWielScrollers();
   if (panViewportToElement(highlights[0])) return true;
-  highlights[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  highlights[0].scrollIntoView({ behavior: scrollGedrag(), block: 'center', inline: 'center' });
   return true;
 }
 
@@ -577,7 +578,9 @@ function highlightMatch(result, isCurrent) {
     const endInItem = Math.min(item.str.length, result.endPos - item.startPos);
     if (endInItem <= startInItem) continue;
 
-    const [fracStart, fracEnd] = matchFractions(item.str, startInItem, endInItem, textMeasurer(item));
+    // Tekst uit de PDFium-worker draagt de echte plek van elk teken mee.
+    const [fracStart, fracEnd] = (item.vakken && matchFractionsUitVakken(item.vakken, startInItem, endInItem))
+      || matchFractions(item.str, startInItem, endInItem, textMeasurer(item));
     const box = matchBoxInPageFrame(item.transform, item.width, item.height, fracStart, fracEnd, view);
     if (!box) continue;
     const pct = boxToLayerPercent(box, view);
@@ -684,35 +687,6 @@ export async function onReplace() {
     }
   } catch (err) {
     console.error('[onReplace]', err);
-  }
-}
-
-export async function onReplaceAll() {
-  const { replaceAllMatches, clearTextCache } = await import('./find-controller.js');
-  const replaceWith = state.search.replaceQuery || '';
-
-  const count = await replaceAllMatches(replaceWith);
-  if (count > 0) {
-    const { markDocumentModified } = await import('../ui/chrome/tabs.js');
-    markDocumentModified();
-
-    const doc = getActiveDocument();
-    if (doc) clearTextCache(doc.id);
-
-    // Re-render to show the text edits
-    if (getActiveDocument()?.viewMode === 'continuous') {
-      const { redrawContinuous } = await import('../annotations/rendering.js');
-      redrawContinuous();
-    } else {
-      await renderPage(getActiveDocument()?.currentPage || 1);
-    }
-
-    // Re-search
-    await executeSearchAndUpdate();
-
-    setMessageText(`Replaced ${count} occurrences`);
-  } else {
-    setMessageText('No replacements made');
   }
 }
 

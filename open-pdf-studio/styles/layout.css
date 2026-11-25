@@ -545,6 +545,9 @@
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s;
+  /* Slepen met pointer-events (#962): geen tekstselectie onderweg. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .thumbnail-item:hover {
@@ -567,6 +570,12 @@
 
 .thumbnail-item.active.selected {
   border-color: var(--theme-thumbnail-active-border);
+}
+
+/* Treffer van het zoekveld (#926): dezelfde streep links als bij de
+   bladwijzers; de lijst blijft volledig. */
+.thumbnail-item.found {
+  box-shadow: inset 3px 0 0 var(--theme-thumbnail-active-border);
 }
 
 .thumbnail-canvas {
@@ -610,6 +619,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Page scale badge (pagina-schalen.js). */
+.thumbnail-scale {
+  margin-top: 3px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  line-height: 16px;
+  border-radius: 0;
+  color: var(--theme-thumbnail-label);
+  opacity: 0.55;
+  cursor: default;
+}
+.thumbnail-scale.own {
+  opacity: 1;
+  background: color-mix(in srgb, var(--theme-accent, #0078d7) 16%, transparent);
+}
+.thumbnail-scale.none { opacity: 0; }
+.thumbnail-item:hover .thumbnail-scale.none { opacity: 0.45; }
+.thumbnail-scale:hover { outline: 1px solid var(--theme-accent, #0078d7); }
+.thumbnail-scale-input { max-width: 80px; text-align: center; }
+.thumbnail-scale-input.invalid { border-color: var(--theme-error, #c42b1c); }
 
 .thumbnail-label-input {
   margin-top: 4px;
@@ -1136,6 +1166,9 @@ body.pdf-cursor-override #canvas-container * {
      from the broad `.continuous-container canvas` rule above and covers the
      page — a full white screen in continuous/book view. */
   background: transparent;
+  /* Het canvas dekt alleen het zichtbare deel van de pagina: de schaduw van
+     de pagina hoort bij de paginacontainer, niet midden in het blad. */
+  box-shadow: none;
 }
 
 /* PDF Text Edit Tool */
@@ -1188,3 +1221,79 @@ body.pdf-cursor-override #canvas-container * {
 .split-document-name[data-pane="1"] { left: calc(100% * var(--split-ratio, .5) + 8px); max-width: calc(100% * (1 - var(--split-ratio, .5)) - 16px); }
 .split-horizontaal .split-document-name { max-width: calc(100% - 16px); }
 .split-horizontaal .split-document-name[data-pane="1"] { left: 4px; top: calc(100% * var(--split-ratio, .5) + 8px); }
+
+/* Presentation view (full screen): only the page, on a dark background.
+   The working interface is hidden, not removed, so it is back unchanged
+   when full screen ends (js/ui/chrome/presentatie.js). */
+.presentation-mode .title-bar,
+.presentation-mode .ribbon-container,
+.presentation-mode .notification-bar,
+.presentation-mode .document-tabs,
+.presentation-mode .status-bar,
+.presentation-mode .content > :not(.main-view),
+.presentation-mode .main-view > .palette-dock-row,
+.presentation-mode .main-view > #form-fields-bar-root,
+.presentation-mode .main-view > #pdfa-bar-root,
+.presentation-mode .canvas-scrollbar {
+  display: none !important;
+}
+
+.presentation-mode .content,
+.presentation-mode .main-view,
+.presentation-mode #pdf-container {
+  background: #000;
+}
+
+.presentation-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: #2b2b2b;
+  border: 1px solid #555;
+  color: #fff;
+  font-size: 12px;
+  cursor: default;
+  user-select: none;
+}
+
+.presentation-bar.visible {
+  display: flex;
+}
+
+.presentation-bar button {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+
+.presentation-bar button:hover {
+  background: #444;
+  border-color: #666;
+}
+
+.presentation-bar-count {
+  min-width: 56px;
+  text-align: center;
+}
+
+/* Zoomrechthoek van het hand-gereedschap (#1161): Ctrl + slepen. */
+#hand-zoom-rechthoek {
+  position: fixed;
+  display: none;
+  z-index: 900;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px solid var(--theme-accent, #0078d7);
+  background: color-mix(in srgb, var(--theme-accent, #0078d7) 16%, transparent);
+}

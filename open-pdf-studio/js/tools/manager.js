@@ -1,11 +1,12 @@
+import { normalizeStartupTool } from '../core/startup-tool.js';
 import { state, getActiveDocument, clearSelection } from '../core/state.js';
+import { pasTekstlaagDoorvalToe, vergeetTekstlaagDoorval } from './tekstlaag-doorval.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
 import { updateStatusTool } from '../ui/chrome/status-bar.js';
 import { isPdfAReadOnly } from '../pdf/loader.js';
-import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { getTool } from './tool-registry.js';
-import { buildToolContext, resolvePointerCoords } from './tool-context.js';
+import { resolvePointerCoords } from './tool-context.js';
 import { findAnnotationAt } from '../annotations/geometry.js';
 import { findHandleAt } from '../annotations/handles.js';
 import { viewportNaarPagina } from '../pdf/weergave-rotatie.js';
@@ -14,6 +15,7 @@ import { cancelParametricSymbolInput } from './parametric-symbol-editing.js';
 import { clearPluginHover } from './tools/plugin-tool.js';
 import { syncSymbolInsertSession } from '../symbols/symbol-insert-format-store.js';
 import { applyOverlayPointerEvents } from '../pdf/link-layer.js';
+import { pasCanvasLagenToe, pasTekstlagenToe } from './gereedschap-lagen.js';
 import { endToolSetSession } from './tool-set-session.js';
 import {
   doorvalVoorSelectie, staatBovenTekst, klikDoelSoort, heftKlikSelectieOp,
@@ -25,24 +27,6 @@ import { isGRotateModeActive } from './g-rotate-mode.js';
 const READONLY_ALLOWED_TOOLS = new Set(['select', 'hand']);
 let toolDefaultsRequestToken = 0;
 
-// Get cursor for a given tool
-export function getCursorForTool(tool = state.currentTool) {
-  switch (tool) {
-    case 'select':
-      return 'default';  // Arrow cursor for unified selection
-    case 'hand':
-      return 'grab';
-    case 'text':
-    case 'plainText': // Markset
-    case 'editText':
-      return 'text';
-    default: {
-      const typeHandler = getAnnotationType(tool);
-      return (typeHandler && typeHandler.cursor) || 'crosshair';
-    }
-  }
-}
-
 // NOTE: cursor management is now centralized in js/ui/cursor.js (reactive
 // memo derived from app state). Tools and the dispatcher write state — they
 // never set element.style.cursor. The setAllCanvasCursors helper that used
@@ -50,19 +34,12 @@ export function getCursorForTool(tool = state.currentTool) {
 
 // Enable or disable text selection based on current tool.
 // Stacking: textLayer (z:5) < annotation-canvas (z:6) < formLayer (z:7) < linkLayer (z:10)
+// When enabled, the layer needs pointer-events: auto so native drag-to-select
+// works across span boundaries.  When disabled, pointer-events: none lets clicks
+// fall through to the annotation canvas. Same rule as a freshly built page
+// (gereedschap-lagen.js, #1013).
 function setTextSelectionEnabled(enabled) {
-  const textLayers = document.querySelectorAll('.textLayer');
-  textLayers.forEach(layer => {
-    // When enabled, the layer needs pointer-events: auto so native drag-to-select
-    // works across span boundaries.  When disabled, pointer-events: none lets clicks
-    // fall through to the annotation canvas.
-    layer.style.pointerEvents = enabled ? 'auto' : 'none';
-    const spans = layer.querySelectorAll('span');
-    spans.forEach(span => {
-      span.style.pointerEvents = enabled ? 'auto' : 'none';
-      span.style.cursor = enabled ? 'text' : 'default';
-    });
-  });
+  pasTekstlagenToe(document, enabled ? 'select' : 'hand');
 }
 
 // Dynamic fall-through for the unified select tool: when hovering body text (no
@@ -207,16 +184,8 @@ function _setSelectFallthroughEnabled(enabled) {
       }
 
       const textLayers = document.querySelectorAll('.textLayer');
-      textLayers.forEach(layer => {
-        const layerPE = doorval.tekstlaag;
-        if (layer.style.pointerEvents !== layerPE) {
-          layer.style.pointerEvents = layerPE;
-        }
-        layer.querySelectorAll('span').forEach(span => {
-          if (span.style.pointerEvents !== layerPE) span.style.pointerEvents = layerPE;
-          if (span.style.cursor !== doorval.spanCursor) span.style.cursor = doorval.spanCursor;
-        });
-      });
+      // Only walks the spans when there is something to change (tekstlaag-doorval.js).
+      textLayers.forEach(layer => pasTekstlaagDoorvalToe(layer, doorval.tekstlaag, doorval.spanCursor));
     };
     document.addEventListener('mousemove', _selectFallthroughHandler, true);
     document.addEventListener('pointerdown', _deselecteerBijKlikBuitenCanvas, true);
@@ -242,6 +211,7 @@ function _setSelectFallthroughEnabled(enabled) {
     // values they need.
     document.querySelectorAll('.textLayer').forEach(layer => {
       layer.style.pointerEvents = '';
+      vergeetTekstlaagDoorval(layer);
       layer.querySelectorAll('span').forEach(span => {
         span.style.pointerEvents = '';
         span.style.cursor = '';
@@ -255,10 +225,7 @@ function _setSelectFallthroughEnabled(enabled) {
 // form/link pointer events (they sit above the text layer and would intercept events).
 // Centralised here to avoid race conditions with async tool deactivation.
 function setAnnotationCanvasForTextAccess(enabled) {
-  document.querySelectorAll('#annotation-canvas, .annotation-canvas').forEach(el => {
-    el.style.zIndex = enabled ? '2' : '6';
-    el.style.pointerEvents = enabled ? 'none' : 'auto';
-  });
+  pasCanvasLagenToe(document, enabled ? 'editText' : 'hand');
   // Link-/formulierlagen volgen het actieve gereedschap (zie link-layer.js);
   // setTool() heeft state.currentTool al bijgewerkt voordat dit draait.
   applyOverlayPointerEvents(document);
@@ -283,6 +250,11 @@ export function setTool(tool) {
   // Any tool choice ends an active tool set item (#311); the Tool Sets panel
   // makes its item active again right after choosing the item's tool.
   endToolSetSession();
+
+  // Markeren in tekstmodus is het selectiegereedschap met automatisch
+  // markeren (highlight-mode.js, #927); elke keuze van een gereedschap, ook
+  // Selecteren, zet dat uit. De knop Markeren zet het direct daarna weer aan.
+  state.textHighlightMode = false;
 
   // Deactivate the current tool via lifecycle
   if (state.currentTool !== tool) {
@@ -447,7 +419,8 @@ export function updatePdfAToolState() {
   }
 }
 
-// Reset to hand tool whenever a PDF is loaded (avoids circular dependency with loader.js)
+// Keep the chosen navigation tool when a PDF opens, including restored tabs.
+// Drawing/editing tools still return to Select as before.
 document.addEventListener('pdf-loaded', () => {
-  setTool('select');
+  setTool(normalizeStartupTool(state.currentTool));
 });

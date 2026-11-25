@@ -1,5 +1,3 @@
-import { isMobile } from '../core/platform.js';
-import MobileApp from './MobileApp.jsx';
 import TitleBar from './components/TitleBar.jsx';
 import Ribbon from './components/ribbon/Ribbon.jsx';
 import DocumentTabs from './components/DocumentTabs.jsx';
@@ -20,32 +18,33 @@ import StatusBar from './components/StatusBar.jsx';
 import '../../markset/readability.css'; // Markset: readable label sizes and Light-theme contrast
 import AppMenu from './components/app-menu/AppMenu.jsx';
 import DialogHost from './components/DialogHost.jsx';
-import ContextMenu from './components/ContextMenu.jsx';
+import ContextMenu from './components/ContextMenuHost.jsx';
 import LoadingOverlay from './components/LoadingOverlay.jsx';
 import TypeLengthHUD from './components/TypeLengthHUD.jsx';
 import KeystrokeOverlay from './components/KeystrokeOverlay.jsx';
 import BoxSizeOverlay from './components/BoxSizeOverlay.jsx';
 import SketchModeBar from './components/SketchModeBar.jsx';
-import CompareView from './components/compare/CompareView.jsx';
+import CompareView from './components/compare/CompareViewLazy.jsx';
 import SplitPane from './components/SplitPane.jsx';
 import { DockedToolPalette, FloatingToolPalette, DockTargets, PaletteContextMenu } from './components/ToolPalette.jsx';
 import { DockedExtPalette, FloatingExtPalette, ExtDockTargets } from './components/ExtensionToolPalette.jsx';
 import { DockedSymbolPalette, FloatingSymbolPalette, SymbolSettingsDialog } from './components/SymbolPalette.jsx';
 import SchedulePanel from './components/SchedulePanel.jsx';
-import SymbolTypeEditor from './components/symbol-edit/SymbolTypeEditor.jsx';
+import { editorOpen } from './stores/symbolEditStore.js';
+const SymbolTypeEditor = lazy(() => import('./components/symbol-edit/SymbolTypeEditor.jsx'));
 import MiniLog from './components/MiniLog.jsx';
 import { getRegisteredPalettes } from '../plugins/palette-registry.js';
-import { leftOrder, rightOrder } from './stores/paletteOrder.js';
+import { leftOrder, rightOrder, topOrder, bottomOrder } from './stores/paletteOrder.js';
 import { useTranslation } from '../i18n/useTranslation.js';
 import { isTauri } from '../core/platform.js';
 import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../core/sessie-herstel.js';
-import { For, ErrorBoundary, Show, createEffect, onCleanup } from 'solid-js';
+import { lazy, createMemo, For, ErrorBoundary, Show, createEffect, onCleanup } from 'solid-js';
 import { state } from '../core/state.js';
 import { pasUiSchaalToe, haalUiSchaalWeg } from '../core/ui-scale.js';
 import StartRecent from '../../markset/StartRecent.jsx'; // Markset
 
 function OrderedDockedPalettes(props) {
-  const order = () => props.side === 'left' ? leftOrder() : rightOrder();
+  const order = () => ({ left: leftOrder, right: rightOrder, top: topOrder, bottom: bottomOrder }[props.side] || rightOrder)();
   const extPalettes = () => getRegisteredPalettes();
 
   // Build list of all palette ids: 'tool' (built-in) + extension palette ids
@@ -76,6 +75,7 @@ function OrderedDockedPalettes(props) {
 }
 
 function DesktopApp() {
+  const editorGebruikt = createMemo(eerder => eerder || editorOpen(), false);
   // Interface size for low vision (#883): stylesheet sizes follow --ui-scale.
   createEffect(() => pasUiSchaalToe(state.preferences.uiScale));
   onCleanup(() => haalUiSchaalWeg());
@@ -104,6 +104,10 @@ function DesktopApp() {
           <For each={extPalettes()}>
             {(p) => <ExtDockTargets descriptor={p} />}
           </For>
+          {/* Top dock: palettes as a horizontal strip above the page view. */}
+          <div class="palette-dock-row palette-dock-top">
+            <OrderedDockedPalettes side="top" />
+          </div>
           <FindBar />
           <ReadAloudBar />
 
@@ -148,6 +152,10 @@ function DesktopApp() {
             <SplitPane />
           </div>
           <ThreeDView />
+          {/* Bottom dock: a horizontal strip below the page view. */}
+          <div class="palette-dock-row palette-dock-bottom">
+            <OrderedDockedPalettes side="bottom" />
+          </div>
         </div>
 
         <OrderedDockedPalettes side="right" />
@@ -166,7 +174,7 @@ function DesktopApp() {
       </For>
       <PaletteContextMenu />
       <SymbolSettingsDialog />
-      <SymbolTypeEditor />
+      <Show when={editorGebruikt()}><SymbolTypeEditor /></Show>
       <SchedulePanel />
       {/* MiniLog floating engine-log overlay removed per user request. */}
       <LoadingOverlay />
@@ -178,9 +186,9 @@ function DesktopApp() {
   );
 }
 
+// De mobiele weergave (MobileApp.jsx) is een eigen chunk (#454): main.js
+// laadt hem vóór render() als isMobile() waar is en tekent hem dan in plaats
+// van dit bureaubladvenster.
 export default function App() {
-  if (isMobile()) {
-    return <MobileApp />;
-  }
   return <DesktopApp />;
 }

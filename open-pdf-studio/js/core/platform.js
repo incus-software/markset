@@ -54,6 +54,9 @@ export function cacheWebFile(name, data) {
 //     ai: { vraag(vraag) -> Promise<{ bericht, stop, vraag_id }> },
 //     geopend(id)          -> Promise<true>  dit document staat open
 //     melding(tekst, toon) -> Promise<true>  melding in de statusbalk van de site
+//     // optioneel: de tekeningkaders uit de huisstijl van het bedrijf, voor
+//     // Nieuw document (zie pdf/huisstijl-kaders.js)
+//     huisstijl()          -> Promise<{ merk, kaders: [...] }>
 //   };
 //
 // open() mag ook `alleenLezen: true` (of `readOnly: true`) meegeven: dan
@@ -814,6 +817,18 @@ export async function writeBinaryFileAtomic(path, data, { annulering = null } = 
   return true;
 }
 
+// A protected PDF (#378): Rust encrypts the plain bytes with the security
+// session `sessie` (src-tauri/src/pdf_beveiliging.rs) and writes atomically.
+export async function writeProtectedPdfAtomic(path, data, sessie) {
+  if (!isTauri()) throw new Error('PROTECTION_NOT_WRITABLE');
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const mobile = window.__TAURI__?.os?.type?.() === 'android';
+  await getTauriCore().invoke('write_protected_pdf_atomic', mobile ? { data: Array.from(bytes) } : bytes, {
+    headers: { 'x-opds-path': encodeURIComponent(path), 'x-opds-security': encodeURIComponent(sessie) },
+  });
+  return true;
+}
+
 // An existing destination surfaces as CHOOSE_NEW_FILE (os error 17 on Unix,
 // 80/183 on Windows).
 async function invokeNew(command, path, data, headers = {}) {
@@ -829,6 +844,22 @@ async function invokeNew(command, path, data, headers = {}) {
     throw e instanceof Error ? e : new Error(message);
   }
   return true;
+}
+
+// Bytes naar een tijdelijk PDF-bestand (afdrukken, printwachtrij); geeft het
+// pad. Rauwe body in plaats van een JSON-array met een getal per byte: dat
+// kostte ~105 ms per MB aan omzetten (#463).
+export async function writeTempPdf(data, name = null) {
+  const core = getTauriCore();
+  if (!core) throw new NietInBrowserError('write_temp_pdf');
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  // Android cannot transport a raw IPC body.
+  if (window.__TAURI__?.os?.type?.() === 'android') {
+    return core.invoke('write_temp_pdf', { data: Array.from(bytes), name });
+  }
+  return core.invoke('write_temp_pdf', bytes, {
+    headers: name ? { 'x-opds-name': encodeURIComponent(name) } : {},
+  });
 }
 
 // Workflows and new-copy exports must fail on collisions, including races

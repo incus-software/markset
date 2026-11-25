@@ -3,9 +3,12 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 import PrefColorPicker from './PrefColorPicker.jsx';
 import PrefComboBox from './PrefComboBox.jsx';
 import PrefSelect from './PrefSelect.jsx';
-import { FRACTION_DENOMINATORS } from '../../../../markset/us-units.js'; // Markset
 import ColorSchemePrefs from '../../../../markset/ColorSchemePrefs.jsx'; // Markset
+import MarkupStatusesEditor from './MarkupStatusesEditor.jsx';
+import UnitSystemRow from './UnitSystemRow.jsx';
 import { PAPIER_EENHEDEN } from '../../../annotations/papiermaat-eenheid.js';
+import { BREUK_PRECISIES } from '../../../core/voet-inch.js';
+import { OPPERVLAKTE_KEUZES } from '../../../annotations/oppervlakte-eenheid.js';
 
 const SUB_TABS = [
   { id: 'general', key: 'annotations.subtabGeneral' },
@@ -81,6 +84,13 @@ export default function AnnotationsTab(props) {
     { value: 'in', label: 'in' }, { value: 'ft', label: 'ft' }, { value: 'pt', label: 'pt' }, { value: 'px', label: 'px' },
   ];
 
+  // Weergave-eenheid van de oppervlakte van nieuwe meetvlakken (#1129):
+  // leeg volgt de schaal, anders m², hectares, ft² of acres.
+  const areaUnitOpts = [
+    { value: '', label: t('measurement.areaUnitAuto') },
+    ...OPPERVLAKTE_KEUZES.map(u => ({ value: u, label: u })),
+  ];
+
   const precisionOpts = [
     { value: 0, label: '1' }, { value: 1, label: '0.1' }, { value: 2, label: '0.01' }, { value: 3, label: '0.001' },
     { value: 4, label: '0.0001' }, { value: 5, label: '0.00001' }, { value: 6, label: '0.000001' },
@@ -94,18 +104,20 @@ export default function AnnotationsTab(props) {
     { value: '10', label: t('measurement.rounding10mm') },
   ];
 
-  const measureHeadOpts = lineEndingOpts('measurement');
+  const decimalOpts = [
+    { value: 'auto', label: t('measurement.decimalAuto') },
+    { value: 'comma', label: t('measurement.decimalComma') },
+    { value: 'point', label: t('measurement.decimalPoint') },
+  ];
 
-  // Markset: US units display (markset/us-units.js)
-  const imperialFormatOpts = [
-    { value: 'feet-inch', label: t('measurement.imperialFeetInch') },
+  // Imperiale lengtes en de schaallijsten (#996).
+  const lengthFormatOpts = [
     { value: 'decimal', label: t('measurement.imperialDecimal') },
+    { value: 'feetInch', label: t('measurement.imperialFeetInch') },
   ];
-  const fractionOpts = FRACTION_DENOMINATORS.map(d => ({ value: d, label: `1/${d}"` }));
-  const unitSystemOpts = [
-    { value: 'us', label: t('measurement.unitSystemUs') },
-    { value: 'metric', label: t('measurement.unitSystemMetric') },
-  ];
+  const fractionOpts = BREUK_PRECISIES.map(n => ({ value: n, label: n === 1 ? `1"` : `1/${n}"` }));
+
+  const measureHeadOpts = lineEndingOpts('measurement');
 
   return (
     <div class="pref-subtab-wrapper">
@@ -246,6 +258,32 @@ export default function AnnotationsTab(props) {
               <div class="pref-row">
                 <label>{t('annotations.icon')}</label>
                 <PrefSelect value={p.commentIcon[0]} setValue={p.commentIcon[1]} options={iconOpts} />
+              </div>
+            </fieldset>
+
+            {/* Eigen reviewstatussen van markeringen (#1076). */}
+            <fieldset class="pref-fieldset">
+              <legend>{t('annotations.markupStatuses')}</legend>
+              <MarkupStatusesEditor sets={p.markupStatusSets} active={p.activeMarkupStatusSet} legacy={p.markupStatuses} />
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label" title={t('annotations.showStatusBadgesHint')}>
+                  <input type="checkbox" checked={p.showStatusBadges[0]()} onChange={e => p.showStatusBadges[1](e.target.checked)} />
+                  <span>{t('annotations.showStatusBadges')}</span>
+                </label>
+              </div>
+            </fieldset>
+
+            {/* Stempelkiezer: ingebouwde stempels verbergen (#998). */}
+            <fieldset class="pref-fieldset">
+              <legend>{t('annotations.stamps')}</legend>
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label">
+                  <input type="checkbox" checked={p.hideBuiltInStamps[0]()} onChange={e => p.hideBuiltInStamps[1](e.target.checked)} />
+                  <span>{t('annotations.hideBuiltInStamps')}</span>
+                </label>
+              </div>
+              <div class="pref-row">
+                <span class="pref-hint">{t('annotations.hideBuiltInStampsHint')}</span>
               </div>
             </fieldset>
           </Match>
@@ -530,18 +568,48 @@ export default function AnnotationsTab(props) {
                 <PrefComboBox value={p.measureCtrlSnap[0]} setValue={p.measureCtrlSnap[1]}
                   options={[1, 5, 10, 20, 50, 100]} min={1} max={1000} suffix="" fallback={10} />
               </div>
-              {/* Markset: unit system and feet-inch display for ft and in measurements */}
+              {/* Getalnotatie van maten (#629): decimaalteken per taal of vast. */}
               <div class="pref-row">
-                <label>{t('measurement.unitSystem')}</label>
-                <PrefSelect value={p.unitSystem[0]} setValue={p.unitSystem[1]} options={unitSystemOpts} />
+                <label>{t('measurement.decimalNotation')}</label>
+                <PrefSelect value={p.measureDecimalNotation[0]} setValue={p.measureDecimalNotation[1]} options={decimalOpts} />
+              </div>
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label">
+                  <input type="checkbox" checked={p.measureDigitGrouping[0]()} onChange={e => p.measureDigitGrouping[1](e.target.checked)} />
+                  <span>{t('measurement.digitGrouping')}</span>
+                </label>
+              </div>
+            </fieldset>
+
+            {/* Eenheden (#996, #1158): de ene instelling Metrisch / Imperiaal,
+                met de voet-inch-breuk als detail. Dezelfde instelling staat op
+                het tabblad Algemeen. */}
+            <fieldset class="pref-fieldset">
+              <legend>{t('measurement.units')}</legend>
+              <UnitSystemRow prefs={p} id="pref-units-measurement" />
+              <div class="pref-row">
+                <label>{t('measurement.imperialLengthFormat')}</label>
+                <PrefSelect value={p.imperialLengthFormat[0]} setValue={p.imperialLengthFormat[1]} options={lengthFormatOpts} />
               </div>
               <div class="pref-row">
-                <label>{t('measurement.imperialFormat')}</label>
-                <PrefSelect value={p.measureImperialFormat[0]} setValue={p.measureImperialFormat[1]} options={imperialFormatOpts} />
+                <label>{t('measurement.imperialFractionPrecision')}</label>
+                <PrefSelect value={p.imperialFractionPrecision[0]} setValue={p.imperialFractionPrecision[1]} options={fractionOpts}
+                  disabled={() => p.imperialLengthFormat[0]() !== 'feetInch'} />
+              </div>
+            </fieldset>
+
+            {/* Schaalcontrole (#629): wanneer een afwijking goed, een waarschuwing of fout is. */}
+            <fieldset class="pref-fieldset">
+              <legend>{t('measurement.scaleCheck')}</legend>
+              <div class="pref-row">
+                <label>{t('measurement.scaleCheckOk')}</label>
+                <PrefComboBox value={p.scaleCheckOkPercent[0]} setValue={p.scaleCheckOkPercent[1]}
+                  options={[0.1, 0.25, 0.5, 1]} min={0.01} max={50} suffix="%" fallback={0.5} />
               </div>
               <div class="pref-row">
-                <label>{t('measurement.fractionPrecision')}</label>
-                <PrefSelect value={p.measureFractionDenominator[0]} setValue={p.measureFractionDenominator[1]} options={fractionOpts} />
+                <label>{t('measurement.scaleCheckWarn')}</label>
+                <PrefComboBox value={p.scaleCheckWarnPercent[0]} setValue={p.scaleCheckWarnPercent[1]}
+                  options={[1, 2, 3, 5]} min={0.01} max={100} suffix="%" fallback={2} />
               </div>
             </fieldset>
 
@@ -637,6 +705,10 @@ export default function AnnotationsTab(props) {
                 <div class="pref-row">
                   <label>{t('measurement.unit')}</label>
                   <PrefSelect value={p.measureAreaDimUnit[0]} setValue={p.measureAreaDimUnit[1]} options={unitOpts} />
+                </div>
+                <div class="pref-row">
+                  <label>{t('measurement.areaUnit')}</label>
+                  <PrefSelect value={p.measureAreaDisplayUnit[0]} setValue={p.measureAreaDisplayUnit[1]} options={areaUnitOpts} />
                 </div>
                 <div class="pref-row">
                   <label>{t('measurement.precision')}</label>

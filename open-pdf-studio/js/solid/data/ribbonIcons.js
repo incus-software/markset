@@ -72,6 +72,8 @@ export const findIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 
 
 // --- Comment tab: Drawing ---
 
+// Markeren in tekstmodus (#927): een T op een gele balk.
+export const textHighlightIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="13" width="18" height="7" fill="#facc15" stroke="none" opacity="0.85"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4h12M12 4v14"/></svg>`;
 export const highlightIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10M3 10h18M3 14h18"/></svg>`;
 
 export const freehandIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>`;
@@ -103,12 +105,14 @@ export const cloudPolylineIcon = `<svg fill="none" stroke="currentColor" viewBox
 
 // --- Comment tab: Text ---
 
-export const textAnnotIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>`;
+export const textAnnotIcon = `<svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>`;
 
 export const textboxIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" stroke-width="2" stroke-dasharray="3 2"/><text x="12" y="15" text-anchor="middle" font-size="10" font-weight="bold" font-family="sans-serif" fill="currentColor" stroke="none">T</text><line x1="8" y1="8" x2="8" y2="16" stroke-width="1.5"/></svg>`;
 
 // Bijlage-annotatie (#376): paperclip.
 export const fileAttachmentIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`;
+// Hyperlink (#953): twee schakels van een ketting.
+export const linkIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14a4.5 4.5 0 006.36 0l3-3a4.5 4.5 0 00-6.36-6.36l-1.5 1.5M14 10a4.5 4.5 0 00-6.36 0l-3 3a4.5 4.5 0 006.36 6.36l1.5-1.5"/></svg>`;
 export const noteIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>`;
 
 export const calloutIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="3" width="13" height="10" stroke-width="1.8"/><line x1="11.5" y1="6.5" x2="19.5" y2="6.5" stroke-width="1.2" opacity="0.5"/><line x1="11.5" y1="9.5" x2="17" y2="9.5" stroke-width="1.2" opacity="0.5"/><path d="M9,8 L5,8 L2,20" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M2,20 L0.5,17 L4,17.5 Z" fill="currentColor" stroke="none"/></svg>`;
@@ -119,7 +123,9 @@ export const stampIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24
 
 export const signatureIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/><path stroke-linecap="round" stroke-width="2" d="M3 21c2-2 4-3 6-1s4-1 6-3"/></svg>`;
 
-export const northArrowIcon = `<svg viewBox="0 0 24 26" stroke="currentColor"><polygon points="12,3 9,15 12,15 12,21" fill="currentColor" stroke="currentColor" stroke-width="0.7"/><polygon points="12,3 15,15 12,15" fill="none" stroke="currentColor" stroke-width="0.7"/><polygon points="12,15 15,15 12,21" fill="none" stroke="currentColor" stroke-width="0.7"/><line x1="4" y1="15" x2="9" y2="15" stroke="currentColor" stroke-width="0.7"/><line x1="15" y1="15" x2="20" y2="15" stroke="currentColor" stroke-width="0.7"/></svg>`;
+export const digitalSignIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="16" stroke-width="1.6"/><path stroke-linecap="round" stroke-width="1.6" d="M6 9h7M6 12h5M6 16c1-1.2 1.8-1.6 2.4-1.2.7.4.6 1.3 1.4 1.2.5 0 .9-.6 1.4-1"/><circle cx="18" cy="14" r="3" stroke-width="1.6"/><path stroke-linejoin="round" stroke-width="1.6" d="M16.6 16.7 16 21l2-1.1 2 1.1-.6-4.3"/></svg>`;
+
+export const northArrowIcon = `<svg width="24" height="26" viewBox="0 0 24 26" stroke="currentColor"><polygon points="12,3 9,15 12,15 12,21" fill="currentColor" stroke="currentColor" stroke-width="0.7"/><polygon points="12,3 15,15 12,15" fill="none" stroke="currentColor" stroke-width="0.7"/><polygon points="12,15 15,15 12,21" fill="none" stroke="currentColor" stroke-width="0.7"/><line x1="4" y1="15" x2="9" y2="15" stroke="currentColor" stroke-width="0.7"/><line x1="15" y1="15" x2="20" y2="15" stroke="currentColor" stroke-width="0.7"/></svg>`;
 
 // --- Comment tab: Measure ---
 
@@ -133,7 +139,7 @@ export const measureAngleIcon = `<svg fill="none" stroke="currentColor" viewBox=
 
 export const calibrateIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20L20 4"/><path stroke-linecap="round" stroke-width="1.5" d="M7 17l2-2m3-3l2-2m3-3l2-2"/><circle cx="4" cy="20" r="1.5" fill="currentColor" stroke="none"/><circle cx="20" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>`;
 
-export const snapToDrawingIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" d="M3 3h18v18H3z"/><path stroke-width="1.5" stroke-dasharray="2 2" d="M7 7h10v10H7z"/><circle cx="7" cy="7" r="2" fill="currentColor" stroke="none"/><path stroke-width="2" stroke-linecap="round" d="M12 12l-4-4"/></svg>`;
+export const snapToDrawingIcon = `<svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" d="M3 3h18v18H3z"/><path stroke-width="1.5" stroke-dasharray="2 2" d="M7 7h10v10H7z"/><circle cx="7" cy="7" r="2" fill="currentColor" stroke="none"/><path stroke-width="2" stroke-linecap="round" d="M12 12l-4-4"/></svg>`;
 
 // --- Comment tab: Redaction ---
 
@@ -143,7 +149,7 @@ export const applyRedactionsIcon = `<svg fill="currentColor" viewBox="0 0 24 24"
 
 // --- Comment tab: Actions ---
 
-export const undoIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>`;
+export const undoIcon = `<svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>`;
 
 export const clearPageIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>`;
 
@@ -171,7 +177,7 @@ export const propertiesIcon = `<svg fill="none" stroke="currentColor" viewBox="0
 
 export const annotationsListIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>`;
 
-export const thinLinesIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="1" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>`;
+export const thinLinesIcon = `<svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="1" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>`;
 
 export const themeDropdownArrow = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="10" height="10"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 9l6 6 6-6"/></svg>`;
 
@@ -200,6 +206,9 @@ export const manageWatermarksIcon = `<svg fill="none" stroke="currentColor" view
 
 export const aboutIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
 
+// Schild met uitroepteken: uitleg over een waarschuwing van een virusscanner (#761).
+export const virusWarningIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3l8 3v6c0 5-3.4 8.3-8 9-4.6-.7-8-4-8-9V6l8-3zM12 8v5m0 3h.01"/></svg>`;
+
 export const shortcutsIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>`;
 
 // Vorige versie installeren: klok met terugpijl.
@@ -215,7 +224,7 @@ export const extensionsIcon = `<svg fill="none" stroke="currentColor" viewBox="0
 
 // --- Format tab: Gallery & Arrows ---
 
-export const styleMoreArrow = `<svg viewBox="0 0 8 14"><path d="M1 1l5 6-5 6" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`;
+export const styleMoreArrow = `<svg width="8" height="14" viewBox="0 0 8 14"><path d="M1 1l5 6-5 6" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`;
 
 export const colorDropdownArrow = `<svg class="ribbon-color-dd-arrow" viewBox="0 0 8 5"><path d="M0 0l4 4 4-4z" fill="currentColor"/></svg>`;
 
@@ -294,6 +303,8 @@ export const sendToBackIcon = `<svg viewBox="0 0 16 16" fill="none"><rect x="5" 
 
 // --- Arrange tab: Size / Rotate / Reflect ---
 
+// Kader passend maken (#1144): een ruim gestippeld vak dat krimpt tot het kader om de tekstregels.
+export const fitTextBoxIcon = `<svg viewBox="0 0 32 32" fill="none"><rect x="3" y="4" width="26" height="24" stroke="#9aa7b4" stroke-width="1.2" stroke-dasharray="3 2"/><rect x="7" y="9" width="18" height="12" fill="#4a86c8" fill-opacity="0.15" stroke="#4a86c8" stroke-width="1.5"/><path d="M10 13h12M10 17h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/><path d="M27 26l-3-3m0 2.4V23h2.4" stroke="#4a86c8" stroke-width="1.3"/></svg>`;
 export const sameSize16Icon = `<svg viewBox="0 0 32 32" fill="none"><rect x="4" y="4" width="24" height="24" rx="1" stroke="#4a86c8" stroke-width="1.5" stroke-dasharray="3 2"/><rect x="8" y="8" width="10" height="10" fill="#4a86c8" opacity="0.3" stroke="#4a86c8" stroke-width="1"/><rect x="14" y="14" width="10" height="10" fill="#4a86c8" opacity="0.3" stroke="#4a86c8" stroke-width="1"/></svg>`;
 
 export const rotateCcwIcon = `<svg viewBox="0 0 16 16" fill="none"><path d="M3 8a5 5 0 019.5-2" stroke="#555" stroke-width="1.5"/><path d="M5 3L3 6l3 0" fill="#555"/></svg>`;

@@ -30,7 +30,8 @@
     "formRadio": "Prepínač formulára",
     "screenshot": "Snímka obrazovky",
     "pageLabelPick": "Výber textu pre menovku strany",
-    "proofread": "Korektúra"
+    "proofread": "Korektúra",
+    "count": "Počítanie"
   },
   "toolLabel": "Nástroj:",
   "annotationsLabel": "Anotácie:",
@@ -110,6 +111,7 @@
   "searchHitsOne": "1 zhoda",
   "searchHitsMany": "Zhôd: {{count}}",
   "passwordProtectedBar": "Chránené heslom: otvorené iba na čítanie.",
+  "passwordProtectedEditableBar": "Chránené heslom. Uloženie ochranu zachová.",
   "documentSearch": {
     "title": "Prehľadať dokumenty",
     "query": "Hľadaný text",
@@ -157,5 +159,12 @@
     "port": "Port: {{port}}",
     "lastTool": "Posledný nástroj: {{tool}} o {{time}}",
     "noTool": "Zatiaľ žiadne volania nástrojov"
-  }
+  },
+  "sharedReviewActive": "Zdieľaná revízia",
+  "sharedReviewUpdates": "Zdieľaná revízia: nové {{n}}",
+  "sharedReviewTitle": "Poznámky sa zdieľajú cez {{folder}}. Kliknutím otvoríte zdieľanú revíziu.",
+  "sharedReviewError": "Zdieľaná revízia: priečinok nedostupný",
+  "pdfaReadOnly": "Tento dokument zodpovedá štandardu {{label}} a bol otvorený iba na čítanie, aby sa zabránilo jeho úprave.",
+  "pdfaValidate": "Overiť",
+  "countGroupTip": "Active count group: the next marker goes into this group"
 }

@@ -9,7 +9,9 @@
     "measureTitle": "Faktisk lengde",
     "measureQuestion": "Hva er den faktiske lengden av denne avstanden?",
     "measuredOnPaper": "Målt på papir",
-    "computedScale": "Beregnet målestokk"
+    "computedScale": "Beregnet målestokk",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Målestokk",
@@ -17,7 +19,9 @@
     "viewports": "Visningsvinduer",
     "noViewports": "Ingen visningsvinduer definert",
     "measurements": "Målinger",
-    "noMeasurements": "Ingen målinger ennå"
+    "noMeasurements": "Ingen målinger ennå",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Egenskaper",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Angitt av {{author}} den {{date}}",
     "layer": "Lag",
     "layerMarkupGroup": "Markeringslag",
-    "layerDocumentGroup": "Dokumentets lag"
+    "layerDocumentGroup": "Dokumentets lag",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Ingen",
   "moreColors": "Flere farger...",
@@ -248,6 +254,7 @@
     "title": "Tittel",
     "author": "Forfatter",
     "subject": "Emne",
+    "keywords": "Nøkkelord",
     "creator": "Oppretter",
     "producer": "Produsent",
     "pdfVersion": "PDF-versjon",
@@ -316,7 +323,8 @@
     "redaction": "Sladding",
     "scaleBar": "Målestokklinjal",
     "parametricSymbol": "Parametrisk symbol",
-    "fileAttachment": "Filvedlegg"
+    "fileAttachment": "Filvedlegg",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Veksle panel",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Slett bokmerke",
     "findBookmark": "Søk...",
     "findBookmarkTip": "Skriv for å hoppe til et bokmerke. Enter åpner det, Enter igjen går til neste treff.",
+    "findPage": "Søk...",
+    "findPageTip": "Skriv for å hoppe til en side etter arknavn eller nummer. Enter åpner den, Enter igjen går til neste treff.",
     "addAttachment": "Legg til vedlegg",
     "openAttachment": "Åpne vedlegg",
     "saveAttachment": "Lagre vedlegg",
@@ -452,6 +462,9 @@
     "scaleAuto": "Dokumentets målestokk",
     "scaleTooltip": "Overstyr målestokken for denne merknaden (enheter per punkt). La feltet stå tomt for å bruke dokumentets/områdets målestokk.",
     "unit": "Enhet",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Presisjon (desimaler)",
     "dimType": "Type",
     "dimTypeCustom": "Egendefinert",
@@ -473,7 +486,9 @@
     "depthNone": "Ingen",
     "depthTooltip": "Vegghøyde, dekketykkelse osv. i målingens enhet. Lengde × dybde gir en flate, areal × dybde et volum.",
     "surface": "Flate",
-    "volume": "Volum"
+    "volume": "Volum",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Lister",
@@ -496,7 +511,18 @@
     },
     "preview": "Forhåndsvisning",
     "exportCsv": "Eksporter CSV",
-    "workbookBindings": "Regnearkkoblinger"
+    "workbookBindings": "Regnearkkoblinger",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Listeveiviser",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Skjøt ved start",
     "joinAtEnd": "Skjøt ved slutt",
-    "joinHint": "Av: denne enden av veggen blir aldri gjæret, skjøtt som T eller kuttet mot en annen vegg; den beholder en rett ende der den er tegnet."
+    "joinHint": "Av: denne enden av veggen blir aldri gjæret, skjøtt som T eller kuttet mot en annen vegg; den beholder en rett ende der den er tegnet.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Tegneinnstillinger",
@@ -682,6 +804,7 @@
       "height": "Høyde",
       "location": "Plassering",
       "locationSource": "Kilde for plassering",
+      "layer": "Lag",
       "rebarMark": "Posisjonsnummer",
       "rebarDiameter": "Ø",
       "rebarShape": "Bøyeform",
@@ -807,6 +930,24 @@
     "rules": "Tildelingen bruker midtpunktet av markeringens omsluttende ramme, kanter inkludert. Den dypeste sonen vinner, deretter minste areal og så sone-ID. Bruk rette polygoner uten hull eller uroterte rektangler. Ugyldige eller dupliserte soneidentiteter utelates.",
     "loading": "Merknader lastes inn: plasseringer kan fortsatt endres."
   },
+  "dynamicStamp": {
+    "title": "Stempelfelt",
+    "template": "Mal",
+    "refresh": "Oppdater dato, bruker og side",
+    "lock": "Lås stempel",
+    "lockConfirm": "Låse dette stempelet? Feltene kan da ikke lenger endres.",
+    "locked": "Dette stempelet er låst: feltene kan ikke lenger endres.",
+    "field": {
+      "date": "Dato",
+      "time": "Klokkeslett",
+      "datetime": "Dato og klokkeslett",
+      "user": "Bruker",
+      "page": "Side",
+      "pages": "Antall sider",
+      "filename": "Filnavn",
+      "title": "Dokumenttittel"
+    }
+  },
   "toolSets": {
     "title": "Verktøysett",
     "typeWall": "Vegg",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "Filen er for stor for et verktøysett.",
     "errorFileInvalid": "Denne filen er ikke et gyldig verktøysett.",
     "errorFileNewer": "Dette verktøysettet ble laget med en nyere versjon av Open PDF Studio. Oppdater appen for å importere det.",
-    "damagedStatus": "De lagrede verktøysettene kunne ikke leses. Den skadde filen ble beholdt som «{{name}}»."
+    "damagedStatus": "De lagrede verktøysettene kunne ikke leses. Den skadde filen ble beholdt som «{{name}}».",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Åpne",
     "saveAs": "Lagre som...",
     "noContent": "Innholdet i denne filen er ikke innebygd i PDF-en."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

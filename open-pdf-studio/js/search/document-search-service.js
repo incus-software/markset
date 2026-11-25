@@ -3,7 +3,8 @@ import { state, getActiveDocument } from '../core/state.js';
 import { isTauri, listPdfFiles, readBinaryFile, extractFileName } from '../core/platform.js';
 import { pdfjsBronnen } from '../core/basis-url.js';
 import { searchDocuments } from './document-search.js';
-import { extractPageText, zoekPaginaAlleBronnen, buildPattern } from './find-controller.js';
+import { extractPageText, zoekPaginaAlleBronnen, buildPattern, rustTekstBron } from './find-controller.js';
+import { metOcrWoorden } from '../pdf/ocr-laag.js';
 
 // Recompute rather than retain a folder index. Never use stale extracted text.
 function revision(doc, pdf) {
@@ -35,10 +36,19 @@ export async function searchWorkspace(request, callbacks) {
       let task;
       let contentDigest;
       let pdf = doc?.pdfDoc;
+      // Bestand op schijf en de bytes die de app ervan heeft: daarmee kan de
+      // PDFium-worker de tekst op de desktop lezen als die route aan staat
+      // (rust-zoektekst.js; standaard leest pdf.js).
+      let bytesOpSchijf = null;
       if (doc && !pdf) throw new Error('DOCUMENT_NOT_READY');
+      if (doc?.filePath) {
+        try { bytesOpSchijf = (await import('../pdf/loader.js')).getCachedPdfBytes(doc.filePath); }
+        catch { bytesOpSchijf = null; }
+      }
       if (!doc) {
         const { getDocument } = await import('pdfjs-dist');
         const bytes = await readBinaryFile(source.path);
+        bytesOpSchijf = bytes;
         if (signal?.aborted) throw new Error('CANCELLED');
         contentDigest = await digest(bytes);
         task = getDocument({ data: bytes.slice(), ...pdfjsBronnen(), isEvalSupported: false });
@@ -50,13 +60,18 @@ export async function searchWorkspace(request, callbacks) {
       }
       const fingerprint = pdf.fingerprints?.[0];
       const labels = await pdf.getPageLabels().catch(() => null);
+      const bron = await rustTekstBron(pdf, doc ? doc.filePath : source.path, bytesOpSchijf);
+      bytesOpSchijf = null;
       return {
         pages: pdf.numPages,
         metadata: { fingerprint, contentDigest },
         revision: () => doc ? revision(doc, pdf) : fingerprint,
-        close: async () => { if (task) await task.destroy(); },
+        close: async () => { bron?.sluit(); if (task) await task.destroy(); },
         async search(pageNum, options) {
-          const data = await extractPageText(pdf, pageNum, doc);
+          // Een open document: ook de herkende woorden die nog niet zijn
+          // opgeslagen (#880, ocr-laag.js).
+          const pdfTekst = await extractPageText(pdf, pageNum, doc, bron);
+          const data = doc ? metOcrWoorden(pdfTekst, doc) : pdfTekst;
           let annotations = [];
           if (options.annotations !== false) {
             if (doc) {

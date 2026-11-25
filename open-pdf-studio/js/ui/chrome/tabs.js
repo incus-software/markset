@@ -1,6 +1,6 @@
 import { state, createDocument, getActiveDocument, findDocumentByPath, clearSelection } from '../../core/state.js';
 import { appVersion } from '../../core/app-version.js';
-import { renderPage, renderContinuous, clearPdfView } from '../../pdf/renderer.js';
+import { renderPage, renderContinuous, clearPdfView, zetWeergaveLayout } from '../../pdf/renderer.js';
 import { hideFormFieldsBar } from '../../pdf/form-layer.js';
 import { redrawAnnotations, redrawContinuous, updateQuickAccessButtons } from '../../annotations/rendering.js';
 import { updateAllStatus } from './status-bar.js';
@@ -15,7 +15,7 @@ import { hasPendingRestore } from '../../core/reader-mode-tracking.js';
 import { actiefNaSluiten } from '../../pdf/handtekeningen/opslaan.js';
 import { compareActive, compareFocused, focusCompareTab, blurCompareTab } from '../../compare/compare-store.js';
 import { volgendTabDoel, voerTabWisselUit } from './tab-sneltoets.js';
-import { isBeveiligdDocument } from '../../pdf/wachtwoord-pdf.js';
+import { isBeveiligdDocument, opslaanGeweigerd, heeftWerkkopie } from '../../pdf/wachtwoord-pdf.js';
 import { hostVersieLabel } from '../../pdf/host-versies.js';
 import i18next from '../../i18n/config.js';
 import { meldWijziging, meldGesloten } from '../../herstel/haken.js';
@@ -183,6 +183,8 @@ function toonTab(index) {
     // verlaten en tekent direct de gecachte paginabitmap (pdf-viewport.js
     // setPage, weergave-per-document.js), in plaats van opnieuw passend te
     // maken en te renderen (#539).
+    // De twee paginavlakken zijn gedeeld; toon het vlak van dít document.
+    zetWeergaveLayout(newDoc);
     const firstRender = newDoc.viewMode === 'continuous'
       ? renderContinuous()
       : renderPage(newDoc.currentPage);
@@ -192,6 +194,19 @@ function toonTab(index) {
     // tab was in front (multi-file open, session restore, a tab switch
     // during the load) has not shown its stored position yet. Do that on
     // this first activation, once the page is up — same order as the loader.
+    // Page scales detected while this document was in the background
+    // (pagina-schalen-app.js): its measurements follow them now.
+    if (newDoc._metingenHerberekenen) {
+      delete newDoc._metingenHerberekenen;
+      Promise.resolve(firstRender)
+        .then(() => import('../../annotations/measurement.js'))
+        .then((m) => {
+          if (getActiveDocument() === newDoc) m.recalculateAllMeasurements();
+          else newDoc._metingenHerberekenen = true;
+        })
+        .catch((e) => console.warn('[tabs] recalculating measurements failed:', e));
+    }
+
     const readerRestorePending = hasPendingRestore(newDoc);
     if (readerRestorePending) {
       Promise.resolve(firstRender)
@@ -216,6 +231,14 @@ function toonTab(index) {
           pdfContainer.scrollTop = y;
         });
     }
+
+    // Hetzelfde document in meer tabbladen (#919): een weergave die voor
+    // kwam terwijl het document achter lag, krijgt hier haar stand.
+    Promise.resolve(firstRender)
+      .catch(() => {})
+      .then(() => import('./weergave-tabs.js'))
+      .then((m) => { if (getActiveDocument() === newDoc) return m.naTabWissel(newDoc); })
+      .catch((e) => console.warn('[tabs] weergave van tabblad niet teruggezet:', e));
 
     // Regenerate thumbnails for the new document
     generateThumbnails();
@@ -244,8 +267,7 @@ function toonTab(index) {
     import('../../pdf/loader.js').then(({ isPdfAReadOnly }) => {
       if (isPdfAReadOnly()) {
         const label = `PDF/A-${newDoc.pdfaCompliance.part}${newDoc.pdfaCompliance.conformance ? newDoc.pdfaCompliance.conformance.toLowerCase() : ''}`;
-        const text = `This document complies with the ${label} standard and has been opened read-only to prevent modification.`;
-        import('../../solid/stores/pdfaBarStore.js').then(m => m.showPdfABar(text));
+        import('../../solid/stores/pdfaBarStore.js').then(m => m.showPdfABar(label));
       }
     });
   }
@@ -293,9 +315,9 @@ export async function closeTab(index, force = false, dialogAction = null) {
   // MCP-brug en tests, die geen OS-dialoog kunnen bedienen maar wél de echte
   // sluitvolgorde (opslaan → opruimen → sluiten) moeten doorlopen.
   let vorigActief = null;
-  // Een met een wachtwoord geopende PDF is alleen-lezen en kan niet
+  // Een beveiligde PDF die niet beveiligd terug te schrijven is, kan niet
   // opgeslagen worden: niets te vragen.
-  if (!force && doc.modified && !isBeveiligdDocument(doc)) {
+  if (!force && doc.modified && !opslaanGeweigerd(doc)) {
     const action = dialogAction || await showUnsavedChangesDialog(doc.fileName);
     if (action === 'cancel') return false;
     if (action === 'save') {
@@ -376,6 +398,8 @@ export async function closeTab(index, force = false, dialogAction = null) {
 
   // Clear thumbnail cache for this document
   clearThumbnailCache(doc.id);
+  // De bewaarde standen van zijn andere tabbladen (#919).
+  import('./weergave-tabs.js').then((m) => m.vergeetDocument(doc)).catch(() => {});
 
   index = state.documents.indexOf(doc);
   if (index < 0) return false;
@@ -454,12 +478,16 @@ export async function closeTab(index, force = false, dialogAction = null) {
   // worker-processen hem hebben losgelaten. Rust verwijdert alleen bestanden
   // in zijn eigen map; wat nog in gebruik is, ruimt het afsluiten of de
   // volgende start op.
-  if (isBeveiligdDocument(doc) && doc.filePath && doc.filePath !== doc.originalFilePath
-      && !state.documents.some((d) => d.filePath === doc.filePath)) {
+  if (heeftWerkkopie(doc) && !state.documents.some((d) => d.filePath === doc.filePath)) {
     try {
       await window.__TAURI__?.core?.invoke?.('release_protected_pdf', { path: doc.filePath });
     } catch (e) { console.warn('[tabs] werkkopie van beveiligde PDF niet verwijderd:', e); }
   }
+  // De beveiligingssessies (sleutels in Rust) van dit document vergeten (#378).
+  try {
+    const { geefSessiesVrij } = await import('../../pdf/beveiliging-toepassen.js');
+    await geefSessiesVrij(doc);
+  } catch (e) { console.warn('[tabs] beveiligingssessies niet vrijgegeven:', e); }
 
   return true;
 }
@@ -492,12 +520,14 @@ async function showUnsavedChangesDialog(fileName) {
 }
 
 /**
- * Close the current active tab
+ * Close the current active tab. Is the document open in more tabs (#919),
+ * only this tab closes and the document stays open.
  * @returns {boolean} True if tab was closed
  */
 export async function closeActiveTab() {
   if (state.activeDocumentIndex === -1) return false;
-  return closeTab(state.activeDocumentIndex);
+  const { sluitActiefTabItem } = await import('./weergave-tabs.js');
+  return sluitActiefTabItem();
 }
 
 /**
@@ -527,9 +557,9 @@ export async function renameDocument(index, newName) {
 
   const doc = state.documents[index];
 
-  // Met een wachtwoord geopend: alleen-lezen, ook de bestandsnaam. (Het pad
-  // zou bovendien de werkkopie zijn, niet het origineel.)
-  if (isBeveiligdDocument(doc)) {
+  // Met een wachtwoord geopend of uit een ontsleutelde werkkopie: ook de
+  // bestandsnaam blijft (het pad zou de werkkopie zijn, niet het origineel).
+  if (isBeveiligdDocument(doc) || heeftWerkkopie(doc)) {
     const { showMessage } = await import('../../solid/stores/dialogStore.js');
     const i18next = (await import('../../i18n/config.js')).default;
     showMessage(i18next.t('protectedPdfReadOnly'));
@@ -644,6 +674,9 @@ export function markDocumentModified(doc = getActiveDocument()) {
     // Direct modification bypasses undo stack, so clean point is unreachable
     doc.savedUndoStackLength = -1;
     meldWijziging(doc);
+    // Een inhoudelijke wijziging, niet alleen goedkeuringsgegevens (#651,
+    // approval-routing/document-store.js zet de vlag zelf weer).
+    doc._alleenGoedkeuringGewijzigd = false;
     updateTabBar();
     updateWindowTitle();
   }
@@ -656,6 +689,9 @@ export function markDocumentSaved(doc = getActiveDocument()) {
   if (doc) {
     doc.modified = false;
     doc.savedUndoStackLength = (doc.undoStack || []).length;
+    // Het bestand is nu de basisversie voor goedkeuringsaanvragen (#651).
+    doc._goedkeuringBasis = doc.inhoudRevisie || 0;
+    doc._alleenGoedkeuringGewijzigd = false;
     updateTabBar();
     updateWindowTitle();
   }

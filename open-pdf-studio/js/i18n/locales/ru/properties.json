@@ -9,7 +9,9 @@
     "measureTitle": "Реальная длина",
     "measureQuestion": "Какова реальная длина этого отрезка?",
     "measuredOnPaper": "Измерено на бумаге",
-    "computedScale": "Рассчитанный масштаб"
+    "computedScale": "Рассчитанный масштаб",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Масштаб",
@@ -17,7 +19,9 @@
     "viewports": "Видовые экраны",
     "noViewports": "Видовые экраны не определены",
     "measurements": "Измерения",
-    "noMeasurements": "Измерений пока нет"
+    "noMeasurements": "Измерений пока нет",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Свойства",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Установлено: {{author}}, {{date}}",
     "layer": "Слой",
     "layerMarkupGroup": "Слои пометок",
-    "layerDocumentGroup": "Слои документа"
+    "layerDocumentGroup": "Слои документа",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Нет",
   "moreColors": "Больше цветов...",
@@ -248,6 +254,7 @@
     "title": "Название",
     "author": "Автор",
     "subject": "Тема",
+    "keywords": "Ключевые слова",
     "creator": "Создатель",
     "producer": "Производитель",
     "pdfVersion": "Версия PDF",
@@ -316,7 +323,8 @@
     "redaction": "Затирание",
     "scaleBar": "Масштабная линейка",
     "parametricSymbol": "Параметрический символ",
-    "fileAttachment": "Вложенный файл"
+    "fileAttachment": "Вложенный файл",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Переключить панель",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Удалить закладку",
     "findBookmark": "Найти...",
     "findBookmarkTip": "Начните вводить, чтобы перейти к закладке. Enter открывает её, повторный Enter — следующее совпадение.",
+    "findPage": "Найти...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "Добавить вложение",
     "openAttachment": "Открыть вложение",
     "saveAttachment": "Сохранить вложение",
@@ -452,6 +462,9 @@
     "scaleAuto": "Масштаб документа",
     "scaleTooltip": "Переопределить масштаб для этой аннотации (единиц на пункт). Оставьте пустым, чтобы использовать масштаб документа/области.",
     "unit": "Единица",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Точность (знаков после запятой)",
     "dimType": "Тип",
     "dimTypeCustom": "Пользовательский",
@@ -473,7 +486,9 @@
     "depthNone": "Нет",
     "depthTooltip": "Высота стены, толщина перекрытия и т. п. в единице измерения. Длина × глубина даёт площадь, площадь × глубина — объём.",
     "surface": "Площадь",
-    "volume": "Объём"
+    "volume": "Объём",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Спецификации",
@@ -496,7 +511,18 @@
     },
     "preview": "Предпросмотр",
     "exportCsv": "Экспорт в CSV",
-    "workbookBindings": "Привязки к таблицам"
+    "workbookBindings": "Привязки к таблицам",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Мастер спецификаций",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Соединять в начале",
     "joinAtEnd": "Соединять в конце",
-    "joinHint": "Выкл.: этот конец стены никогда не соединяется под углом, не примыкает тавром и не обрезается по другой стене; он сохраняет прямой торец там, где нарисован."
+    "joinHint": "Выкл.: этот конец стены никогда не соединяется под углом, не примыкает тавром и не обрезается по другой стене; он сохраняет прямой торец там, где нарисован.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Настройки чертежа",
@@ -682,6 +804,7 @@
       "height": "Высота",
       "location": "Расположение",
       "locationSource": "Источник расположения",
+      "layer": "Слой",
       "rebarMark": "Позиция",
       "rebarDiameter": "Ø",
       "rebarShape": "Форма гибки",
@@ -807,6 +930,24 @@
     "rules": "Для назначения используется центр габаритного прямоугольника пометки, включая края. Приоритет у самой глубокой зоны, затем у наименьшей площади, затем по ID зоны. Используйте прямолинейные многоугольники без отверстий или прямоугольники без поворота. Недопустимые или повторяющиеся идентификаторы зон исключаются.",
     "loading": "Аннотации загружаются: расположения ещё могут измениться."
   },
+  "dynamicStamp": {
+    "title": "Поля штампа",
+    "template": "Шаблон",
+    "refresh": "Обновить дату, пользователя и страницу",
+    "lock": "Заблокировать штамп",
+    "lockConfirm": "Заблокировать этот штамп? Его поля больше нельзя будет изменить.",
+    "locked": "Этот штамп заблокирован: его поля больше нельзя изменить.",
+    "field": {
+      "date": "Дата",
+      "time": "Время",
+      "datetime": "Дата и время",
+      "user": "Пользователь",
+      "page": "Страница",
+      "pages": "Число страниц",
+      "filename": "Имя файла",
+      "title": "Заголовок документа"
+    }
+  },
   "toolSets": {
     "title": "Наборы инструментов",
     "typeWall": "Стена",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "Файл слишком велик для набора инструментов.",
     "errorFileInvalid": "Этот файл не является допустимым набором инструментов.",
     "errorFileNewer": "Этот набор создан в более новой версии Open PDF Studio. Обновите приложение, чтобы импортировать его.",
-    "damagedStatus": "Не удалось прочитать сохранённые наборы инструментов. Повреждённый файл сохранён как «{{name}}»."
+    "damagedStatus": "Не удалось прочитать сохранённые наборы инструментов. Повреждённый файл сохранён как «{{name}}».",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Открыть",
     "saveAs": "Сохранить как...",
     "noContent": "Содержимое этого файла не встроено в PDF."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

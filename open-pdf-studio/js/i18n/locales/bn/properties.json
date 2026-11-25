@@ -9,7 +9,9 @@
     "measureTitle": "প্রকৃত দৈর্ঘ্য",
     "measureQuestion": "এই দূরত্বের প্রকৃত দৈর্ঘ্য কত?",
     "measuredOnPaper": "কাগজে মাপা",
-    "computedScale": "গণনাকৃত স্কেল"
+    "computedScale": "গণনাকৃত স্কেল",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "স্কেল",
@@ -17,7 +19,9 @@
     "viewports": "ভিউপোর্ট",
     "noViewports": "কোনো ভিউপোর্ট সংজ্ঞায়িত নেই",
     "measurements": "পরিমাপসমূহ",
-    "noMeasurements": "এখনও কোনো পরিমাপ নেই"
+    "noMeasurements": "এখনও কোনো পরিমাপ নেই",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "বৈশিষ্ট্য",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "{{date}} তারিখে {{author}} নির্ধারণ করেছেন",
     "layer": "স্তর",
     "layerMarkupGroup": "মার্কআপ স্তর",
-    "layerDocumentGroup": "নথির স্তর"
+    "layerDocumentGroup": "নথির স্তর",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "কোনোটি নয়",
   "moreColors": "আরও রঙ...",
@@ -248,6 +254,7 @@
     "title": "শিরোনাম",
     "author": "লেখক",
     "subject": "বিষয়",
+    "keywords": "কীওয়ার্ড",
     "creator": "নির্মাতা",
     "producer": "প্রযোজক",
     "pdfVersion": "PDF সংস্করণ",
@@ -316,7 +323,8 @@
     "redaction": "সংশোধন",
     "scaleBar": "স্কেল বার",
     "parametricSymbol": "প্যারামেট্রিক প্রতীক",
-    "fileAttachment": "ফাইল সংযুক্তি"
+    "fileAttachment": "ফাইল সংযুক্তি",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "প্যানেল টগল করুন",
@@ -341,6 +349,8 @@
     "deleteBookmark": "বুকমার্ক মুছুন",
     "findBookmark": "খুঁজুন...",
     "findBookmarkTip": "কোনো বুকমার্কে যেতে টাইপ করুন। Enter সেটি খোলে, আবার Enter পরের মিলে যায়।",
+    "findPage": "খুঁজুন...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "সংযুক্তি যোগ করুন",
     "openAttachment": "সংযুক্তি খুলুন",
     "saveAttachment": "সংযুক্তি সংরক্ষণ করুন",
@@ -452,6 +462,9 @@
     "scaleAuto": "নথির স্কেল",
     "scaleTooltip": "এই টীকার জন্য স্কেল ওভাররাইড করুন (প্রতি পয়েন্টে একক)। নথি/অঞ্চলের স্কেল ব্যবহার করতে খালি রাখুন।",
     "unit": "একক",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "নির্ভুলতা (দশমিক)",
     "dimType": "ধরন",
     "dimTypeCustom": "কাস্টম",
@@ -473,7 +486,9 @@
     "depthNone": "কোনোটিই নয়",
     "depthTooltip": "দেয়ালের উচ্চতা, মেঝের পুরুত্ব ইত্যাদি, পরিমাপের এককে। দৈর্ঘ্য × গভীরতা দেয় পৃষ্ঠতল, ক্ষেত্রফল × গভীরতা দেয় আয়তন।",
     "surface": "পৃষ্ঠতল",
-    "volume": "আয়তন"
+    "volume": "আয়তন",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "শিডিউল",
@@ -496,7 +511,18 @@
     },
     "preview": "প্রাকদর্শন",
     "exportCsv": "CSV রপ্তানি করুন",
-    "workbookBindings": "স্প্রেডশিট বাইন্ডিং"
+    "workbookBindings": "স্প্রেডশিট বাইন্ডিং",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "শিডিউল উইজার্ড",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "শুরুতে যুক্ত করুন",
     "joinAtEnd": "শেষে যুক্ত করুন",
-    "joinHint": "বন্ধ: দেয়ালের এই প্রান্ত কখনো মাইটার, T সংযোগ বা অন্য দেয়ালের বিপরীতে ট্রিম হয় না; যেখানে আঁকা হয়েছে সেখানেই সমতল প্রান্ত হিসেবে থাকে।"
+    "joinHint": "বন্ধ: দেয়ালের এই প্রান্ত কখনো মাইটার, T সংযোগ বা অন্য দেয়ালের বিপরীতে ট্রিম হয় না; যেখানে আঁকা হয়েছে সেখানেই সমতল প্রান্ত হিসেবে থাকে।",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "অঙ্কন সেটিংস",
@@ -682,6 +804,7 @@
       "height": "উচ্চতা",
       "location": "অবস্থান",
       "locationSource": "অবস্থানের উৎস",
+      "layer": "স্তর",
       "rebarMark": "রড চিহ্ন",
       "rebarDiameter": "Ø",
       "rebarShape": "বাঁকানোর আকৃতি",
@@ -807,6 +930,24 @@
     "rules": "নির্ধারণে মার্কআপের বাউন্ডিং-বক্সের কেন্দ্র ব্যবহৃত হয়, প্রান্তসহ। সবচেয়ে গভীর জোন অগ্রাধিকার পায়, তারপর সবচেয়ে ছোট ক্ষেত্রফল, তারপর জোন ID। গর্তবিহীন সরল-বাহু বহুভুজ বা অঘোরানো বক্স ব্যবহার করুন। অবৈধ বা দ্বৈত জোন পরিচয় বাদ দেওয়া হয়।",
     "loading": "টীকা লোড হচ্ছে: অবস্থান এখনো পরিবর্তিত হতে পারে।"
   },
+  "dynamicStamp": {
+    "title": "স্ট্যাম্পের ফিল্ড",
+    "template": "টেমপ্লেট",
+    "refresh": "তারিখ, ব্যবহারকারী ও পৃষ্ঠা হালনাগাদ করুন",
+    "lock": "স্ট্যাম্প লক করুন",
+    "lockConfirm": "এই স্ট্যাম্প লক করবেন? এর ফিল্ড আর পরিবর্তন করা যাবে না।",
+    "locked": "এই স্ট্যাম্প লক করা: এর ফিল্ড আর পরিবর্তন করা যায় না।",
+    "field": {
+      "date": "তারিখ",
+      "time": "সময়",
+      "datetime": "তারিখ ও সময়",
+      "user": "ব্যবহারকারী",
+      "page": "পৃষ্ঠা",
+      "pages": "পৃষ্ঠার সংখ্যা",
+      "filename": "ফাইলের নাম",
+      "title": "নথির শিরোনাম"
+    }
+  },
   "toolSets": {
     "title": "টুল সেট",
     "typeWall": "দেয়াল",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "টুল সেটের জন্য ফাইলটি খুব বড়।",
     "errorFileInvalid": "এই ফাইলটি বৈধ টুল সেট নয়।",
     "errorFileNewer": "এই টুল সেটটি Open PDF Studio-এর নতুন সংস্করণে তৈরি। আমদানি করতে অ্যাপ আপডেট করুন।",
-    "damagedStatus": "সংরক্ষিত টুল সেট পড়া যায়নি। ক্ষতিগ্রস্ত ফাইলটি \"{{name}}\" নামে রাখা হয়েছে।"
+    "damagedStatus": "সংরক্ষিত টুল সেট পড়া যায়নি। ক্ষতিগ্রস্ত ফাইলটি \"{{name}}\" নামে রাখা হয়েছে।",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "খুলুন",
     "saveAs": "হিসাবে সংরক্ষণ করুন...",
     "noContent": "এই ফাইলের বিষয়বস্তু PDF-এ এম্বেড করা নেই।"
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

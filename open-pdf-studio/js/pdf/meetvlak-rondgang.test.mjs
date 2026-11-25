@@ -6,7 +6,9 @@
 //   appearance, zodat andere lezers ze tonen, binnen de /Rect.
 // - Een eigen schaal (measureScale + eenheid) gaat mee als standaard
 //   /Measure-woordenboek (/X lengte, /A oppervlakte); de lader kende dat al.
-// - Een meetvlak zonder die twee wordt precies zo opgeslagen als voorheen.
+// - Een meetvlak zonder die twee wordt opgeslagen als voorheen, met de schaal
+//   van de pagina in /Measure voor andere programma's (OPS_ScaleInherited,
+//   #959); de app volgt na heropenen gewoon weer de pagina.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -164,12 +166,13 @@ test('zijdematen en eigen schaal: in het bestand, in de appearance en terug na h
   assert.equal(terug.measureText, '5000.00 cm\u00B2', 'herrekenen na heropenen geeft hetzelfde');
 });
 
-test('een meetvlak zonder zijdematen en zonder eigen schaal: zoals voorheen', async () => {
+test('een meetvlak zonder zijdematen en zonder eigen schaal: zoals voorheen, met de paginaschaal in /Measure', async () => {
   const ann = meetvlak();
   const bytes = await opslaan(await leegBlad(), [ann]);
-  const { dict, rect, ap } = await veelhoek(bytes);
+  const { dict, ctx, rect, ap } = await veelhoek(bytes);
   assert.equal(dict.get(PDFName.of('OPS_EdgeLengths')), undefined);
-  assert.equal(dict.get(PDFName.of('Measure')), undefined);
+  assert.ok(ctx.lookup(dict.get(PDFName.of('Measure'))), 'de schaal van de pagina in /Measure');
+  assert.equal(String(dict.get(PDFName.of('OPS_ScaleInherited'))), 'true');
   assert.equal(apTeksten(ap).length, 0, 'geen gedraaide zijdematen');
   assert.equal((ap.match(/\) Tj/g) || []).length, 1, 'alleen het oppervlaktelabel');
   assert.deepEqual(rect, [98, HOOGTE - 202, 302, HOOGTE - 98], 'de /Rect van altijd');
@@ -294,8 +297,7 @@ test('extern meetvlak, lengte in voet + inch en oppervlakte in sq ft: verslepen,
   const [ann] = await laad(bron);
   assert.equal(ann.type, 'measureArea');
   assert.equal(versleepNul(ann), '66.98 ft²', 'niet 144 keer te groot');
-  // Markset: feet are shown as feet-inch fractions (markset/us-units.js).
-  assert.deepEqual(meas.vlakZijdeTeksten(ann).map((z) => z.tekst), [`11'-6 7/8"`, `5'-9 7/16"`, `11'-6 7/8"`, `5'-9 7/16"`]);
+  assert.deepEqual(meas.vlakZijdeTeksten(ann).map((z) => z.tekst), ['11.57 ft', '5.79 ft', '11.57 ft', '5.79 ft']);
 
   const [opnieuw] = await laad(bron);
   const bytes = await opslaan(bron, [opnieuw]);

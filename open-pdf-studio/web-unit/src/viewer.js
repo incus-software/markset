@@ -29,6 +29,16 @@ async function mupdf() {
   throw new Error('MuPDF engine is not available in Markset');
 }
 
+/**
+ * De motor alvast ophalen, zonder document. Een gastheer die weet dat er zo
+ * een tekening komt, wint daarmee de downloadtijd van PDF.js (en bij
+ * `mupdf` de wasm-inpakcode) op het eerste beeld.
+ */
+export async function voorladen(motor = 'pdfjs') {
+  await pdfjs();
+  if (motor === 'mupdf') await mupdf();
+}
+
 /** Zoomstand ('fit' | 'fit-width' | factor) omzetten naar een schaalgetal. */
 export function schaalVoorZoom(zoom, paginaPt, vak) {
   const { breedte: pb, hoogte: ph } = paginaPt;
@@ -60,8 +70,8 @@ export function maakViewer({ canvas, motor = 'pdfjs' }) {
     return { paginas: pdfDoc.numPages, breedtePt: v.width, hoogtePt: v.height };
   }
 
-  async function tekenPdfjs(nummer, schaal) {
-    const p = await pdfDoc.getPage(nummer);
+  async function tekenPdfjs(doc, nummer, schaal) {
+    const p = await doc.getPage(nummer);
     const vp = p.getViewport({ scale: schaal });
     canvas.width = Math.max(1, Math.round(vp.width));
     canvas.height = Math.max(1, Math.round(vp.height));
@@ -84,8 +94,11 @@ export function maakViewer({ canvas, motor = 'pdfjs' }) {
    * @param {{breedte:number,hoogte:number}} vak beschikbare ruimte in px
    */
   async function teken(nummer, zoom, vak) {
-    if (!pdfDoc) throw new Error('geen document geladen');
-    const p = await pdfDoc.getPage(nummer);
+    // Het document kan tijdens het tekenen worden vrijgegeven (de gastheer
+    // haalt de unit weg); werk daarom met een eigen verwijzing.
+    const doc = pdfDoc;
+    if (!doc) throw new Error('geen document geladen');
+    const p = await doc.getPage(nummer);
     const v = p.getViewport({ scale: 1 });
     paginaPt = { breedte: v.width, hoogte: v.height };
     huidigeSchaal = schaalVoorZoom(zoom, paginaPt, vak);
@@ -98,7 +111,8 @@ export function maakViewer({ canvas, motor = 'pdfjs' }) {
         motor = 'pdfjs';
       }
     }
-    await tekenPdfjs(nummer, huidigeSchaal);
+    if (pdfDoc !== doc) return huidigeSchaal;
+    await tekenPdfjs(doc, nummer, huidigeSchaal);
     return huidigeSchaal;
   }
 

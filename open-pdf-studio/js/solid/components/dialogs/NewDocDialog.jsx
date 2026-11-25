@@ -1,15 +1,16 @@
 import { createSignal, createMemo, createEffect, Show, For, onMount } from 'solid-js';
 import * as pdfjsLib from 'pdfjs-dist';
 import Dialog from '../Dialog.jsx';
-import { closeDialog } from '../../stores/dialogStore.js';
+import { closeDialog, showMessage } from '../../stores/dialogStore.js';
 import { createBlankPDF, createDocFromTemplate } from '../../../pdf/loader.js';
 import { scanFrames, openFramesFolder } from '../../../pdf/frames.js';
 import { frameStyleLabel, framePreviewText } from '../../../pdf/frame-labels.js';
 import { scanTitleBlocks, openTitleBlocksFolder, addTitleBlockFile, composeFrameWithTitleBlock }
   from '../../../pdf/titleblocks.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
-import { ANSI_SHEETS, ARCH_SHEETS, sheetOptionLabel, US_SHEETS } from '../../../../markset/us-units.js'; // Markset
 import { unitDefaults } from '../../../../markset/unit-defaults.js'; // Markset: unit system
+import { laadHuisstijlKaders, kaderLabel, kaderMaat, maakKaderPdf } from '../../../pdf/huisstijl-kaders.js';
+import { US_PAPIERFORMATEN, usFormatenVan, usFormaatTekst, usInPunten, usInMm } from '../../../core/us-papierformaten.js';
 
 // Preferred defaults when the dialog opens: OpenAEC Grootformaat frame,
 // A1, landscape (liggend). These only take effect when a matching frame
@@ -37,7 +38,12 @@ const PAPER_SIZES = {
   legal:   { width: 612,  height: 1008, label: 'Legal', widthMm: 216, heightMm: 356 },
   tabloid: { width: 792,  height: 1224, label: 'Tabloid', widthMm: 279, heightMm: 432 },
   ledger:  { width: 1224, height: 792,  label: 'Ledger', widthMm: 432, heightMm: 279 },
-  ...US_SHEETS, // Markset: ANSI A-E, ARCH A-E1
+  // US-tekenvellen ARCH A–E1 en ANSI A–E (#996), uit de gedeelde lijst.
+  ...Object.fromEntries(US_PAPIERFORMATEN.map((f) => {
+    const pt = usInPunten(f);
+    const mm = usInMm(f);
+    return [f.sleutel, { width: pt.breedte, height: pt.hoogte, label: f.label, widthMm: mm.breedte, heightMm: mm.hoogte }];
+  })),
 };
 
 export { PAPER_SIZES };
@@ -60,8 +66,17 @@ export default function NewDocDialog() {
   const [titleBlocks, setTitleBlocks] = createSignal([]);
   const [titleBlock, setTitleBlock] = createSignal('');
   const [stijl, setStijl] = createSignal('');
+  // Kaders uit de huisstijl van het bedrijf (als gast in de werkplek van de
+  // OpenAEC-site): een stijl `huisstijl:<n>` met een vaste maat.
+  const [huisstijlKaders, setHuisstijlKaders] = createSignal([]);
+  const gekozenKader = () => huisstijlKaders().find((k) => k.id === stijl()) || null;
 
   onMount(async () => {
+    const kaders = await laadHuisstijlKaders();
+    if (kaders.length) {
+      setHuisstijlKaders(kaders);
+      setStijl((kaders.find((k) => k.standaard) || kaders[0]).id);
+    }
     try {
       const idx = await scanFrames();
       try {
@@ -77,7 +92,7 @@ export default function NewDocDialog() {
       // disk. If that exact size/orientation isn't available the keep-valid
       // effect below will pick the closest match for the style.
       // Markset: start on no frame (a blank US sheet) instead.
-      if (!MARKSET_BLANK_DEFAULT && idx?.byStijl?.has(DEFAULT_STIJL)) {
+      if (!MARKSET_BLANK_DEFAULT && idx?.byStijl?.has(DEFAULT_STIJL) && !gekozenKader()) {
         setStijl(DEFAULT_STIJL);
       }
     } catch (e) {
@@ -124,7 +139,29 @@ export default function NewDocDialog() {
     }
   });
 
+  // Een huisstijlkader legt maat en richting vast: zet de (uitgegrijsde)
+  // keuzes op die van het kader, zodat ze niet iets anders laten zien.
+  createEffect(() => {
+    const kader = gekozenKader();
+    if (!kader) return;
+    const { breedteMm, hoogteMm } = kaderMaat(kader);
+    setOrientation(breedteMm > hoogteMm ? 'landscape' : 'portrait');
+    const formaat = String(kader.formaat || '').toLowerCase();
+    if (PAPER_SIZES[formaat]) setPaperSize(formaat);
+  });
+
   const getDimensions = createMemo(() => {
+    const kader = gekozenKader();
+    if (kader) {
+      const { breedteMm, hoogteMm } = kaderMaat(kader);
+      return {
+        widthPt: Math.round((breedteMm / 25.4) * 72),
+        heightPt: Math.round((hoogteMm / 25.4) * 72),
+        widthMm: breedteMm,
+        heightMm: hoogteMm,
+        label: kader.formaat || 'Custom',
+      };
+    }
     const size = paperSize();
 
     if (size === 'custom') {
@@ -202,17 +239,18 @@ export default function NewDocDialog() {
 
   createEffect(() => {
     const frame = resolvedFrame();
+    const kader = gekozenKader();
     const { w, h } = previewPx();
     const token = ++renderToken;
     setFrameReady(false);
-    if (!frame) return;
+    if (!frame && !kader) return;
 
     (async () => {
       try {
-        let bytes = await readFrameBytes(frame.path);
+        let bytes = kader ? (await maakKaderPdf(kader)).bytes : await readFrameBytes(frame.path);
         if (token !== renderToken) return;
         // Toon het vel zoals het wordt aangemaakt: kader met de gekozen onderhoek.
-        const tbPad = titleBlock();
+        const tbPad = kader ? '' : titleBlock();
         if (tbPad) {
           try {
             const tbBytes = await readFrameBytes(tbPad);
@@ -276,7 +314,20 @@ export default function NewDocDialog() {
 
   const close = () => closeDialog('new-doc');
 
-  const handleOk = () => {
+  const handleOk = async () => {
+    const kader = gekozenKader();
+    if (kader) {
+      // Nieuw vel volgens het kader uit de huisstijl van het bedrijf.
+      close();
+      try {
+        const { bytes, widthPt, heightPt } = await maakKaderPdf(kader);
+        await createBlankPDF(widthPt, heightPt, 1, bytes);
+      } catch (e) {
+        console.error('[new-doc] huisstijlkader mislukt:', e);
+        showMessage(tCommon('failedToCreateDocument', { error: String(e?.message ?? e) }));
+      }
+      return;
+    }
     const frame = resolvedFrame();
     if (frame) {
       // New document FROM the OpenAEC frame matching stijl+formaat+richting.
@@ -320,6 +371,9 @@ export default function NewDocDialog() {
             style="flex:1"
           >
             <option value="">{t('newDoc.noFrame')}</option>
+            <For each={huisstijlKaders()}>{(k) => (
+              <option value={k.id}>{kaderLabel(k, t)}</option>
+            )}</For>
             <For each={frameIndex()?.stijlen || []}>{(s) => (
               <option value={s}>{frameStyleLabel(s, t)}</option>
             )}</For>
@@ -330,7 +384,7 @@ export default function NewDocDialog() {
             onClick={() => openFramesFolder()}
           >&#128193;</button>
         </div>
-        <Show when={stijl()}>
+        <Show when={stijl() && !gekozenKader()}>
           <div class="new-doc-row">
             <label class="new-doc-label">{t('newDoc.titleBlock')}</label>
             <select
@@ -356,7 +410,7 @@ export default function NewDocDialog() {
             >&#128193;</button>
           </div>
         </Show>
-        <div class="new-doc-row">
+        <div class="new-doc-row" style={gekozenKader() ? 'opacity:0.45;pointer-events:none' : ''}>
           <label class="new-doc-label">{t('newDoc.paperSize')}</label>
           <Show when={availableFormats()} fallback={
             <select
@@ -384,12 +438,11 @@ export default function NewDocDialog() {
                 <option value="tabloid">Tabloid (11 x 17 in)</option>
                 <option value="ledger">Ledger (17 x 11 in)</option>
               </optgroup>
-              {/* Markset: US engineering and architectural sheets */}
-              <optgroup label="ANSI">
-                {Object.keys(ANSI_SHEETS).map(k => <option value={k}>{sheetOptionLabel(k)}</option>)}
+              <optgroup label={t('newDoc.usArchitectural')}>
+                <For each={usFormatenVan('arch')}>{(f) => <option value={f.sleutel}>{usFormaatTekst(f)}</option>}</For>
               </optgroup>
-              <optgroup label="ARCH">
-                {Object.keys(ARCH_SHEETS).map(k => <option value={k}>{sheetOptionLabel(k)}</option>)}
+              <optgroup label={t('newDoc.usEngineering')}>
+                <For each={usFormatenVan('ansi')}>{(f) => <option value={f.sleutel}>{usFormaatTekst(f)}</option>}</For>
               </optgroup>
               <optgroup label={t('newDoc.other')}>
                 <option value="custom">{t('newDoc.customSize')}</option>
@@ -408,7 +461,7 @@ export default function NewDocDialog() {
             </select>
           </Show>
         </div>
-        <Show when={paperSize() === 'custom'}>
+        <Show when={paperSize() === 'custom' && !gekozenKader()}>
           <div class="new-doc-row new-doc-custom-row">
             <label class="new-doc-label">{t('newDoc.widthMm')}</label>
             <input
@@ -432,7 +485,7 @@ export default function NewDocDialog() {
             />
           </div>
         </Show>
-        <div class="new-doc-row">
+        <div class="new-doc-row" style={gekozenKader() ? 'opacity:0.45;pointer-events:none' : ''}>
           <label class="new-doc-label">{t('newDoc.orientation')}</label>
           <div class="new-doc-radio-group">
             <label class="new-doc-radio-label" style={!orientationAvailable('portrait') ? 'opacity:0.4' : ''}>

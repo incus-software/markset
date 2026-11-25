@@ -3,6 +3,7 @@
     "openPopUpNote": "Открыть всплывающую заметку",
     "hidePopUpNote": "Скрыть всплывающую заметку",
     "resetPopUpLocation": "Сбросить расположение всплывающей заметки",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Редактировать текст...",
     "addReply": "Добавить ответ",
     "locked": "Заблокировано",
@@ -12,11 +13,13 @@
     "printable": "Печатаемое",
     "status": "Статус",
     "showByStatus": "Показать по статусу",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Нет",
     "statusAccepted": "Принято",
     "statusCancelled": "Отменено",
     "statusCompleted": "Завершено",
     "statusRejected": "Отклонено",
+    "statusReviewed": "Проверено",
     "reviewHistory": "История рецензирования...",
     "layer": "Слой:",
     "noLayersAvailable": "Нет доступных слоев",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Добавить точки в размерную цепь",
     "dimChainRemove": "Удалить выносную линию из цепи",
     "selectRoom": "Выбрать помещение",
+    "checkScale": "Проверить масштаб по этой линии...",
     "saveToToolSet": "Сохранить в набор инструментов"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Центрировать по вертикали",
     "distributeHorizontally": "Распределить по горизонтали",
     "distributeVertically": "Распределить по вертикали",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Обрезать углы стен",
     "deleteAnnotations": "Удалить {{count}} аннотаций",
     "deleteConfirm": "Удалить {{count}} аннотаций?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Вложить в новую закладку...",
     "indent": "Увеличить отступ",
     "outdent": "Уменьшить отступ",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Удалить закладки: {{count}}"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Вставить из файла...",
     "insertFromFileBefore": "Перед этой страницей...",
     "insertFromFileAfter": "После этой страницы...",
-    "pageLabels": "Метки страниц (конструктор имён)..."
+    "pageLabels": "Метки страниц (конструктор имён)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Выделить выделенное",
     "strikethroughSelection": "Зачеркнуть выделенное",
     "underlineSelection": "Подчеркнуть выделенное",
-    "curvedLeaderSelection": "Добавить изогнутую выноску"
+    "curvedLeaderSelection": "Добавить изогнутую выноску",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Удалить эту аннотацию?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Удалить вершину",
     "insertVertex": "Вставить вершину здесь",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Преобразовать в дугу",
     "convertToLine": "Преобразовать в линию"
   },

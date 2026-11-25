@@ -9,7 +9,9 @@
     "measureTitle": "Skutečná délka",
     "measureQuestion": "Jaká je skutečná délka této vzdálenosti?",
     "measuredOnPaper": "Naměřeno na papíře",
-    "computedScale": "Vypočtené měřítko"
+    "computedScale": "Vypočtené měřítko",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Měřítko",
@@ -17,7 +19,9 @@
     "viewports": "Výřezy",
     "noViewports": "Nejsou definovány žádné výřezy",
     "measurements": "Měření",
-    "noMeasurements": "Zatím žádná měření"
+    "noMeasurements": "Zatím žádná měření",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Vlastnosti",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Nastavil(a) {{author}} dne {{date}}",
     "layer": "Vrstva",
     "layerMarkupGroup": "Vrstvy značek",
-    "layerDocumentGroup": "Vrstvy dokumentu"
+    "layerDocumentGroup": "Vrstvy dokumentu",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Žádná",
   "moreColors": "Další barvy...",
@@ -248,6 +254,7 @@
     "title": "Název",
     "author": "Autor",
     "subject": "Předmět",
+    "keywords": "Klíčová slova",
     "creator": "Tvůrce",
     "producer": "Producent",
     "pdfVersion": "Verze PDF",
@@ -316,7 +323,8 @@
     "redaction": "Redigování",
     "scaleBar": "Grafické měřítko",
     "parametricSymbol": "Parametrický symbol",
-    "fileAttachment": "Příloha souboru"
+    "fileAttachment": "Příloha souboru",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Přepnout panel",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Smazat záložku",
     "findBookmark": "Najít...",
     "findBookmarkTip": "Pište pro přechod na záložku. Enter ji otevře, další Enter přejde na další shodu.",
+    "findPage": "Najít...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "Přidat přílohu",
     "openAttachment": "Otevřít přílohu",
     "saveAttachment": "Uložit přílohu",
@@ -452,6 +462,9 @@
     "scaleAuto": "Měřítko dokumentu",
     "scaleTooltip": "Přepsat měřítko pro tuto anotaci (jednotky na bod). Ponechte prázdné pro použití měřítka dokumentu/oblasti.",
     "unit": "Jednotka",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Přesnost (desetinná místa)",
     "dimType": "Typ",
     "dimTypeCustom": "Vlastní",
@@ -473,7 +486,9 @@
     "depthNone": "Žádná",
     "depthTooltip": "Výška stěny, tloušťka stropu apod. v jednotce měření. Délka × hloubka dává plochu, plocha × hloubka objem.",
     "surface": "Plocha",
-    "volume": "Objem"
+    "volume": "Objem",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Výkazy",
@@ -496,7 +511,18 @@
     },
     "preview": "Náhled",
     "exportCsv": "Exportovat CSV",
-    "workbookBindings": "Vazby na tabulku"
+    "workbookBindings": "Vazby na tabulku",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Průvodce výkazem",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Napojit na začátku",
     "joinAtEnd": "Napojit na konci",
-    "joinHint": "Vypnuto: tento konec stěny se nikdy nenapojí na pokos, do T ani se neořízne o jinou stěnu; zachová si rovný konec tam, kde byl nakreslen."
+    "joinHint": "Vypnuto: tento konec stěny se nikdy nenapojí na pokos, do T ani se neořízne o jinou stěnu; zachová si rovný konec tam, kde byl nakreslen.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Nastavení výkresu",
@@ -682,6 +804,7 @@
       "height": "Výška",
       "location": "Umístění",
       "locationSource": "Zdroj umístění",
+      "layer": "Vrstva",
       "rebarMark": "Pozice",
       "rebarDiameter": "Ø",
       "rebarShape": "Tvar ohybu",
@@ -807,6 +930,24 @@
     "rules": "Přiřazení vychází ze středu ohraničujícího rámečku značky, včetně okrajů. Vyhrává nejhlouběji vnořená zóna, pak nejmenší plocha, pak ID zóny. Používejte mnohoúhelníky s rovnými stranami bez otvorů nebo neotočené obdélníky. Neplatné nebo duplicitní identity zón se vylučují.",
     "loading": "Načítají se anotace: umístění se ještě mohou změnit."
   },
+  "dynamicStamp": {
+    "title": "Pole razítka",
+    "template": "Šablona",
+    "refresh": "Aktualizovat datum, uživatele a stránku",
+    "lock": "Uzamknout razítko",
+    "lockConfirm": "Uzamknout toto razítko? Jeho pole už nepůjde změnit.",
+    "locked": "Toto razítko je uzamčeno: jeho pole už nelze změnit.",
+    "field": {
+      "date": "Datum",
+      "time": "Čas",
+      "datetime": "Datum a čas",
+      "user": "Uživatel",
+      "page": "Stránka",
+      "pages": "Počet stránek",
+      "filename": "Název souboru",
+      "title": "Název dokumentu"
+    }
+  },
   "toolSets": {
     "title": "Sady nástrojů",
     "typeWall": "Stěna",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "Soubor je pro sadu nástrojů příliš velký.",
     "errorFileInvalid": "Tento soubor není platná sada nástrojů.",
     "errorFileNewer": "Tato sada nástrojů byla vytvořena v novější verzi Open PDF Studio. Pro import aktualizujte aplikaci.",
-    "damagedStatus": "Uložené sady nástrojů nelze přečíst. Poškozený soubor byl ponechán jako „{{name}}“."
+    "damagedStatus": "Uložené sady nástrojů nelze přečíst. Poškozený soubor byl ponechán jako „{{name}}“.",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Otevřít",
     "saveAs": "Uložit jako...",
     "noContent": "Obsah tohoto souboru není vložen do PDF."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

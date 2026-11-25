@@ -1,9 +1,10 @@
-import { Show, createEffect, untrack } from 'solid-js';
-import { panelMode, docInfo, populateDocInfo } from '../../stores/propertiesStore.js';
+import { Show, For, createEffect, untrack } from 'solid-js';
+import { panelMode, docInfo, populateDocInfo, zetDocumentgegeven } from '../../stores/propertiesStore.js';
 import { state } from '../../../core/state.js';
-import { readDocInfoDeps } from '../../stores/doc-info-format.js';
+import { readDocInfoDeps, formatPageSize } from '../../stores/doc-info-format.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { BEWERKBARE_VELDEN } from '../../../pdf/documentgegevens.js';
 
 export default function DocInfoView() {
   const { t } = useTranslation('properties');
@@ -15,11 +16,19 @@ export default function DocInfoView() {
   // velden van het actieve document reactief; panelMode bewust ongevolgd
   // (storeHideProperties ververst zelf bij terugkeer naar de documentinfo).
   createEffect(() => {
-    readDocInfoDeps(state.documents[state.activeDocumentIndex]);
+    const doc = state.documents[state.activeDocumentIndex];
+    readDocInfoDeps(doc);
+    // Ook de bewerkte documentgegevens (#1017): ongedaan maken en opnieuw.
+    void doc?.documentgegevens;
     untrack(() => {
       if (panelMode() === 'none') populateDocInfo();
     });
   });
+
+  // Volgt de voorkeur Eenheden meteen, zonder het bestand opnieuw te openen (#1121).
+  const paginaFormaat = () => (docInfo.pageSizePt
+    ? formatPageSize(docInfo.pageSizePt[0], docInfo.pageSizePt[1], state.preferences?.scaleUnitSystem)
+    : docInfo.pageSize);
 
   return (
     <Show when={panelMode() === 'none'}>
@@ -28,14 +37,32 @@ export default function DocInfoView() {
           <div class="property-group"><label>{t('docInfo.file')}</label><span class="prop-info-value" style="word-break: break-all;">{docInfo.filename}</span></div>
           <div class="property-group"><label>{t('docInfo.path')}</label><span class="prop-info-secondary" style="word-break: break-all;">{docInfo.filepath}</span></div>
           <div class="property-group"><label>{t('docInfo.pages')}</label><span class="prop-info-value">{docInfo.pages}</span></div>
-          <div class="property-group"><label>{t('docInfo.pageSize')}</label><span class="prop-info-value">{docInfo.pageSize}</span></div>
+          <div class="property-group"><label>{t('docInfo.pageSize')}</label><span class="prop-info-value" id="prop-doc-page-size">{paginaFormaat()}</span></div>
         </CollapsibleSection>
 
         <CollapsibleSection title={t('docInfo.metadata')} name="docMetadata">
-          <div class="property-group"><label>{t('docInfo.title')}</label><span class="prop-info-value">{docInfo.title}</span></div>
-          <div class="property-group"><label>{t('docInfo.author')}</label><span class="prop-info-value">{docInfo.author}</span></div>
-          <div class="property-group"><label>{t('docInfo.subject')}</label><span class="prop-info-value">{docInfo.subject}</span></div>
-          <div class="property-group"><label>{t('docInfo.creator')}</label><span class="prop-info-value">{docInfo.creator}</span></div>
+          {/* Bewerkbaar (#1017): vastleggen bij Enter of het verlaten van het
+              veld, Esc zet de getoonde waarde terug. Opslaan schrijft ze in
+              /Info en het XMP van het bestand. */}
+          <For each={BEWERKBARE_VELDEN}>
+            {(veld) => (
+              <div class="property-group">
+                <label for={`doc-info-${veld}`}>{t(`docInfo.${veld}`)}</label>
+                <input type="text" id={`doc-info-${veld}`} data-doc-info={veld}
+                  value={docInfo[veld]}
+                  disabled={!docInfo.editable}
+                  spellcheck={false}
+                  onChange={(e) => {
+                    zetDocumentgegeven(veld, e.currentTarget.value);
+                    e.currentTarget.value = docInfo[veld];
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+                    else if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.value = docInfo[veld]; e.currentTarget.blur(); }
+                  }} />
+              </div>
+            )}
+          </For>
           <div class="property-group"><label>{t('docInfo.producer')}</label><span class="prop-info-value">{docInfo.producer}</span></div>
           <div class="property-group"><label>{t('docInfo.pdfVersion')}</label><span class="prop-info-value">{docInfo.version}</span></div>
         </CollapsibleSection>

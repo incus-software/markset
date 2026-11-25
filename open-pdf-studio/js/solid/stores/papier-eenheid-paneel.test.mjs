@@ -70,9 +70,9 @@ test.beforeEach(() => {
   hydratePapierEenheid();
 });
 
-test('standaard pt; het paneel krijgt de maat in paginapunten', () => {
-  assert.equal(DEFAULT_PREFERENCES.paperSizeUnit, 'pt');
-  assert.equal(papierEenheid(), 'pt');
+test('standaard mm; het paneelmodel blijft in paginapunten', () => {
+  assert.equal(DEFAULT_PREFERENCES.paperSizeUnit, 'in'); // Markset: US units
+  assert.equal(papierEenheid(), 'in'); // Markset
   const ann = afbeelding();
   selecteer(ann);
   assert.equal(annotProps.imageWidth, 216);

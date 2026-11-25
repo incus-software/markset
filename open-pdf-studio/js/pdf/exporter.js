@@ -4,6 +4,7 @@ import { state, getActiveDocument, getAnnotationBounds } from '../core/state.js'
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import { isTauri, writeBinaryFileAtomic, saveFileDialog, openFolderDialog } from '../core/platform.js';
 import { renderAnnotationsForPage, drawAnnotation } from '../annotations/rendering.js';
+import { laadTemplateDataVoor } from '../symbols/registry.js';
 import { showMessage } from '../bridge.js';
 import i18next from '../i18n/config.js';
 import { joinExportPath } from './export-path.js';
@@ -12,6 +13,7 @@ import { imageWithDpi } from './image-dpi.js';
 import { PDFDocument } from 'pdf-lib';
 import { pdfiumRasterBeschikbaar, kiesRasterMotor, renderPaginaPdfium, maakJpegEncoder } from './raster-export.js';
 import { maakPixelPoort, maakVolgorde } from './raster-export-plan.js';
+import { bevestigExportVerlies } from '../ui/chrome/export-verlies-bevestigen.js';
 
 const nu = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 const RASTER_JPEG_KWALITEIT = 0.92;
@@ -92,12 +94,19 @@ export async function renderPageOffscreen(pageNum, exportScale, { deel = null, m
 
   // Render PDF page
   // Geschakelde lagen (#377): afdrukken en exporteren tonen wat in beeld is.
-  const { pdfjsLaagOpties } = await import('./lagen-schakelen.js');
+  const { pdfjsLaagOpties, eigenLaagConfig } = await import('./lagen-schakelen.js');
+  // Formuliervelden met hun ingevulde waarden (print-formulieren.js): op het
+  // scherm staan ze in een eigen laag, zonder deze opties is de uitvoer blanco.
+  // Een pagina met velden rendert als afdruk; de lagenstand zit dan in de
+  // opties, in de vorm die zo'n render eist.
+  const { formulierRenderOpties } = await import('./print-formulieren.js');
+  const formulier = await formulierRenderOpties(page, pdf, eigenLaagConfig(doc));
+  if (getActiveDocument() !== doc || doc.pdfDoc !== pdf) throw exportChanged();
   const renderContext = {
     canvasContext: pdfCtx,
     viewport: viewport,
-    annotationMode: 0,
-    ...pdfjsLaagOpties(doc),
+    ...formulier,
+    ...(formulier.intent === 'print' ? {} : pdfjsLaagOpties(doc)),
   };
   // Part of the page: shifted so the part starts at pixel (0,0); the canvas
   // clips the rest.
@@ -125,6 +134,55 @@ export async function renderPageOffscreen(pageNum, exportScale, { deel = null, m
 }
 
 /**
+ * A page as output image (print, image export, compress), with the same
+ * arguments and result as renderPageOffscreen. A heavy page comes from the
+ * PDFium workers when they are available, like the raster export (#701):
+ * that is where PDF.js on the main thread is slowest. A light page, the web
+ * build, a document without a file, or a failing worker: PDF.js as before.
+ * `window.__opdsUitvoerMotor = 'pdfjs'` in the developer console forces
+ * PDF.js, to compare.
+ * @returns {Promise<HTMLCanvasElement>}
+ */
+export async function renderUitvoerPagina(pageNum, exportScale, { deel = null, markeringen = true } = {}) {
+  const doc = getActiveDocument();
+  const pdf = doc?.pdfDoc;
+  if (!pdf) throw new Error('No PDF document is open');
+  let motor = 'pdfjs';
+  try {
+    if (globalThis.__opdsUitvoerMotor !== 'pdfjs') motor = await kiesRasterMotor(doc, pageNum, await pdfiumRasterBeschikbaar(doc));
+  } catch { /* geen keuze mogelijk: PDF.js */ }
+  const t0 = nu();
+  if (getActiveDocument() !== doc || doc.pdfDoc !== pdf) throw exportChanged();
+  if (motor === 'pdfium') {
+    const page = await pdf.getPage(pageNum);
+    const extraRotation = doc.pageRotations?.[pageNum] || 0;
+    const viewport = page.getViewport({ scale: exportScale, rotation: (page.rotate + extraRotation) % 360 });
+    const canvas = document.createElement('canvas');
+    try {
+      await renderPaginaPdfium({
+        doc, pageNum, scale: exportScale, extraRot: extraRotation,
+        breedte: Math.floor(viewport.width), hoogte: Math.floor(viewport.height), deel, doel: canvas,
+      });
+      if (getActiveDocument() !== doc || doc.pdfDoc !== pdf) throw exportChanged();
+      const annCanvas = await renderMarkeringenOffscreen(pageNum, exportScale, viewport, { deel, markeringen });
+      canvas.getContext('2d').drawImage(annCanvas, 0, 0);
+      annCanvas.width = 0;
+      annCanvas.height = 0;
+      console.log(`[raster] output page ${pageNum}: ${canvas.width}x${canvas.height} via PDFium in ${Math.round(nu() - t0)} ms`);
+      return canvas;
+    } catch (err) {
+      if (getActiveDocument() !== doc || doc.pdfDoc !== pdf) throw exportChanged();
+      canvas.width = 0;
+      canvas.height = 0;
+      console.warn(`[raster] page ${pageNum}: PDFium render failed, using PDF.js:`, err);
+    }
+  }
+  const canvas = await renderPageOffscreen(pageNum, exportScale, { deel, markeringen });
+  console.log(`[raster] output page ${pageNum}: ${canvas.width}x${canvas.height} via PDF.js in ${Math.round(nu() - t0)} ms`);
+  return canvas;
+}
+
+/**
  * The annotation layer of a page on a transparent canvas, without the PDF
  * page itself: markups (unless `markeringen` is false), watermarks and text
  * edits, as output (no editing state, real line weights). Same `deel` as
@@ -144,6 +202,8 @@ export async function renderMarkeringenOffscreen(pageNum, exportScale, viewport,
   // Temporarily override state.scale so renderAnnotationsForPage uses export scale
   const doc = state.documents[state.activeDocumentIndex];
   const pdf = doc.pdfDoc;
+  // Late templatedata (vloergeometrie, #454) vóór het tekenen laden.
+  if (markeringen) await laadTemplateDataVoor(doc.annotations.filter(a => a.page === pageNum));
   const snippetBitmaps = markeringen
     ? await bereidKnipselsVoorUitvoer(doc.annotations.filter(a => a.page === pageNum && !isAnnotationHiddenInOutput(a)), exportScale)
       .catch((err) => { throw alsKnipselMelding(err); })
@@ -275,7 +335,7 @@ export async function exportAsImages({ format = 'png', quality = 0.92, dpi = 150
       const pageNum = pages[i];
       showLoading(`Exporting page ${pageNum} of ${pages[pages.length - 1]}...`);
 
-      const canvas = await renderPageOffscreen(pageNum, exportScale, { markeringen: includeAnnotations });
+      const canvas = await renderUitvoerPagina(pageNum, exportScale, { markeringen: includeAnnotations });
       const bytes = format === 'tiff'
         ? canvasToTiffBytes(canvas, dpi)
         : imageWithDpi(await canvasToBytes(canvas, format, quality), format, dpi);
@@ -329,6 +389,8 @@ export async function exportAsRasterPdf({
 
   if (getActiveDocument() !== doc) { showMessage(exportChanged().message); return false; }
   if (!outputPath) {
+    // Tekst, vectoren, markeringen en bladwijzers worden beeld of gaan weg (#629).
+    if (!(await bevestigExportVerlies('raster', doc)).ok) return;
     const baseName = getPdfBaseName(doc);
     outputPath = await saveFileDialog(`${baseName}_raster.pdf`, [
       { name: 'PDF Files', extensions: ['pdf'] }
@@ -565,6 +627,8 @@ export async function exportAnnotationAsImage(annotation) {
       return;
     }
   }
+
+  await laadTemplateDataVoor([annotation]);
 
   // Scale and translate so the annotation draws at the correct position
   ctx.save();

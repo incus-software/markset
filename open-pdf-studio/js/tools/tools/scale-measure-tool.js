@@ -17,6 +17,8 @@ import { zetRechtopRond } from '../../pdf/weergave-ruimte.js';
 import { pointsToPaperMm } from '../../annotations/scale-from-measurement.js';
 import { userUnitVanPagina } from '../../annotations/scale-region-scale.js';
 import { getActiveDocument } from '../../core/state.js';
+import { formatMaat } from '../../core/maat-notatie.js';
+import { orthoPunt } from '../ortho-punt.js';
 
 // Module-level flow + picking state (survives across pointer events).
 let _flow = null; // { onDone(pixelDistance), onCancel() }
@@ -29,8 +31,8 @@ function _resetPick() {
 
 /**
  * Start a temporary measure flow. Switches to the scaleMeasure tool; after
- * the user clicks two points, onDone(pixelDistance) is called with the
- * distance in app-space units (PDF points). Cancelling (Esc / right-click /
+ * the user clicks two points, onDone(pixelDistance, {p1, p2, pageNum}) is
+ * called with the distance in app-space units (PDF points) and the points. Cancelling (Esc / right-click /
  * tool switch) calls onCancel() instead.
  */
 export function startScaleMeasureFlow(handlers) {
@@ -39,12 +41,14 @@ export function startScaleMeasureFlow(handlers) {
   setTool('scaleMeasure');
 }
 
-function _finish(pixelDistance) {
+function _finish(pixelDistance, punten) {
   const flow = _flow;
   _flow = null; // clear BEFORE setTool so onDeactivate doesn't fire onCancel
   _resetPick();
   setTool('select');
-  if (flow?.onDone) flow.onDone(pixelDistance);
+  // The picked points (app space) and page go along for callers that need
+  // to know WHERE was measured, such as the scale check (#629).
+  if (flow?.onDone) flow.onDone(pixelDistance, punten);
 }
 
 function _cancel() {
@@ -72,8 +76,12 @@ export const scaleMeasureTool = {
     if (e.button !== 0) return;
 
     const snap = ctx.snap(x, y);
-    const ptX = snap.snapped ? snap.x : x;
-    const ptY = snap.snapped ? snap.y : y;
+    let ptX = snap.snapped ? snap.x : x;
+    let ptY = snap.snapped ? snap.y : y;
+    // Shift: het tweede punt recht horizontaal of verticaal (#1090).
+    if (_pick.point !== null && _pick.pageNum === ctx.pageNum && e.shiftKey) {
+      ({ x: ptX, y: ptY } = orthoPunt(_pick.point, { x: ptX, y: ptY }, true));
+    }
 
     // In continuous mode each page has its own canvas/coordinate space; a
     // click on a different page restarts the pick there.
@@ -90,12 +98,13 @@ export const scaleMeasureTool = {
     const pixelDist = Math.sqrt(dx * dx + dy * dy);
     if (pixelDist < 3 / scale) return; // Too close — ignore
 
+    const punten = { p1: { ..._pick.point }, p2: { x: ptX, y: ptY }, pageNum: _pick.pageNum };
     state.lastSnapResult = null;
     ctx.redraw();
-    _finish(pixelDist);
+    _finish(pixelDist, punten);
   },
 
-  onPointerMove(ctx) {
+  onPointerMove(ctx, e) {
     const { x, y, state, canvasCtx, scale } = ctx;
     if (!canvasCtx) return;
 
@@ -114,8 +123,8 @@ export const scaleMeasureTool = {
     }
 
     const snap = ctx.snap(x, y);
-    const curX = snap.snapped ? snap.x : x;
-    const curY = snap.snapped ? snap.y : y;
+    // Shift: de voorbeeldlijn recht horizontaal of verticaal (#1090).
+    const { x: curX, y: curY } = orthoPunt(_pick.point, { x: snap.snapped ? snap.x : x, y: snap.snapped ? snap.y : y }, !!e?.shiftKey);
     state.lastSnapResult = snap.snapped ? snap : null;
 
     ctx.redraw();
@@ -158,7 +167,11 @@ export const scaleMeasureTool = {
     canvasCtx.font = `${11 / scale}px Arial`;
     canvasCtx.fillStyle = '#00AAFF';
     canvasCtx.textAlign = 'center';
-    canvasCtx.fillText(`${distMm.toFixed(1)} mm`, midX, midY - 6 / scale);
+    // A flow can show its own readout (the scale check shows the length at
+    // the current scale); otherwise the paper distance.
+    let readout = null;
+    try { readout = _flow?.readout?.(distPts, p1, { x: curX, y: curY }, _pick.pageNum) || null; } catch { readout = null; }
+    canvasCtx.fillText(readout || formatMaat(distMm, 'mm', 1), midX, midY - 6 / scale);
 
     canvasCtx.restore();
 

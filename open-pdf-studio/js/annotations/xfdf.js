@@ -1,6 +1,6 @@
 import { state, getActiveDocument } from '../core/state.js';
 import { createAnnotation, cloneAnnotation } from './factory.js';
-import { recordBulkAdd } from '../core/undo-manager.js';
+import { recordBulkAdd, recordBulkModify, beginUndoTransaction, endUndoTransaction } from '../core/undo-manager.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
 import { readBinaryFile, writeBinaryFile, saveFileDialog, openFileDialog } from '../core/platform.js';
@@ -15,6 +15,8 @@ import { laagAttribuut, laagUitAttribuut } from './xfdf-laag.js';
 import { schaalgebiedXfdfAttributen, schaalgebiedUitXfdf } from './xfdf-schaalgebied.js';
 import { assignLayer } from './annotatie-lagen.js';
 import { paginaUitXfdf } from './xfdf-pagina.js';
+import { vanAuteurs, metXfdfNamen, voegXfdfSamen } from './xfdf-samenvoegen.js';
+import { bevestigExportVerlies } from '../ui/chrome/export-verlies-bevestigen.js';
 
 // Export annotations to XFDF XML format. Without `subset` all annotations of
 // the active document; with `subset` only those (export selected, #383).
@@ -27,14 +29,22 @@ export function exportToXFDF(subset) {
   }
 
   const fileName = doc?.filePath ? doc.filePath.split(/[\\/]/).pop() : 'document.pdf';
+  return annotationsToXfdf(annotations, { fileName, doc });
+}
 
+/**
+ * XFDF text for `annotations`, without dialogs or messages (also an empty
+ * list). `names`: every element gets the annotation id as `name`, so a
+ * reader keeps the ids (the shared review snapshot, #237).
+ */
+export function annotationsToXfdf(annotations, { fileName = 'document.pdf', doc = getActiveDocument(), names = false } = {}) {
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += '<xfdf xmlns="http://ns.adobe.com/xfdf/" xml:space="preserve">\n';
   xml += `  <f href="${escapeXml(fileName)}"/>\n`;
   xml += '  <annots>\n';
 
   for (const ann of annotations) {
-    xml += annotationToXFDF(ann);
+    xml += annotationToXFDF(ann, doc, names);
   }
 
   xml += '  </annots>\n';
@@ -47,11 +57,26 @@ export function exportToXFDF(subset) {
 // suggested name and writeBinaryFile turns it into a download.
 // `options.annotations`: export only these; `options.suffix` goes into the
 // suggested file name (e.g. "-selection").
+// Eerst het venster met wat XFDF niet meeneemt en, bij meer dan één auteur,
+// de keuze van de auteurs (#629). Elk element krijgt een naam (/NM of id),
+// zodat een import bij een ander dezelfde annotatie herkent.
 export async function exportXFDFToFile(options = {}) {
-  const xml = exportToXFDF(options.annotations);
-  if (!xml) return;
-
   const doc = getActiveDocument();
+  const alle = options.annotations || doc?.annotations || [];
+  if (alle.length === 0) {
+    showMessage(i18next.t('noAnnotationsToExport'));
+    return;
+  }
+  const keuze = await bevestigExportVerlies('xfdf', doc, { annotatieLijst: alle, auteursKiezen: true });
+  if (!keuze.ok) return;
+  const annotations = vanAuteurs(alle, keuze.auteurs);
+  if (annotations.length === 0) {
+    showMessage(i18next.t('noAnnotationsToExport'));
+    return;
+  }
+
+  const fileName = doc?.filePath ? doc.filePath.split(/[\\/]/).pop() : 'document.pdf';
+  const xml = annotationsToXfdf(metXfdfNamen(annotations), { fileName, doc, names: true });
   const baseName = doc?.filePath ? doc.filePath.replace(/\.pdf$/i, '') : 'annotations';
   const savePath = await saveFileDialog(baseName + (options.suffix || '') + '.xfdf',
     [{ name: 'XFDF', extensions: ['xfdf'] }]);
@@ -62,41 +87,113 @@ export async function exportXFDFToFile(options = {}) {
   }
 }
 
-// Import annotations from XFDF file. In the web build openFileDialog uses a
-// file input and readBinaryFile reads the picked file from memory.
+// Import annotations from XFDF files. In the web build openFileDialog uses a
+// file input and readBinaryFile reads the picked file from memory. Meerdere
+// bestanden tegelijk (van verschillende beoordelaars) worden samengevoegd
+// zonder dubbelen (#629).
 export async function importXFDFFromFile() {
-  const filePath = await openFileDialog(['xfdf', 'xml']);
-  if (!filePath) return;
+  const gekozen = await openFileDialog(['xfdf', 'xml'], { multiple: true });
+  const paden = (Array.isArray(gekozen) ? gekozen : [gekozen]).filter(Boolean);
+  if (paden.length === 0) return;
 
-  const data = await readBinaryFile(filePath);
-  if (!data) return;
   const decoder = new TextDecoder();
-  const xml = decoder.decode(data);
-
-  importFromXFDF(xml);
+  const teksten = [];
+  for (const pad of paden) {
+    const data = await readBinaryFile(pad);
+    if (data) teksten.push(decoder.decode(data));
+  }
+  if (teksten.length) importFromXFDF(teksten);
 }
 
-// Parse XFDF XML and add annotations
+// Parse XFDF XML and add annotations. `xml`: one text or a list (several
+// reviewers' files). What the document already has, by name (/NM) or else by
+// fingerprint, is not added again; its new replies are (xfdf-samenvoegen.js).
 export function importFromXFDF(xml) {
+  const teksten = Array.isArray(xml) ? xml : [xml];
+  const binnen = [];
+  let fout = null;
+  for (const tekst of teksten) {
+    const parsed = parseXfdfDocument(tekst);
+    if (parsed.error) { fout ??= parsed.error; continue; }
+    binnen.push(...parsed.items);
+  }
+  if (binnen.length === 0 && fout) {
+    showMessage(i18next.t(fout));
+    return;
+  }
+
+  const activeDoc = getActiveDocument();
+  const samen = voegXfdfSamen(activeDoc?.annotations || [], binnen);
+  const inDocument = new Set(activeDoc?.annotations || []);
+  const gewijzigd = [];
+  const origineel = [];
+  for (const { doel, nieuw } of samen.antwoorden) {
+    if (inDocument.has(doel)) {
+      origineel.push(cloneAnnotation(doel));
+      gewijzigd.push(doel);
+    }
+    doel.replies = [...(Array.isArray(doel.replies) ? doel.replies : []), ...nieuw];
+  }
+
+  let nieuweLagen = false;
+  const newAnnotations = [];
+  for (const { ann, layer, naam } of samen.nieuw) {
+    // De naam uit het bestand wordt de /NM: bij opslaan en een volgende
+    // export blijft dezelfde annotatie herkenbaar.
+    if (naam && ann.nm == null) ann.nm = naam;
+    // Laag (#468): uit `opslayer` (een onbekende naam wordt een nieuwe laag),
+    // zonder attribuut de standaardlaag — niet de huidige laag.
+    const laag = laagUitAttribuut(activeDoc, layer);
+    assignLayer([ann], laag.id);
+    if (laag.nieuw) nieuweLagen = true;
+    if (activeDoc) activeDoc.annotations.push(ann);
+    newAnnotations.push(ann);
+  }
+
+  if (nieuweLagen) refreshAnnotationLayers();
+
+  if (newAnnotations.length > 0 || gewijzigd.length > 0) {
+    beginUndoTransaction();
+    try {
+      if (newAnnotations.length > 0) recordBulkAdd(newAnnotations);
+      if (gewijzigd.length > 0) recordBulkModify(gewijzigd, origineel);
+    } finally {
+      endUndoTransaction();
+    }
+    if (getActiveDocument()?.viewMode === 'continuous') {
+      redrawContinuous();
+    } else {
+      redrawAnnotations();
+    }
+  }
+  const antwoorden = samen.antwoorden.reduce((n, a) => n + a.nieuw.length, 0);
+  if (newAnnotations.length > 0 || samen.dubbel > 0) {
+    updateStatusMessage(i18next.t('xfdfImportMerged', {
+      count: newAnnotations.length, duplicates: samen.dubbel, replies: antwoorden, files: teksten.length,
+      defaultValue: 'Imported {{count}} annotations from XFDF ({{duplicates}} already present, {{replies}} new replies)',
+    }));
+  } else {
+    updateStatusMessage('No compatible annotations found in XFDF');
+  }
+  return { added: newAnnotations.length, duplicates: samen.dubbel, replies: antwoorden };
+}
+
+/**
+ * Annotations from XFDF text, without touching a document: `items` holds
+ * each annotation with the layer name from `opslayer`; `error` is the
+ * message key when the text is no usable XFDF.
+ */
+export function parseXfdfDocument(xml) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'application/xml');
 
   const parseError = doc.querySelector('parsererror');
-  if (parseError) {
-    showMessage(i18next.t('invalidXfdfFile'));
-    return;
-  }
+  if (parseError) return { error: 'invalidXfdfFile', items: [] };
 
   const annots = doc.querySelector('annots');
-  if (!annots) {
-    showMessage(i18next.t('noAnnotationsInXfdf'));
-    return;
-  }
+  if (!annots) return { error: 'noAnnotationsInXfdf', items: [] };
 
-  const newAnnotations = [];
-  const activeDoc = getActiveDocument();
-  let nieuweLagen = false;
-
+  const items = [];
   // First pass: parse non-leader annotations and index textboxes by their id (name attr).
   const textboxByName = new Map();
   const pendingLeaders = [];
@@ -108,19 +205,13 @@ export function importFromXFDF(xml) {
     }
     const ann = xfdfElementToAnnotation(el);
     if (ann) {
-      // Laag (#468): uit `opslayer` (een onbekende naam wordt een nieuwe laag),
-      // zonder attribuut de standaardlaag — niet de huidige laag.
-      const laag = laagUitAttribuut(activeDoc, el.getAttribute('opslayer'));
-      assignLayer([ann], laag.id);
-      if (laag.nieuw) nieuweLagen = true;
       // Preserve original id from XFDF "name" attribute for IRT linkage
       const xfdfName = el.getAttribute('name');
       if (xfdfName) {
         ann.id = xfdfName;
         if (ann.type === 'textbox') textboxByName.set(xfdfName, ann);
       }
-      if (activeDoc) activeDoc.annotations.push(ann);
-      newAnnotations.push(ann);
+      items.push({ ann, layer: el.getAttribute('opslayer'), naam: xfdfName || null });
     }
   }
   // Second pass: attach leader polylines to their parent textbox.
@@ -146,25 +237,17 @@ export function importFromXFDF(xml) {
       endStyle,
     });
   }
+  return { error: null, items };
+}
 
-  if (nieuweLagen) refreshAnnotationLayers();
-
-  if (newAnnotations.length > 0) {
-    recordBulkAdd(newAnnotations);
-    if (getActiveDocument()?.viewMode === 'continuous') {
-      redrawContinuous();
-    } else {
-      redrawAnnotations();
-    }
-    updateStatusMessage(`Imported ${newAnnotations.length} annotations from XFDF`);
-  } else {
-    updateStatusMessage('No compatible annotations found in XFDF');
-  }
+/** Only the annotations (with their XFDF ids), for readers that need no layers. */
+export function parseXfdfAnnotations(xml) {
+  return parseXfdfDocument(xml).items.map(({ ann, layer }) => (layer ? { ...ann, layerName: layer } : ann));
 }
 
 // Convert a single annotation to XFDF XML element
-function annotationToXFDF(ann) {
-  const attrs = commonAttrs(ann);
+function annotationToXFDF(ann, doc = getActiveDocument(), names = false) {
+  const attrs = commonAttrs(ann, doc, names);
 
   switch (ann.type) {
     case 'highlight':
@@ -242,7 +325,7 @@ function annotationToXFDF(ann) {
     case 'callout': {
       let out = `    <freetext ${attrs}${randkleurAttribuut(ann)}` +
              (ann.fillColor ? ` interior-color="${colorToXFDF(ann.fillColor)}"` : '') +
-             ` fontsize="${ann.fontSize || 14}" name="${escapeXml(ann.id)}">\n` +
+             ` fontsize="${ann.fontSize || 14}"${names ? '' : ` name="${escapeXml(ann.id)}"`}>\n` +
              `      <contents>${escapeXml(ann.text || '')}</contents>\n` +
              `    </freetext>\n`;
       if (ann.type === 'textbox' && Array.isArray(ann.leaders)) {
@@ -318,9 +401,10 @@ function xfdfElementToAnnotation(el) {
   const interiorColor = vulkleurUitAttribuut(el.getAttribute('interior-color'));
   const width = parseFloat(el.getAttribute('width')) || 2;
 
-  // Parse replies
+  // Parse replies: popups, <text inreplyto> and the nested <text> replies this
+  // exporter writes under a note (replyToXFDF).
   const replies = [];
-  el.querySelectorAll('popup, text[inreplyto]').forEach(replyEl => {
+  el.querySelectorAll('popup, text').forEach(replyEl => {
     replies.push({
       id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
       author: replyEl.getAttribute('title') || 'User',
@@ -426,7 +510,7 @@ function parseRect(rectStr) {
   return { x: parts[0], y: parts[1], w: parts[2] - parts[0], h: parts[3] - parts[1] };
 }
 
-function commonAttrs(ann) {
+function commonAttrs(ann, doc = getActiveDocument(), names = false) {
   let rect;
   if (ann.x !== undefined) {
     rect = `${ann.x},${ann.y},${ann.x + (ann.width || 0)},${ann.y + (ann.height || 0)}`;
@@ -441,7 +525,8 @@ function commonAttrs(ann) {
   }
 
   // Laag (#468): de naam in `opslayer`; de standaardlaag schrijft niets.
-  return `page="${ann.page - 1}" rect="${rect}" title="${escapeXml(ann.author || 'User')}" subject="${escapeXml(ann.subject || '')}" date="${ann.modifiedAt || ''}" creationdate="${ann.createdAt || ''}"${laagAttribuut(getActiveDocument(), ann)}`;
+  const name = names && ann.id ? `name="${escapeXml(ann.id)}" ` : '';
+  return `${name}page="${ann.page - 1}" rect="${rect}" title="${escapeXml(ann.author || 'User')}" subject="${escapeXml(ann.subject || '')}" date="${ann.modifiedAt || ''}" creationdate="${ann.createdAt || ''}"${laagAttribuut(doc, ann)}`;
 }
 
 function replyToXFDF(reply) {

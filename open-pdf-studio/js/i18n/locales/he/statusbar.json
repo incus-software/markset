@@ -30,7 +30,8 @@
     "formRadio": "לחצן בחירה בטופס",
     "screenshot": "צילום מסך",
     "pageLabelPick": "בחירת טקסט לתווית עמוד",
-    "proofread": "הגהה"
+    "proofread": "הגהה",
+    "count": "ספירה"
   },
   "toolLabel": "כלי:",
   "annotationsLabel": "הערות:",
@@ -110,6 +111,7 @@
   "searchHitsOne": "תוצאה אחת",
   "searchHitsMany": "{{count}} תוצאות",
   "passwordProtectedBar": "מוגן בסיסמה: נפתח לקריאה בלבד.",
+  "passwordProtectedEditableBar": "מוגן בסיסמה. השמירה משמרת את ההגנה.",
   "documentSearch": {
     "title": "חיפוש במסמכים",
     "query": "טקסט לחיפוש",
@@ -157,5 +159,12 @@
     "port": "יציאה: {{port}}",
     "lastTool": "כלי אחרון: {{tool}} ב-{{time}}",
     "noTool": "עדיין אין קריאות לכלים"
-  }
+  },
+  "sharedReviewActive": "סקירה משותפת",
+  "sharedReviewUpdates": "סקירה משותפת: {{n}} חדשים",
+  "sharedReviewTitle": "ההערות משותפות דרך {{folder}}. לחצו לפתיחת הסקירה המשותפת.",
+  "sharedReviewError": "סקירה משותפת: התיקייה אינה זמינה",
+  "pdfaReadOnly": "מסמך זה תואם לתקן {{label}} ונפתח לקריאה בלבד כדי למנוע את שינויו.",
+  "pdfaValidate": "אימות",
+  "countGroupTip": "Active count group: the next marker goes into this group"
 }

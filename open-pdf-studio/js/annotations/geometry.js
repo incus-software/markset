@@ -5,7 +5,8 @@ import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { catmullRomSpline } from '../tools/tools/spline-tool.js';
 import { wallHalfWidthPx as isPointOnWallHalfWidth } from './rendering/walls.js';
 import { buildStavenreeks } from './stavenreeks.js';
-import { isAnnotationPickableInView } from './view-filters.js';
+import { pickableInViewTest } from './view-filters.js';
+import { kaleLijst, vanStore } from './kale-lijst.js';
 import { stavenreeksPxPerMm } from './stavenreeks-scale.js';
 import { betonbalkHalfWidthPx } from './betonbalk-scale.js';
 import {
@@ -18,7 +19,9 @@ import { raakMarge, wolkUitstulping, schermPxNaarPt } from './minimummaat.js';
 import { puntInVlak } from './vlak-ringen.js';
 import { raakbaarBijKlik } from '../plattegrond/ruimte-koppeling.js';
 import { caretHit } from './corrections/geometry.js';
-import { isBewerkbareVeelhoek, veelhoekPuntenOpScherm } from './veelhoek-punten.js';
+import { raaktLink } from './link/link-model.js';
+import { isBewerkbareVeelhoek, veelhoekPuntenOpScherm, veelhoekKrommenOpScherm } from './veelhoek-punten.js';
+import { hasCurves, nearestOnPath, pointInPath, pathBounds } from './curve-path.js';
 
 // Binnen-test voor vormen die overal in hun vak raakbaar zijn. Een vorm die op
 // het scherm kleiner is dan het minimale raakvlak krijgt een marge in
@@ -96,6 +99,7 @@ function getAnnotationCenterAndSize(ann) {
     case 'stamp':
     case 'signature':
     case 'redaction':
+    case 'link':
     case 'viewport':
     case 'scaleRegion':
     case 'scaleBar':
@@ -197,6 +201,13 @@ function getAnnotationCenterAndSize(ann) {
 // weergave, waar de aanwijzer boven een ANDERE pagina dan doc.currentPage
 // kan staan (hover/contextmenu); zonder pageNum geldt doc.currentPage.
 export function findAnnotationAt(x, y, pageNum = null) {
+  // The loop reads the plain objects (kale-lijst.js); the caller gets the
+  // store's own object, so changing it stays reactive.
+  const lijst = getActiveDocument()?.annotations;
+  return vanStore(lijst, raakInLijst(kaleLijst(lijst), x, y, pageNum));
+}
+
+function raakInLijst(annotations, x, y, pageNum) {
   // Scale-aware hit tolerance: stay ~10 screen pixels at any zoom level.
   // GEEN vloer in paginapunten meer: de oude vloer van 2 pt greep pas boven
   // 500 % zoom — precies waar klein gewerkt wordt — en was bij 6400 % zo'n
@@ -206,8 +217,9 @@ export function findAnnotationAt(x, y, pageNum = null) {
   const tol = schermPxNaarPt(10, scale);
   const targetPage = pageNum ?? (doc ? doc.currentPage : 1);
 
+  // One set of view filters for the whole pass, not one per annotation.
+  const isAnnotationPickableInView = pickableInViewTest();
   // Search in reverse order (top annotations first)
-  const annotations = doc?.annotations || [];
   for (let i = annotations.length - 1; i >= 0; i--) {
     const ann = annotations[i];
     if (ann.page !== targetPage) continue;
@@ -304,6 +316,12 @@ export function findAnnotationAt(x, y, pageNum = null) {
       case 'polyline':
         // Check if point is near any segment of the polyline
         if (ann.points && ann.points.length >= 2) {
+          // Met krommen (#1169): de afstand tot het echte pad.
+          if (hasCurves(ann.curves)) {
+            const kr = nearestOnPath(ann.points, ann.curves, x, y);
+            if (kr && kr.distance < tol) return ann;
+            break;
+          }
           for (let i = 0; i < ann.points.length - 1; i++) {
             const segDist = distanceToLine(x, y, ann.points[i].x, ann.points[i].y, ann.points[i+1].x, ann.points[i+1].y);
             if (segDist < tol) return ann;
@@ -471,6 +489,13 @@ export function findAnnotationAt(x, y, pageNum = null) {
         // niet.
         if (ann.type === 'polygon' && isBewerkbareVeelhoek(ann)) {
           const vp = veelhoekPuntenOpScherm(ann);
+          const vk = veelhoekKrommenOpScherm(ann);
+          if (vk) {
+            // Met krommen (#1169): raken op het echte pad of erbinnen.
+            const kr = nearestOnPath(vp, vk, x, y, { closed: true });
+            if ((kr && kr.distance < tol) || pointInPath(vp, vk, x, y)) return ann;
+            break;
+          }
           for (let i = 0; i < vp.length; i++) {
             const j = (i + 1) % vp.length;
             if (distanceToLine(x, y, vp[i].x, vp[i].y, vp[j].x, vp[j].y) < tol) return ann;
@@ -677,6 +702,10 @@ export function findAnnotationAt(x, y, pageNum = null) {
         // raaktolerantie.
         if (caretHit(ann, x, y, tol)) return ann;
         break;
+      case 'link':
+        // Hyperlink (#953): overal binnen een van zijn vakken.
+        if (raaktLink(ann, x, y)) return ann;
+        break;
       default: {
         const typeHandler = getAnnotationType(ann.type);
         if (typeHandler && typeHandler.hitTest) {
@@ -803,6 +832,10 @@ export function isPointInsideAnnotation(x, y, annotation) {
     case 'polyline':
     case 'cloudPolyline':
       if (annotation.points && annotation.points.length > 0) {
+        if (annotation.type === 'polyline' && hasCurves(annotation.curves)) {
+          const kg = pathBounds(annotation.points, annotation.curves);
+          return x >= kg.minX && x <= kg.maxX && y >= kg.minY && y <= kg.maxY;
+        }
         const plMinX = Math.min(...annotation.points.map(p => p.x));
         const plMinY = Math.min(...annotation.points.map(p => p.y));
         const plMaxX = Math.max(...annotation.points.map(p => p.x));
@@ -895,6 +928,9 @@ export function isPointInsideAnnotation(x, y, annotation) {
     case 'caret':
       // Invoegteken (#508): zelfde raakvak als in findAnnotationAt.
       return caretHit(annotation, x, y, schermPxNaarPt(10, getEffectiveScale()));
+
+    case 'link':
+      return raaktLink(annotation, x, y);
 
     default:
       return false;

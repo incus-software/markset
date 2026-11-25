@@ -4,10 +4,17 @@ import { ifcCategoryLabel, IFC_LABELS } from '../../data/ifcCategoryMap.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import LayerField from './LayerField.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { state } from '../../../core/state.js';
+import { kiesbareStatussen, statusNaam, statusLijst } from '../../../review/status-sets.js';
 
 export default function GeneralSection() {
   const { t } = useTranslation('properties');
   const { t: tCommon } = useTranslation('common');
+  const { t: tContext } = useTranslation('context');
+  // De vaste en de eigen statussen (#1076, review/status-sets.js).
+  const eigen = () => statusLijst(state.preferences);
+  const kiesbaar = () => kiesbareStatussen(eigen());
+  const naamVan = (status, label = annotProps.statusLabel) => statusNaam(status, eigen(), tContext, label);
   const isLocked = () => annotProps.locked === true || annotProps.locked === 'mixed';
 
   return (
@@ -147,21 +154,34 @@ export default function GeneralSection() {
             <Show when={annotProps.status === 'mixed'}>
               <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
             </Show>
-            <Show when={!['mixed', 'none', 'accepted', 'rejected', 'cancelled', 'completed', 'reviewed'].includes(annotProps.status)}>
-              {/* Niet-standaard status uit een extern PDF-programma — toon as-is */}
-              <option value={annotProps.status}>{annotProps.status.charAt(0).toUpperCase() + annotProps.status.slice(1)}</option>
+            <Show when={annotProps.status && annotProps.status !== 'mixed' && !kiesbaar().some((s) => s.key === annotProps.status)}>
+              {/* Status die niet te kiezen is (een ander PDF-programma, een andere set, een verwijderde status): zoals hij is */}
+              <option value={annotProps.status}>{naamVan(annotProps.status)}</option>
             </Show>
-            <option value="none">{tCommon('none')}</option>
-            <option value="accepted">{t('general.accepted')}</option>
-            <option value="rejected">{t('general.rejected')}</option>
-            <option value="cancelled">{t('general.cancelled')}</option>
-            <option value="completed">{t('general.completed')}</option>
-            <option value="reviewed">{t('general.reviewed')}</option>
+            <For each={kiesbaar()}>
+              {(s) => <option value={s.key}>{naamVan(s.key)}</option>}
+            </For>
           </select>
           <Show when={annotProps.status && annotProps.status !== 'none' && annotProps.statusBy}>
             <small style="display:block; margin-top:2px; font-size:11px; color: var(--theme-text-secondary, #888);">
               {t('general.statusSetBy', { author: annotProps.statusBy, date: annotProps.statusAt })}
             </small>
+          </Show>
+          {/* Reviewgeschiedenis (#629): elke statuswijziging met wie en wanneer. */}
+          <Show when={annotProps.statusHistory?.length > 1}>
+            <div class="status-history" style="margin-top:4px; font-size:11px; color: var(--theme-text-secondary, #888);">
+              <div>{t('general.statusHistory')}</div>
+              <For each={annotProps.statusHistory}>
+                {(stap) => (
+                  <div class="status-history-step">
+                    {t('general.statusHistoryStep', {
+                      status: naamVan(stap.status, stap.label),
+                      author: stap.by || '?', date: stap.at || '',
+                    })}
+                  </div>
+                )}
+              </For>
+            </div>
           </Show>
         </div>
       </CollapsibleSection>

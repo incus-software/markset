@@ -1,11 +1,12 @@
 import { tekenDocument as getActiveDocument } from './document-context.js';
 import { HANDLE_SIZE, HANDLE_TYPES } from '../../core/constants.js';
 import { heeftEigenDraaipunt } from '../draaipunt.js';
-import { state, getSelectionBounds, getAnnotationBounds } from '../../core/state.js';
-import { annotationCtx } from '../../ui/dom-elements.js';
+import { state, getAnnotationBounds } from '../../core/state.js';
 import { getAnnotationHandles } from '../handles.js';
 import { schermSchaal } from '../../pdf/split-view/paneel-weergave.js';
 import { getTemplate } from '../../symbols/registry.js';
+import { hasCurves, tracePath } from '../curve-path.js';
+import { stuurpunten } from '../curve-shape.js';
 
 // Draw selection highlight and handles
 export function drawSelectionHandles(ctx, annotation) {
@@ -80,6 +81,21 @@ export function drawSelectionHandles(ctx, annotation) {
       ctx.stroke();
       ctx.restore();
       break;
+    case 'link': {
+      // Hyperlink (#953): gestippeld kader om elk vak. Op tekst zonder grepen
+      // (alleen verplaatsen), een getrokken vak houdt zijn grepen.
+      ctx.save();
+      ctx.strokeStyle = '#0066cc';
+      ctx.lineWidth = 1 / sc;
+      ctx.setLineDash([3 / sc, 3 / sc]);
+      const regels = Array.isArray(annotation.rects) && annotation.rects.length > 0;
+      for (const r of (regels ? annotation.rects : [annotation])) {
+        ctx.strokeRect(r.x, r.y, r.width, r.height);
+      }
+      ctx.restore();
+      if (regels) return;
+      break;
+    }
     case 'comment':
       // No selection indicators — fixed-size icon, move only
       break;
@@ -151,8 +167,10 @@ export function drawSelectionHandles(ctx, annotation) {
   const isPointBased = ((annotation.type === 'measureArea' || annotation.type === 'measurePerimeter' ||
     annotation.type === 'polyline' || annotation.type === 'cloudPolyline' || annotation.type === 'splineArrow') ||
     (annotation.type === 'filledArea' && isEditingContour)) && annotation.points && annotation.points.length >= 2;
+  // Een telmarkering tekent hierboven al haar eigen ring; sinds ze een kader
+  // heeft (#934) kwam er anders een vierkantje binnen die ring bij.
   const usesGripOnlySelection = annotation.type === 'line' || annotation.type === 'arrow' || annotation.type === 'wall'
-    || annotation.type === 'stavenreeks';
+    || annotation.type === 'stavenreeks' || annotation.type === 'count';
   if (isMeasureAngle) {
     ctx.save();
     ctx.strokeStyle = '#0066cc';
@@ -191,9 +209,14 @@ export function drawSelectionHandles(ctx, annotation) {
     ctx.lineWidth = (isEditingContour ? 1.5 : 1) / sc;
     ctx.setLineDash([3 / sc, 3 / sc]);
     ctx.beginPath();
-    ctx.moveTo(annotation.points[0].x, annotation.points[0].y);
-    for (let i = 1; i < annotation.points.length; i++) {
-      ctx.lineTo(annotation.points[i].x, annotation.points[i].y);
+    if (annotation.type === 'polyline' && hasCurves(annotation.curves)) {
+      // Het selectiekader volgt de krommen (#1169).
+      tracePath(ctx, annotation.points, annotation.curves, false);
+    } else {
+      ctx.moveTo(annotation.points[0].x, annotation.points[0].y);
+      for (let i = 1; i < annotation.points.length; i++) {
+        ctx.lineTo(annotation.points[i].x, annotation.points[i].y);
+      }
     }
     if (annotation.type === 'measureArea' || annotation.type === 'filledArea') ctx.closePath();
     ctx.stroke();
@@ -275,9 +298,40 @@ export function drawSelectionHandles(ctx, annotation) {
     ...(enkel ? alleGrepen.filter(h => h.type === HANDLE_TYPES.PIVOT) : []),
   ];
 
+  // Krommen (#1169): een dunne lijn van elke knoop naar zijn stuurpunten.
+  const stuur = stuurpunten(annotation);
+  if (stuur.length) {
+    ctx.save();
+    ctx.strokeStyle = '#0066cc';
+    ctx.lineWidth = lw;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (const s of stuur) {
+      ctx.moveTo(s.nodeX, s.nodeY);
+      ctx.lineTo(s.x, s.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   handles.forEach(handle => {
     const cx = handle.x + hs / 2;
     const cy = handle.y + hs / 2;
+
+    // Stuurpunt van een kromme (#1169): een rondje, kleiner dan een knoop.
+    if (handle.isCurveHandle) {
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx, cy, hs * 0.38, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.strokeStyle = '#0066cc';
+      ctx.lineWidth = lw;
+      ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
 
     // Eigen draaipunt (#826): een vizier. Blauw op het midden, oranje als
     // het verplaatst is, rood tijdens het slepen. Wit eronder voor contrast.
@@ -535,47 +589,3 @@ export function drawSelectionHandles(ctx, annotation) {
   });
 }
 
-// Draw outline for a single annotation in multi-selection
-export function drawMultiSelectionOutline(ctx, annotation) {
-  ctx.strokeStyle = '#0066cc';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 3]);
-
-  const bounds = getAnnotationBounds(annotation);
-  if (bounds) {
-    ctx.strokeRect(bounds.x - 2, bounds.y - 2, bounds.width + 4, bounds.height + 4);
-  }
-  ctx.setLineDash([]);
-}
-
-// Draw overall bounding box for multi-selection
-export function drawMultiSelectionBounds(ctx) {
-  const bounds = getSelectionBounds();
-  if (!bounds) return;
-
-  const msDoc = getActiveDocument();
-  const sc = schermSchaal(msDoc) || 1;
-  ctx.strokeStyle = '#0066cc';
-  ctx.lineWidth = 1.5 / sc;
-  ctx.setLineDash([6 / sc, 3 / sc]);
-  const pad = 6 / sc;
-  ctx.strokeRect(bounds.x - pad, bounds.y - pad, bounds.width + pad * 2, bounds.height + pad * 2);
-  ctx.setLineDash([]);
-
-  // Draw corner handles for the overall bounding box
-  const hs = HANDLE_SIZE / sc;
-  const corners = [
-    { x: bounds.x - pad - hs/2, y: bounds.y - pad - hs/2 },
-    { x: bounds.x + bounds.width + pad - hs/2, y: bounds.y - pad - hs/2 },
-    { x: bounds.x - pad - hs/2, y: bounds.y + bounds.height + pad - hs/2 },
-    { x: bounds.x + bounds.width + pad - hs/2, y: bounds.y + bounds.height + pad - hs/2 }
-  ];
-
-  corners.forEach(corner => {
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(corner.x, corner.y, hs, hs);
-    ctx.strokeStyle = '#0066cc';
-    ctx.lineWidth = 1 / sc;
-    ctx.strokeRect(corner.x, corner.y, hs, hs);
-  });
-}

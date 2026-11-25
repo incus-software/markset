@@ -9,7 +9,9 @@
     "measureTitle": "Chiều dài thực",
     "measureQuestion": "Chiều dài thực của khoảng cách này là bao nhiêu?",
     "measuredOnPaper": "Đo trên giấy",
-    "computedScale": "Tỷ lệ tính được"
+    "computedScale": "Tỷ lệ tính được",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Tỷ lệ",
@@ -17,7 +19,9 @@
     "viewports": "Khung nhìn",
     "noViewports": "Chưa xác định khung nhìn nào",
     "measurements": "Phép đo",
-    "noMeasurements": "Chưa có phép đo nào"
+    "noMeasurements": "Chưa có phép đo nào",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Thuộc tính",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Đặt bởi {{author}} lúc {{date}}",
     "layer": "Lớp",
     "layerMarkupGroup": "Lớp đánh dấu",
-    "layerDocumentGroup": "Lớp của tài liệu"
+    "layerDocumentGroup": "Lớp của tài liệu",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Không có",
   "moreColors": "Thêm Màu...",
@@ -248,6 +254,7 @@
     "title": "Tiêu đề",
     "author": "Tác giả",
     "subject": "Chủ đề",
+    "keywords": "Từ khóa",
     "creator": "Trình tạo",
     "producer": "Nhà sản xuất",
     "pdfVersion": "Phiên bản PDF",
@@ -316,7 +323,8 @@
     "redaction": "Che thông tin",
     "scaleBar": "Thước tỷ lệ",
     "parametricSymbol": "Ký hiệu tham số",
-    "fileAttachment": "Tệp đính kèm"
+    "fileAttachment": "Tệp đính kèm",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Bật/Tắt Bảng",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Xóa dấu trang",
     "findBookmark": "Tìm...",
     "findBookmarkTip": "Gõ để chuyển đến một dấu trang. Enter để mở, nhấn Enter lần nữa để đến kết quả tiếp theo.",
+    "findPage": "Tìm...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "Thêm tệp đính kèm",
     "openAttachment": "Mở tệp đính kèm",
     "saveAttachment": "Lưu tệp đính kèm",
@@ -452,6 +462,9 @@
     "scaleAuto": "Tỷ lệ tài liệu",
     "scaleTooltip": "Ghi đè tỷ lệ cho chú thích này (đơn vị trên mỗi điểm). Để trống để dùng tỷ lệ của tài liệu/vùng.",
     "unit": "Đơn vị",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Độ chính xác (số thập phân)",
     "dimType": "Kiểu",
     "dimTypeCustom": "Tùy chỉnh",
@@ -473,7 +486,9 @@
     "depthNone": "Không có",
     "depthTooltip": "Chiều cao tường, độ dày sàn, v.v., theo đơn vị của phép đo. Chiều dài × chiều sâu cho diện tích bề mặt, diện tích × chiều sâu cho thể tích.",
     "surface": "Bề mặt",
-    "volume": "Thể tích"
+    "volume": "Thể tích",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Bảng thống kê",
@@ -496,7 +511,18 @@
     },
     "preview": "Xem trước",
     "exportCsv": "Xuất CSV",
-    "workbookBindings": "Liên kết bảng tính"
+    "workbookBindings": "Liên kết bảng tính",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Trình hướng dẫn bảng thống kê",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Nối ở đầu",
     "joinAtEnd": "Nối ở cuối",
-    "joinHint": "Tắt: đầu tường này không bao giờ được vát góc, nối chữ T hoặc cắt theo tường khác; nó giữ đầu bằng tại vị trí được vẽ."
+    "joinHint": "Tắt: đầu tường này không bao giờ được vát góc, nối chữ T hoặc cắt theo tường khác; nó giữ đầu bằng tại vị trí được vẽ.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Cài đặt bản vẽ",
@@ -682,6 +804,7 @@
       "height": "Chiều cao",
       "location": "Vị trí",
       "locationSource": "Nguồn vị trí",
+      "layer": "Lớp",
       "rebarMark": "Số hiệu thanh",
       "rebarDiameter": "Ø",
       "rebarShape": "Hình dạng uốn",
@@ -807,6 +930,24 @@
     "rules": "Việc gán dựa trên tâm hộp giới hạn của đánh dấu, tính cả cạnh. Vùng sâu nhất được ưu tiên, sau đó đến diện tích nhỏ nhất, rồi đến ID vùng. Hãy dùng đa giác cạnh thẳng không có lỗ hoặc hộp chưa xoay. Các định danh vùng không hợp lệ hoặc trùng lặp sẽ bị loại trừ.",
     "loading": "Đang tải chú thích: vị trí có thể vẫn thay đổi."
   },
+  "dynamicStamp": {
+    "title": "Trường của con dấu",
+    "template": "Mẫu",
+    "refresh": "Cập nhật ngày, người dùng và trang",
+    "lock": "Khóa con dấu",
+    "lockConfirm": "Khóa con dấu này? Các trường của nó sẽ không thể thay đổi nữa.",
+    "locked": "Con dấu này đã bị khóa: các trường không thể thay đổi nữa.",
+    "field": {
+      "date": "Ngày",
+      "time": "Giờ",
+      "datetime": "Ngày và giờ",
+      "user": "Người dùng",
+      "page": "Trang",
+      "pages": "Số trang",
+      "filename": "Tên tệp",
+      "title": "Tiêu đề tài liệu"
+    }
+  },
   "toolSets": {
     "title": "Bộ công cụ",
     "typeWall": "Tường",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "Tệp quá lớn đối với một bộ công cụ.",
     "errorFileInvalid": "Tệp này không phải là bộ công cụ hợp lệ.",
     "errorFileNewer": "Bộ công cụ này được tạo bằng phiên bản Open PDF Studio mới hơn. Hãy cập nhật ứng dụng để nhập.",
-    "damagedStatus": "Không thể đọc các bộ công cụ đã lưu. Tệp bị hỏng đã được giữ lại với tên \"{{name}}\"."
+    "damagedStatus": "Không thể đọc các bộ công cụ đã lưu. Tệp bị hỏng đã được giữ lại với tên \"{{name}}\".",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Mở",
     "saveAs": "Lưu thành...",
     "noContent": "Nội dung của tệp này không được nhúng trong PDF."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

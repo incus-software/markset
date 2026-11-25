@@ -37,6 +37,7 @@ import { state } from './core/state.js';
 import { loadPreferences, savePreferences } from './core/preferences.js';
 import { verwijderOpslag } from './core/opslag.js';
 import { initDomElements } from './ui/dom-elements.js';
+import { revealStartupWindow } from './core/startup-window.js';
 import { initPropertiesPanel } from './ui/panels/properties-panel.js';
 import { initToolPalette } from './solid/components/ToolPalette.jsx';
 import { initSymbolPalette } from './solid/stores/symbolStore.js';
@@ -55,9 +56,12 @@ import { initAttachments } from './ui/panels/attachments.js';
 import { initLinks } from './ui/panels/links.js';
 import { initBookmarks } from './ui/panels/bookmarks.js';
 import { initLeftPanel } from './ui/panels/left-panel.js';
+import { herstelLinkerPaneel } from './ui/panels/werkruimte-toepassen.js';
 
 // Event setup
 import { setupEventListeners } from './ui/setup.js';
+import { setTool } from './tools/manager.js';
+import { normalizeStartupTool } from './core/startup-tool.js';
 
 // Reactive cursor (single source of truth for the PDF area cursor)
 import { initCursor } from './ui/cursor.js';
@@ -83,13 +87,19 @@ import { initFontDropdowns } from './utils/fonts.js';
 
 // MCP bridge — wires up `mcp:*` event listeners so the in-process MCP
 // server (started with `--mcp-server`) can drive the LIVE WebView from
-// outside. Inert when Tauri isn't present.
-import { initMcpBridge } from './mcp-bridge.js';
+// outside. Inert when Tauri isn't present. De brug zelf (ruim 190 kB) laadt
+// pas in init(), als eigen chunk (#454); de console-ringbuffer die hij
+// uitleest, schrijft vanaf hier mee, net als toen de brug hier stond.
+import './core/console-ring.js';
 
 // i18n
 import i18next from './i18n/config.js';
 import { language } from './i18n/useTranslation.js';
 import { installeerGetalVelden, herformatteerGetalVelden } from './ui/getal-veld.js';
+import { beginWaardeSleep, eindeWaardeSleep } from './core/undo-manager.js';
+import { stelNotatieBronIn } from './core/maat-notatie.js';
+import { stelVoetInchBronIn } from './core/voet-inch.js';
+import { stelSchaalSysteemBronIn } from './annotations/scale-presets.js';
 
 // Solid.js
 import { render } from 'solid-js/web';
@@ -108,9 +118,13 @@ import { sessieHerstelBeleid } from './core/sessie-herstel.js';
 import { sessieBestanden, bronPad } from './pdf/wachtwoord-pdf.js';
 // De brug naar de gastpagina (#694): alleen in de gehoste bouw.
 import { startHostBrug } from './core/host-brug-start.js';
+// Taal en thema van de SuperCloud (#977): ook alleen in de gehoste bouw.
+import { startHostVoorkeuren } from './core/host-voorkeuren-start.js';
 import { installeerWorkerShim } from './core/blob-worker.js';
 import { installeerWerkmapDialogen } from './core/openaec-omgeving.js';
 import { sneltoetsActief } from './core/keybindings/app-shortcuts.js';
+// Verkenner-rechtermuisknop Combineren / Omzetten naar PDF (#945): luistert vanaf de start.
+import { startShellActies } from './core/shell-acties.js';
 
 // Open PDF files: tabs created instantly, loads serialized through ONE global
 // queue - also across separate openFiles() calls (the Windows single-instance
@@ -222,7 +236,28 @@ async function init() {
   installeerWerkmapDialogen(window);
   // Getalvelden accepteren komma én punt; ze tonen het decimaalteken van de
   // app-taal en schakelen mee bij een taalwissel (ui/getal-veld.js).
-  installeerGetalVelden({ taal: () => language() });
+  // Op de getalvelden van het eigenschappenpaneel kan gesleept worden (#1168):
+  // de hele sleep is één ongedaan-stap, Escape zet de beginwaarde terug.
+  installeerGetalVelden({
+    taal: () => language(),
+    sleepHint: () => i18next.t('common:dragToChange'),
+    sleepBegin: () => beginWaardeSleep(),
+    sleepEinde: ({ geannuleerd }) => { eindeWaardeSleep({ annuleer: geannuleerd }).catch((e) => console.error(e)); },
+  });
+  // Maten tonen hetzelfde decimaalteken (of de voorkeur measureDecimalNotation)
+  // en eventueel duizendtalscheiding: "15,60 m²" in het Nederlands (#629).
+  stelNotatieBronIn(() => ({
+    taal: language(),
+    decimaalteken: state.preferences?.measureDecimalNotation,
+    groeperen: !!state.preferences?.measureDigitGrouping,
+  }));
+  // Imperiale lengtes in voet-inch-breuken als de voorkeur dat zegt (#996).
+  stelVoetInchBronIn(() => ({
+    formaat: state.preferences?.imperialLengthFormat,
+    precisie: state.preferences?.imperialFractionPrecision,
+  }));
+  // Schaallijsten: metrisch, imperiaal of beide (#996).
+  stelSchaalSysteemBronIn(() => state.preferences?.scaleUnitSystem);
   i18next.on('languageChanged', () => queueMicrotask(() => herformatteerGetalVelden()));
   // Dev: versienummer live uit package.json zodat de titelbalk na een
   // versie-bump klopt zonder Vite-herstart.
@@ -259,6 +294,9 @@ async function init() {
 
   // Load user preferences (before render so theme is applied)
   await loadPreferences();
+  // In de werkplek: taal en thema van de host (`openaecHost.taal`/`thema`,
+  // en `openaec-host-preferences` bij een wijziging) winnen van de opslag.
+  if (import.meta.env.MODE === 'hosted') startHostVoorkeuren();
   // De ingebouwde assistent is verwijderd. Een persoonlijke sleutel die hij
   // ooit in de browseropslag zette, wordt hier opgeruimd; staat er niets, dan
   // doet dit niets.
@@ -278,8 +316,11 @@ async function init() {
   if (!isTauri()) await volgendeTaak();
 
   // Single render call — mounts the entire UI tree
-  // render() is synchronous, so DOM elements exist immediately after
-  render(() => App(), document.getElementById('app-root'));
+  // render() is synchronous, so DOM elements exist immediately after.
+  // De mobiele weergave is een eigen chunk (#454): eerst laden, dan net zo
+  // synchroon tekenen; het bureaublad wacht hier nergens op.
+  const MobileApp = mobile ? (await import('./solid/MobileApp.jsx')).default : null;
+  render(() => (MobileApp ? MobileApp() : App()), document.getElementById('app-root'));
   recordStartupDiagnostic('frontend-rendered');
 
   // Restore properties panel visibility from preferences
@@ -289,6 +330,8 @@ async function init() {
   initPaletteOrder();
   initToolPalette();
   initSymbolPalette();
+  // Linkerpaneel: ingeklapt, tab en breedte zoals de gebruiker het liet (#932).
+  if (!mobile) herstelLinkerPaneel();
 
   // Re-register downloaded parametric steel catalogs from preferences so the
   // palette entries (parametricId) resolve to templates after a restart.
@@ -311,8 +354,12 @@ async function init() {
   // event-listener registration on window.__TAURI__.event — it does not need
   // the window to be visible or DOM-ready. Wiring it here means the in-process
   // MCP server's `app_*` tools are available during the remaining startup.
-  // Inert outside Tauri.
-  initMcpBridge().catch(e => console.warn('initMcpBridge failed:', e));
+  // Inert outside Tauri: daar wordt de brug niet eens geladen (#454).
+  if (window.__TAURI__?.core?.invoke) {
+    import('./mcp-bridge.js')
+      .then(m => m.initMcpBridge())
+      .catch(e => console.warn('initMcpBridge failed:', e));
+  }
 
   // "Open PDF Printer" job queue: watch the spool so prints from ANY
   // application pop the in-app sort/merge dialog. No-op when the virtual
@@ -334,8 +381,7 @@ async function init() {
     .then(m => m.loadPrinters())
     .catch(() => {});
 
-  // The native window is visible from creation; frontend startup cannot keep
-  // it hidden. Now that Solid has rendered, grab canvas and container refs.
+  // Now that Solid has rendered, grab canvas and container refs.
   initDomElements();
 
   // Wire the reactive cursor — runs once, then updates the .main-view cursor
@@ -365,6 +411,10 @@ async function init() {
 
   // Setup all event listeners
   setupEventListeners();
+
+  // Apply once, after tool registration and before opening/restoring documents.
+  // Saving preferences during a session must not interrupt the active tool.
+  setTool(normalizeStartupTool(state.preferences.startupTool));
 
   // Setup session save on window close (desktop only — Android lifecycle handles this)
   if (!mobile) {
@@ -403,6 +453,10 @@ async function init() {
     }
   }
 
+  // Theme, panels and event handlers are ready. Reveal before opening a PDF,
+  // which can wait for a password dialog or a slow file.
+  await revealStartupWindow({ mobile });
+
   // Check for file passed as command line argument
   const hasCommandLineFile = await checkCommandLineArgs();
 
@@ -412,6 +466,7 @@ async function init() {
   }
   pendingOpenFiles = [];
   appReady = true;
+  startShellActies({ openFiles }).catch(e => console.warn('[shell-action] failed:', e));
 
   // Als gast in de OpenAEC-site: het document dat de site meegeeft openen
   // via het opslagcontract van de site (#546). Zonder contract gebeurt niets.
@@ -434,6 +489,14 @@ async function init() {
     // reloading. Tabs still appear and load the same way, just without
     // blocking "ready" on it. restoreLastSession() has its own try/catch.
     if (taakToegestaan('sessie-herstellen', rol)) restoreLastSession();
+  }
+
+  // Gedeelde beoordeling via een map (#237): een document dat er een had,
+  // gaat bij het openen weer meedoen.
+  if (isTauri()) {
+    import('./review/shared-review-service.js')
+      .then((m) => m.installSharedReview())
+      .catch((e) => console.warn('[shared-review] install failed:', e));
   }
 
   // Herstel van niet-opgeslagen werk (js/herstel/): momentopnamen in elke

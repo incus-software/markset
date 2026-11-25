@@ -6,6 +6,13 @@ export interface Preferences {
   // Weergavemodus waarmee een document opent: 'continuous' (doorlopend,
   // de standaard voor nieuwe installaties) of 'single' (één pagina).
   defaultViewMode: 'continuous' | 'single';
+  // Voorkeurs-OCR-engine (`<extensie-id>:<id>`), null = ingebouwd (#970).
+  ocrEngine?: string | null;
+  ocrLanguage: string;
+  // Extensiecatalogus (#969): eigen catalogus-links naast de standaard, en
+  // per extensie-id waar hij vandaan komt (js/plugins/extension-catalog.js).
+  extensionCatalogs?: string[];
+  extensionSources?: Record<string, { soort: 'catalog' | 'custom'; link: string; catalogus: string; version?: string }>;
 
   // General
   authorName: string;
@@ -69,6 +76,14 @@ export interface Preferences {
   plainTextFontFamily: string; // Markset
   plainTextOpacity: number; // Markset
   textboxFontFamily?: string;
+  textboxTextColor?: string;
+  textboxFontBold?: boolean;
+  textboxFontItalic?: boolean;
+  textboxFontUnderline?: boolean;
+  textboxFontStrikethrough?: boolean;
+  textboxTextAlign?: string;
+  textboxTextVAlign?: string;
+  textboxLineSpacing?: number;
 
   // Callout defaults
   calloutFillColor: string;
@@ -79,6 +94,14 @@ export interface Preferences {
   calloutOpacity: number;
   calloutFontSize: number;
   calloutFontFamily?: string;
+  calloutTextColor?: string;
+  calloutFontBold?: boolean;
+  calloutFontItalic?: boolean;
+  calloutFontUnderline?: boolean;
+  calloutFontStrikethrough?: boolean;
+  calloutTextAlign?: string;
+  calloutTextVAlign?: string;
+  calloutLineSpacing?: number;
 
   // Rectangle defaults
   rectFillColor: string;
@@ -177,10 +200,13 @@ export interface Preferences {
   // Measurement global
   measureRounding: string;
   measureCtrlSnap: number;
-  // Markset: US units — 'feet-inch' shows ft/in lengths as 12'-6 3/8"
-  measureImperialFormat: 'feet-inch' | 'decimal';
-  measureFractionDenominator: number;
-  unitSystem: 'us' | 'metric';
+  measureDecimalNotation: 'auto' | 'comma' | 'point';
+  measureDigitGrouping: boolean;
+  scaleCheckOkPercent: number;
+  scaleCheckWarnPercent: number;
+  imperialLengthFormat: 'decimal' | 'feetInch';
+  imperialFractionPrecision: number;
+  scaleUnitSystem: 'metric' | 'imperial' | 'both';
 
   // Measure Distance defaults
   measureDistStrokeColor: string;
@@ -205,6 +231,7 @@ export interface Preferences {
   measureAreaDimUnit: string;
   measureAreaDimPrecision: number;
   measureAreaShowEdgeLengths: boolean;
+  measureAreaDisplayUnit: string;
 
   // Measure Perimeter defaults
   measurePerimStrokeColor: string;
@@ -222,10 +249,17 @@ export interface Preferences {
   autoSelectAfterCreate: boolean;
   confirmBeforeDelete: boolean;
   wheelZoomWithoutCtrl: boolean;
+  reverseWheelZoom: boolean;
   middleDoubleClickFit: boolean;
+  handClickZoom: boolean;
   ribbonWheelSwitchesTabs: boolean;
+  smoothScrolling: boolean;
+
+  // Stempelkiezer: ingebouwde stempels verbergen als er eigen stempels zijn (#998)
+  hideBuiltInStamps: boolean;
 
   // Startup
+  startupTool: 'select' | 'hand';
   restoreLastSession: boolean;
   checkUpdatesOnStartup: boolean; // Markset
   dontAskDefaultPdf: boolean;
@@ -262,14 +296,23 @@ export interface Preferences {
   // '' = default, or '#rrggbb' (#859).
   pageBackgroundColor: string;
   progressiveRender: boolean;
+  /** Incrementeel opslaan van annotatie- en formulierwijzigingen (#679), standaard uit. */
+  incrementalSave: boolean;
   screenCalibration: Record<string, number>;
   zoomDpi: number;
   pageSharpen: number;
   paperSizeUnit: string;
+  unitsDefaultMetric: boolean;
   // Keyboard shortcuts changed by the user (#714): command id -> combinations.
   keyboardShortcuts: Record<string, string[]>;
 
   // Panels
+  leftPanelCollapsed: boolean;
+  leftPanelTab: string;
+  leftPanelWidth: number | null;
+  propertiesPanelCollapsed: boolean;
+  workspaces: Array<{ naam: string; layout: Record<string, unknown> }>;
+  activeWorkspace: string;
   propertiesPanelVisible: boolean;
   toolPaletteVisible: boolean;
   toolPaletteMode: string;
@@ -285,6 +328,16 @@ export interface Preferences {
   symbolPaletteFloatX: number;
   symbolPaletteFloatY: number;
   customSymbolGroups: Array<{ id: string; name: string; symbols: Array<{ id: string; name: string; svg: string }> }>;
+  /** Sleutels van niet-opgeslagen werk dat al eens is aangeboden en uitgesteld. */
+  recoveryPostponed: string[];
+  /** Eigen reviewstatussen van markeringen (#1076). */
+  markupStatuses: Array<{ name: string; color: string; closed?: boolean }>;
+  /** Statussets met een naam (#1076, review/status-sets.js). */
+  markupStatusSets: Array<{ name: string; statuses: Array<{ name: string; color: string; closed?: boolean }> }>;
+  /** De naam van de actieve statusset; leeg = alleen de vaste statussen. */
+  activeMarkupStatusSet: string;
+  /** Toon de status als gekleurde badge op de markering (#1076). */
+  showStatusBadges: boolean;
   disabledSymbolGroups: string[];
   parametricSymbolDefaults: Record<string, Record<string, string | number | boolean>>;
 

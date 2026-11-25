@@ -8,6 +8,8 @@ import { shxSearchAnnotations } from '../pdf/shx-text.js';
 import { state, getActiveDocument } from '../core/state.js';
 import { BRON_TEKST, zoekInAnnotaties } from './search-sources.js';
 import { pdfjsBronnen } from '../core/basis-url.js';
+import { metOcrWoorden } from '../pdf/ocr-laag.js';
+import { maakRustZoektekst } from './rust-zoektekst.js';
 
 // Cache for extracted text content per document
 const textCache = new Map();
@@ -15,45 +17,101 @@ const textCache = new Map();
 // Cancellation token for progressive search
 let _searchGeneration = 0;
 
+// Zoektekst uit de PDFium-worker op de desktop (rust-zoektekst.js); null =
+// nog niet bepaald, false = niet beschikbaar (webversie, Android, tests).
+// De route staat standaard uit (pdf.js leest de tekst) en gaat alleen aan met
+// de ontwikkelschakelaar `window.__opdsRustZoeken = true`.
+let _rustZoektekst = null;
+
+async function rustZoekRoute() {
+  if (_rustZoektekst === null) {
+    _rustZoektekst = false;
+    try {
+      const platform = await import('../core/platform.js');
+      if (platform.heeftRustRenderer()) {
+        _rustZoektekst = maakRustZoektekst({ inTauri: platform.isTauri, mobile: platform.isMobile, call: platform.invoke });
+      }
+    } catch {
+      _rustZoektekst = false;
+    }
+  }
+  return _rustZoektekst || null;
+}
+
+/**
+ * Een bron voor de tekst van `pdf` uit de PDFium-worker, of null (dan leest
+ * pdf.js de tekst; dat is de standaard, zie rust-zoektekst.js).
+ * `filePath` + `bytes`: het bestand op schijf en de bytes
+ * die de app ervan heeft; de worker weigert als het bestand anders is.
+ */
+export async function rustTekstBron(pdf, filePath, bytes) {
+  if (!pdf || !filePath || !bytes?.length) return null;
+  const route = await rustZoekRoute();
+  if (!route?.bruikbaar()) return null;
+  return route.bron({ path: filePath, expectLen: bytes.length, paginaAantal: pdf.numPages });
+}
+
+/** De worker-bron voor een open document (zie rustTekstBron). */
+async function rustTekstBronVoor(doc, pdfDoc) {
+  if (!doc?.filePath) return null;
+  try {
+    const { getCachedPdfBytes } = await import('../pdf/loader.js');
+    return await rustTekstBron(pdfDoc, doc.filePath, getCachedPdfBytes(doc.filePath));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Extract text content from a single page.
  *
  * IMPORTANT: itemIndex here uses the same filtering as text-layer.js
  * (textContent.items.filter(item => item.str !== undefined)), so it
  * matches span.dataset.itemIndex in the rendered text layer.
+ *
+ * `rustBron` (rustTekstBron): de tekstitems komen dan uit de PDFium-worker,
+ * met dezelfde tekst en itemgrenzen als pdf.js en per teken een vak; geeft de
+ * bron voor deze pagina niets, dan leest pdf.js haar zoals altijd.
  */
-export async function extractPageText(pdfDoc, pageNum, doc) {
+export async function extractPageText(pdfDoc, pageNum, doc, rustBron = null) {
   const page = await pdfDoc.getPage(pageNum);
-  const textContent = await page.getTextContent();
+  const rust = rustBron ? await rustBron.pagina(pageNum) : null;
 
   let pageText = '';
   const items = [];
 
-  // text-layer.js filters: items with str !== undefined, and assigns
-  // span.dataset.itemIndex = i (position in the filtered array).
-  // We must use the SAME index so our itemIndex matches the DOM.
-  const textItems = textContent.items.filter(item => item.str !== undefined);
-  const styles = textContent.styles || {};
+  if (rust) {
+    pageText = rust.text;
+    for (const item of rust.items) items.push(item);
+  } else {
+    const textContent = await page.getTextContent();
 
-  textItems.forEach((item, i) => {
-    if (item.str) {
-      items.push({
-        str: item.str,
-        startPos: pageText.length,
-        endPos: pageText.length + item.str.length,
-        transform: item.transform,
-        width: item.width,
-        height: item.height,
-        fontName: item.fontName || '',
-        // Generic family pdf.js assigns to the font; used to measure the
-        // share of a partial match within the run.
-        fontFamily: styles[item.fontName]?.fontFamily || '',
-        // This matches span.dataset.itemIndex in text-layer.js line 212
-        itemIndex: i
-      });
-      pageText += item.str;
-    }
-  });
+    // text-layer.js filters: items with str !== undefined, and assigns
+    // span.dataset.itemIndex = i (position in the filtered array).
+    // We must use the SAME index so our itemIndex matches the DOM.
+    const textItems = textContent.items.filter(item => item.str !== undefined);
+    const styles = textContent.styles || {};
+
+    textItems.forEach((item, i) => {
+      if (item.str) {
+        items.push({
+          str: item.str,
+          startPos: pageText.length,
+          endPos: pageText.length + item.str.length,
+          transform: item.transform,
+          width: item.width,
+          height: item.height,
+          fontName: item.fontName || '',
+          // Generic family pdf.js assigns to the font; used to measure the
+          // share of a partial match within the run.
+          fontFamily: styles[item.fontName]?.fontFamily || '',
+          // This matches span.dataset.itemIndex in text-layer.js line 212
+          itemIndex: i
+        });
+        pageText += item.str;
+      }
+    });
+  }
 
   // Include text from in-memory "Add Text" edits
   if (doc?.textEdits) {
@@ -92,7 +150,9 @@ export async function extractPageText(pdfDoc, pageNum, doc) {
   } catch (e) {
     console.warn(`[find] annotaties van pagina ${pageNum} niet gelezen:`, e?.message || e);
   }
-  return { pageNum, text: pageText, items, view, shxAnnotations };
+  // De eigen draaiing: herkende OCR-woorden staan in de gedraaide weergave
+  // (metOcrWoorden, ocr-laag.js).
+  return { pageNum, text: pageText, items, view, rotation: page.rotate || 0, shxAnnotations };
 }
 
 /**
@@ -108,8 +168,13 @@ async function extractAllText(pdfDoc) {
   }
 
   const pagesText = [];
-  for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-    pagesText.push(await extractPageText(pdfDoc, pageNum, doc));
+  const bron = await rustTekstBronVoor(doc, pdfDoc);
+  try {
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      pagesText.push(await extractPageText(pdfDoc, pageNum, doc, bron));
+    }
+  } finally {
+    bron?.sluit();
   }
 
   if (docId && !hasTextEdits) {
@@ -243,7 +308,8 @@ export async function performSearch(query, options = {}) {
     const results = [];
 
     for (const pageData of pagesText) {
-      results.push(...zoekPaginaAlleBronnen(pageData, pattern, query, doc, bronnen));
+      // Nog niet opgeslagen OCR-woorden doen mee (#880); de cache blijft zonder.
+      results.push(...zoekPaginaAlleBronnen(metOcrWoorden(pageData, doc), pattern, query, doc, bronnen));
     }
 
     results.sort(compareResultsVisually);
@@ -296,8 +362,10 @@ export function executeProgressiveSearch(onProgress) {
 
   let cancelled = false;
 
+  let bron = null;
   (async () => {
     const pagesText = cachedText ? null : [];
+    if (!cachedText) bron = await rustTekstBronVoor(doc, pdfDoc);
 
     for (const pageNum of pageOrder) {
       if (cancelled || generation !== _searchGeneration) return;
@@ -306,7 +374,7 @@ export function executeProgressiveSearch(onProgress) {
       if (cachedText) {
         pageData = cachedText[pageNum - 1];
       } else {
-        pageData = await extractPageText(pdfDoc, pageNum, doc);
+        pageData = await extractPageText(pdfDoc, pageNum, doc, bron);
         if (pagesText) pagesText.push(pageData);
       }
 
@@ -324,7 +392,8 @@ export function executeProgressiveSearch(onProgress) {
         if (cancelled || generation !== _searchGeneration) return;
       }
 
-      const pageResults = zoekPaginaAlleBronnen(pageData, pattern, query, doc, bronnen);
+      // Nog niet opgeslagen OCR-woorden doen mee (#880); de cache blijft zonder.
+      const pageResults = zoekPaginaAlleBronnen(metOcrWoorden(pageData, doc), pattern, query, doc, bronnen);
       for (const r of pageResults) {
         r.index = allResults.length;
         allResults.push(r);
@@ -349,9 +418,9 @@ export function executeProgressiveSearch(onProgress) {
     allResults.forEach((r, i) => r.index = i);
 
     onProgress(allResults, totalPages, totalPages, true);
-  })();
+  })().finally(() => bron?.sluit());
 
-  return () => { cancelled = true; };
+  return () => { cancelled = true; bron?.sluit(); };
 }
 
 /**

@@ -24,7 +24,10 @@ import { selecteerRuimteVanTag } from '../../plattegrond/ruimte-selectie.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { copyAnnotation, copyAnnotations, pasteFromClipboard, pasteAnnotationsInPlace, duplicateAnnotation } from '../../annotations/clipboard.js';
 import { cloneAnnotation } from '../../annotations/factory.js';
-import { verwijderVeelhoekHoekpunt, voegVeelhoekHoekpuntIn, VEELHOEK_MIN_PUNTEN } from '../../annotations/veelhoek-punten.js';
+import { voegVeelhoekHoekpuntIn } from '../../annotations/veelhoek-punten.js';
+import {
+  pasPadToe, isKrommeZijde, zetZijdeKrom, voegKnoopIn, verwijderKnoop, minKnopen,
+} from '../../annotations/curve-shape.js';
 import { commitAnnotationMutation, deleteAnnotationsWithUndo } from '../../annotations/mutations.js';
 import { expandCorrectionGroups } from '../../annotations/corrections/model.js';
 import { recordModify, recordBulkModify } from '../../core/undo-manager.js';
@@ -37,6 +40,7 @@ import { canSaveToToolSet, saveAnnotationToToolSet } from '../stores/toolSetsSto
 import { toolSetsIcon as toolSetsMenuIcon } from '../data/contextMenuIcons.js';
 import { setTool } from '../../tools/manager.js';
 import { alignAnnotations } from '../../annotations/smart-guides.js';
+import { fitBoxToText, tekstkadersInSelectie } from '../../annotations/alignment.js';
 import {
   resolveSysteem, paneelKey, setPaneelType, addSparing, rotToRaster,
   buildSysteemraster,
@@ -49,7 +53,9 @@ import { stramienSlotStatus, schakelStramienSlot, slotLabelSleutel } from '../..
 import { createDefaultPaneelTypen } from '../../annotations/systeem-typen.js';
 import { getSysteemTypeById } from '../../annotations/systeem-typen-registry.js';
 import { getSelectedText, clearTextSelection } from '../../text/text-selection.js';
-import { showCalibrationDialog } from '../../annotations/measurement.js';
+import { heeftTekstselectie } from '../../ui/panels/bladwijzer-plek.js';
+import { isPdfAReadOnly } from '../../pdf/loader.js';
+import { showCalibrationDialog, herberekenVlakMaat } from '../../annotations/measurement.js';
 import { openDialog } from '../stores/dialogStore.js';
 import { getSelectedPagesArray, formatPageRangeString, selectAllPages, clearPageSelection } from '../stores/panels/thumbnailStore.js';
 import { hiddenStatuses, toggleHiddenStatus } from '../stores/panels/annotationsStore.js';
@@ -71,7 +77,9 @@ import {
   canRevealInFileManager,
 } from '../../core/file-manager-reveal.js';
 import { sneltoetsVoor } from '../stores/keybindingStore.js';
-import { menuPlaatsing, submenuPlaatsing } from './submenu-plaatsing.js';
+import { plaatsSubmenuVan } from './contextmenu-plaatsen.js';
+import { setStatusWithHistory } from '../../review/status-history.js';
+import { kiesbareStatussen, filterStatussen, statusNaam, statusLijst } from '../../review/status-sets.js';
 
 function redraw() {
   if (getActiveDocument()?.viewMode === 'continuous') {
@@ -108,33 +116,6 @@ function MenuItem(props) {
 
 function Separator() {
   return <div class="context-menu-separator" />;
-}
-
-const MENU_MARGE = 4;
-
-// Place a submenu next to its item, inside the window (#883). Submenus are
-// position: fixed so that a scrolling main menu (overflow-y: auto) does not
-// clip them; their spot is computed from the item's box.
-function plaatsSubmenuVan(item) {
-  const inhoud = item.querySelector(':scope > .context-menu-submenu-content');
-  if (!inhoud) return;
-  inhoud.style.maxHeight = '';
-  const maat = inhoud.getBoundingClientRect();
-  if (!maat.width && !maat.height) return;
-  const stijl = getComputedStyle(inhoud);
-  const inzet = (parseFloat(stijl.borderTopWidth) || 0) + (parseFloat(stijl.paddingTop) || 0);
-  const voorkeurLinks = getComputedStyle(item).direction === 'rtl';
-  const { left, top, maxHoogte, naarLinks } = submenuPlaatsing(
-    { width: maat.width, height: maat.height }, item.getBoundingClientRect(),
-    window.innerWidth, window.innerHeight, { marge: MENU_MARGE, inzet, voorkeurLinks });
-  inhoud.classList.toggle('naar-links', naarLinks);
-  inhoud.classList.toggle('scrollt', maxHoogte != null);
-  inhoud.style.top = `${top}px`;
-  inhoud.style.maxHeight = maxHoogte != null ? `${maxHoogte}px` : '';
-  inhoud.style.left = `${left}px`;
-  // The scrollbar makes it wider: stay inside the window with that width too.
-  const teVer = inhoud.getBoundingClientRect().right - (window.innerWidth - MENU_MARGE);
-  if (teVer > 0) inhoud.style.left = `${Math.max(MENU_MARGE, left - teVer)}px`;
 }
 
 function plaatsSubmenu(e) {
@@ -218,13 +199,20 @@ function AnnotationMenuContent() {
     return dichtstbijzijndEind(a, { x: v.appX, y: v.appY });
   };
 
-  const statusItems = [
-    { key: 'None', label: () => t('annotation.statusNone') },
-    { key: 'Accepted', label: () => t('annotation.statusAccepted') },
-    { key: 'Cancelled', label: () => t('annotation.statusCancelled') },
-    { key: 'Completed', label: () => t('annotation.statusCompleted') },
-    { key: 'Rejected', label: () => t('annotation.statusRejected') },
-  ];
+  // De vaste en de eigen statussen (#1076, review/status-sets.js), opnieuw
+  // opgebouwd bij elk openen van het menu.
+  const statusItems = () => kiesbareStatussen(statusLijst(state.preferences)).map((s) => ({
+    key: s.key, label: () => statusNaam(s.key, statusLijst(state.preferences), t),
+  }));
+  // Het filter kent ook wat er verder in het document staat: een andere set,
+  // een verwijderde status of een status uit een ander programma.
+  const statusFilterItems = () => {
+    const anns = getActiveDocument()?.annotations || [];
+    const labels = new Map(anns.filter((a) => a?.statusLabel).map((a) => [String(a.status).toLowerCase(), a.statusLabel]));
+    return filterStatussen(statusLijst(state.preferences), anns.map((a) => a?.status)).map((key) => ({
+      key, label: () => statusNaam(key, statusLijst(state.preferences), t, labels.get(key)),
+    }));
+  };
 
   // Edit-contour vertex actions — only shown when right-clicking a vertex/edge
   // handle of the annotation that's currently in edit-contour mode.
@@ -249,28 +237,37 @@ function AnnotationMenuContent() {
     // er minstens drie), op een zijde komt er een hoekpunt bij, op de plek
     // van de klik.
     if (v.kind === 'veelhoekHoek' || v.kind === 'veelhoekZijde') {
-      const pasToe = (nieuw) => {
+      // Ook de polylijn (#1169); een zijde kan daarnaast een kromme worden
+      // (en terug). De bewerkingen staan in curve-shape.js.
+      const pasToe = (nieuw, hint = false) => {
         if (nieuw) {
           const before = cloneAnnotation(a);
-          Object.assign(a, nieuw);
+          pasPadToe(a, nieuw);
           a.modifiedAt = new Date().toISOString();
           recordModify(a.id, before, cloneAnnotation(a));
           redraw();
           showProperties(a);
+          if (hint) updateStatusMessage(t('contextMenu.curveHint'), 8000);
         }
         hideMenu();
       };
+      const krom = v.kind === 'veelhoekZijde' && isKrommeZijde(a, v.edgeIndex);
       return (
         <>
           <Show when={v.kind === 'veelhoekHoek'}>
             <MenuItem icon={deleteIcon} label={t('contextMenu.deleteVertex') || 'Delete vertex'}
-              disabled={isLocked() || !((a.points?.length || 0) > VEELHOEK_MIN_PUNTEN)}
-              onClick={() => pasToe(verwijderVeelhoekHoekpunt(a, v.nodeIndex))} />
+              disabled={isLocked() || !((a.points?.length || 0) > minKnopen(a))}
+              onClick={() => pasToe(verwijderKnoop(a, v.nodeIndex))} />
           </Show>
           <Show when={v.kind === 'veelhoekZijde'}>
             <MenuItem label={t('contextMenu.insertVertex') || 'Insert vertex here'}
               disabled={isLocked()}
-              onClick={() => pasToe(voegVeelhoekHoekpuntIn(a, v.edgeIndex, v.punt))} />
+              onClick={() => pasToe(a.type === 'polygon'
+                ? voegVeelhoekHoekpuntIn(a, v.edgeIndex, v.punt)
+                : voegKnoopIn(a, v.edgeIndex, v.t))} />
+            <MenuItem label={t(krom ? 'contextMenu.convertToStraight' : 'contextMenu.convertToCurve')}
+              disabled={isLocked()}
+              onClick={() => pasToe(zetZijdeKrom(a, v.edgeIndex, !krom), !krom)} />
           </Show>
           <Separator />
         </>
@@ -546,6 +543,11 @@ function AnnotationMenuContent() {
 
       <Show when={['textbox', 'callout'].includes(ann()?.type)}>
         <MenuItem label={t('annotation.editText')} disabled={isLocked()} onClick={() => startTextEditing(ann())} />
+        <MenuItem label={t('annotation.fitBoxToText')} disabled={isLocked()} onClick={() => {
+          const a = ann();
+          if (!a) return;
+          if (fitBoxToText([a]) && getActiveDocument()?.selectedAnnotation === a) showProperties(a);
+        }} />
         <Separator />
       </Show>
 
@@ -669,12 +671,14 @@ function AnnotationMenuContent() {
       <Separator />
 
       <Submenu icon={statusIcon} label={t('annotation.status')}>
-        <For each={statusItems}>
+        <For each={statusItems()}>
           {(s) => (
-            <MenuItem label={s.label()} checkbox={true} checked={ann()?.status === s.key || (!ann()?.status && s.key === 'None')} onClick={() => {
+            <MenuItem label={s.label()} checkbox={true} checked={String(ann()?.status || 'none').toLowerCase() === s.key.toLowerCase()} onClick={() => {
               const a = ann();
+              // Zoals het eigenschappenpaneel: kleine letters, wie en wanneer,
+              // en een stap in de reviewgeschiedenis (#629).
               if (a) commitAnnotationMutation(a, annotation => {
-                annotation.status = s.key === 'None' ? undefined : s.key;
+                setStatusWithHistory(annotation, s.key, { door: state.defaultAuthor || annotation.author || 'User' });
               });
             }} />
           )}
@@ -686,7 +690,7 @@ function AnnotationMenuContent() {
           updateAnnotationsList. Sleutels zijn kleine letters — zelfde
           afspraak als het paneelmenu (#236). */}
       <Submenu icon={statusIcon} label={t('annotation.showByStatus')}>
-        <For each={statusItems}>
+        <For each={statusFilterItems()}>
           {(s) => (
             <MenuItem label={s.label()} checkbox={true} checked={!hiddenStatuses().has(s.key.toLowerCase())} onClick={() => {
               toggleHiddenStatus(s.key.toLowerCase());
@@ -811,6 +815,11 @@ function AnnotationMenuContent() {
             showCalibrationDialog(px);
           }
         }} />
+        {/* Schaalcontrole (#629): deze maatlijn als tweede bekende maat. */}
+        <MenuItem icon={convertMeasurementIcon} label={t('annotation.checkScale')} onClick={() => {
+          const a = ann();
+          if (a) openDialog('scale-check', { annotationId: a.id });
+        }} />
         <MenuItem icon={convertMeasurementIcon} label={t('annotation.setScale')} onClick={() => {
           const a = ann();
           if (a) {
@@ -879,7 +888,12 @@ function AnnotationMenuContent() {
         <MenuItem label={t('annotation.applyDefaultStyle')} onClick={() => {
           const a = ann();
           if (a) {
-            commitAnnotationMutation(a, annotation => applyDefaultStyle(annotation));
+            commitAnnotationMutation(a, annotation => {
+              applyDefaultStyle(annotation);
+              // De weergave-eenheid van de oppervlakte hoort bij de stijl
+              // (#1129): het label volgt hem meteen.
+              if (annotation.type === 'measureArea') herberekenVlakMaat(annotation);
+            });
             redraw();
           }
         }} />
@@ -912,6 +926,11 @@ function MultiAnnotationMenuContent() {
     count(); position();
     return (getActiveDocument()?.selectedAnnotations || [])
       .filter(a => a?.type === 'wall' && !a.locked);
+  };
+  // Kader passend maken (#1144): de tekstvakken en aanhaalvakken in de selectie.
+  const geselecteerdeTekstkaders = () => {
+    count(); position();
+    return tekstkadersInSelectie();
   };
 
   return (
@@ -959,6 +978,11 @@ function MultiAnnotationMenuContent() {
       <Show when={count() >= 3}>
         <MenuItem label={t('multiSelect.distributeHorizontally')} onClick={() => { alignAnnotations('distribute-h'); redraw(); }} />
         <MenuItem label={t('multiSelect.distributeVertically')} onClick={() => { alignAnnotations('distribute-v'); redraw(); }} />
+      </Show>
+
+      <Show when={geselecteerdeTekstkaders().length >= 1}>
+        <Separator />
+        <MenuItem label={t('multiSelect.fitBoxesToText')} onClick={() => { fitBoxToText(); }} />
       </Show>
 
       <Show when={geselecteerdeWanden().length >= 2}>
@@ -1072,7 +1096,8 @@ function PageMenuContent() {
       <Separator />
 
       <MenuItem icon={printIcon} label={t('page.printMenu')} shortcut={sneltoetsVoor('file.print')} onClick={() => {
-        import('../stores/dialogStore.js').then(m => m.openDialog('print'));
+        // Via showPrintDialog: de webversie en de rechten van een beveiligd document.
+        import('../../ui/chrome/dialogs.js').then(m => m.showPrintDialog());
       }} />
       <MenuItem icon={findIcon} label={t('page.findMenu')} shortcut={sneltoetsVoor('search.find')} onClick={() => {
         const findBar = document.getElementById('find-bar');
@@ -1146,6 +1171,8 @@ function BookmarkMenuContent() {
   // Vinkjes uit het model; de boom verandert na elke stijlwijziging mee.
   const stijl = () => stijlVanSelectie(lijst(), bookmarkSelectedIds());
   const zet = (wijziging) => import('../../ui/panels/bookmarks.js').then(m => m.setBookmarkStyle(wijziging));
+  // Tekst geselecteerd in het document: bij het openen van het menu gelezen.
+  const tekstGeselecteerd = () => heeftTekstselectie();
 
   return (
     <>
@@ -1158,6 +1185,13 @@ function BookmarkMenuContent() {
       <Separator />
       <MenuItem label={t('bookmark.editBookmark')} disabled={uit().edit} onClick={() => {
         import('../../ui/panels/bookmarks.js').then(m => m.editBookmark());
+      }} />
+      {/* Bestemming opnieuw zetten (#1157): wat nu in beeld is, of de geselecteerde tekst. */}
+      <MenuItem label={t('bookmark.setDestView')} disabled={uit().edit} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.setBookmarkDestination('beeld'));
+      }} />
+      <MenuItem label={t('bookmark.setDestSelection')} disabled={uit().edit || !tekstGeselecteerd()} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.setBookmarkDestination('selectie'));
       }} />
       <MenuItem label={aantal() > 1 ? t('bookmark.deleteBookmarks', { count: aantal() }) : t('bookmark.deleteBookmark')}
         disabled={uit().delete} onClick={() => {
@@ -1348,6 +1382,30 @@ function ThumbnailMenuContent() {
       <Separator />
 
       <MenuItem label={t('thumbnail.pageLabels')} onClick={() => openDialog('page-labels')} />
+      <MenuItem
+        label={isMulti() ? t('thumbnail.setPageScaleMulti', { count: count() }) : t('thumbnail.setPageScale')}
+        onClick={() => window.dispatchEvent(new CustomEvent('ops-paginaschaal-bewerk', { detail: { pageNum: pageNum() } }))} />
+      <MenuItem
+        label={isMulti() ? t('thumbnail.detectPageScalesMulti', { count: count() }) : t('thumbnail.detectPageScales')}
+        onClick={async () => {
+          const { detecteerMetVoortgang } = await import('../../pdf/pagina-schalen-app.js');
+          const d = state.documents[state.activeDocumentIndex];
+          const alle = Array.from({ length: d?.pdfDoc?.numPages || 0 }, (_, i) => i + 1);
+          await detecteerMetVoortgang(d, isMulti() ? pages() : alle);
+        }} />
+      <MenuItem
+        label={t('thumbnail.detectPageScalesArea')}
+        onClick={async () => {
+          const { detecteerUitGebiedMetVoortgang } = await import('../../pdf/pagina-schalen-app.js');
+          await detecteerUitGebiedMetVoortgang(state.documents[state.activeDocumentIndex], t('thumbnail.pickScaleArea'));
+        }} />
+      <MenuItem
+        label={t('thumbnail.clearPageScale')}
+        disabled={!pages().some((p) => state.documents[state.activeDocumentIndex]?.pageScales?.[p])}
+        onClick={async () => {
+          const { zetPaginaSchalen } = await import('../../pdf/pagina-schalen-app.js');
+          zetPaginaSchalen(state.documents[state.activeDocumentIndex], pages(), null);
+        }} />
       <MenuItem icon={thumbnailPropertiesIcon} label={t('thumbnail.properties')} disabled={isMulti()} onClick={() => {
         import('../stores/dialogStore.js').then(m => m.openDialog('page-properties', { pageNum: pageNum() }));
       }} />
@@ -1400,112 +1458,46 @@ function TextSelectionMenuContent() {
         clearTextSelection();
       }} />
 
+      <Separator />
+
+      {/* Hyperlink op de geselecteerde tekst (#953): de regels worden /QuadPoints. */}
+      <MenuItem label={t('textSelection.linkSelection')} disabled={isPdfAReadOnly()} onClick={() => {
+        import('../../annotations/link/link-maken.js').then((m) => m.linkUitSelectie());
+      }} />
+      {/* Bladwijzer naar de geselecteerde tekst (#1157): de tekst wordt de titel. */}
+      <MenuItem icon={bookmarkIcon} label={t('textSelection.bookmarkSelection')} disabled={isPdfAReadOnly()} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.addBookmark());
+      }} />
+
     </>
   );
 }
 
-export default function ContextMenu() {
-  let menuRef;
-  // De inhoud pas opbouwen als het menu voor het eerst opengaat, en daarna
-  // laten staan. Het verborgen menu (standaard het annotatiemenu) kostte bij
-  // de start zo'n vijfde van het opbouwen van het hele venster (#707).
-  const inhoudOpgebouwd = createMemo((eerder) => eerder || visible(), false);
-
-  // Position the menu when it becomes visible: measured at its natural size,
-  // then shifted (and, when taller than the window, given the window height
-  // and a scrollbar) so it stays fully inside the window (#883).
-  createEffect(() => {
-    if (visible()) {
-      const pos = position();
-      menuType();
-      requestAnimationFrame(() => {
-        if (!menuRef) return;
-        menuRef.style.maxHeight = '';
-        menuRef.classList.remove('scrollt');
-        menuRef.scrollTop = 0;
-        const rect = menuRef.getBoundingClientRect();
-        const { left, top, maxHoogte } = menuPlaatsing(
-          { x: pos.x, y: pos.y, breedte: rect.width, hoogte: rect.height },
-          window.innerWidth, window.innerHeight, MENU_MARGE);
-        menuRef.style.left = `${left}px`;
-        menuRef.style.top = `${top}px`;
-        if (maxHoogte != null) {
-          menuRef.style.maxHeight = `${maxHoogte}px`;
-          menuRef.classList.add('scrollt');
-          // The scrollbar makes it wider: stay inside with that width too.
-          const teVer = menuRef.getBoundingClientRect().right - (window.innerWidth - MENU_MARGE);
-          if (teVer > 0) menuRef.style.left = `${Math.max(MENU_MARGE, left - teVer)}px`;
-        }
-      });
-    }
-  });
-
-  // A scrolling menu moves its items under an open submenu: place it again.
-  function handleMenuScroll() {
-    menuRef?.querySelectorAll('.context-menu-submenu:hover').forEach(plaatsSubmenuVan);
-  }
-
-  // Dismiss when clicking outside the menu.
-  // mousedown on document handles clicks on ribbon, panels, title bar, etc.
-  // Canvas clicks are handled by the tool dispatcher (which calls hideMenu).
-  function handleOutsideClick(e) {
-    if (!visible()) return;
-    if (menuRef && menuRef.contains(e.target)) return;
-    hideMenu();
-  }
-
-  function handleEscape(e) {
-    if (e.key === 'Escape' && visible()) {
-      hideMenu();
-    }
-  }
-
-  function handleWindowBlur() {
-    if (visible()) hideMenu();
-  }
-
-  onMount(() => {
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('keydown', handleEscape);
-    window.addEventListener('blur', handleWindowBlur);
-  });
-
-  onCleanup(() => {
-    document.removeEventListener('mousedown', handleOutsideClick);
-    document.removeEventListener('keydown', handleEscape);
-    window.removeEventListener('blur', handleWindowBlur);
-  });
-
+// De inhoud van het contextmenu (#454): een eigen chunk, die
+// ContextMenuHost.jsx laadt na de start of bij het eerste openen. De host
+// (altijd gemonteerd) houdt de luisteraars voor Escape en klik-buiten en
+// plaatst het menu.
+export default function ContextMenuInhoud() {
   return (
-    <div
-      ref={menuRef}
-      class="context-menu"
-      classList={{ visible: visible() }}
-      onScroll={handleMenuScroll}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      <Show when={inhoudOpgebouwd()}>
-        <Switch>
-          <Match when={menuType() === 'annotation'}>
-            <AnnotationMenuContent />
-          </Match>
-          <Match when={menuType() === 'annotationMulti'}>
-            <MultiAnnotationMenuContent />
-          </Match>
-          <Match when={menuType() === 'page'}>
-            <PageMenuContent />
-          </Match>
-          <Match when={menuType() === 'textSelection'}>
-            <TextSelectionMenuContent />
-          </Match>
-          <Match when={menuType() === 'bookmark'}>
-            <BookmarkMenuContent />
-          </Match>
-          <Match when={menuType() === 'thumbnail'}>
-            <ThumbnailMenuContent />
-          </Match>
-        </Switch>
-      </Show>
-    </div>
+    <Switch>
+      <Match when={menuType() === 'annotation'}>
+        <AnnotationMenuContent />
+      </Match>
+      <Match when={menuType() === 'annotationMulti'}>
+        <MultiAnnotationMenuContent />
+      </Match>
+      <Match when={menuType() === 'page'}>
+        <PageMenuContent />
+      </Match>
+      <Match when={menuType() === 'textSelection'}>
+        <TextSelectionMenuContent />
+      </Match>
+      <Match when={menuType() === 'bookmark'}>
+        <BookmarkMenuContent />
+      </Match>
+      <Match when={menuType() === 'thumbnail'}>
+        <ThumbnailMenuContent />
+      </Match>
+    </Switch>
   );
 }

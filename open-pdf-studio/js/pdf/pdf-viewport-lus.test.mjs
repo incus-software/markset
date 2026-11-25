@@ -46,12 +46,17 @@ globalThis.document = {
 };
 
 let renders = 0;
-globalThis.__vpTest = { impl: { renderVectorPage: () => { renders++; } } };
+// Het meetpunt voor 'er is getekend': de schilder van de paginalagen, die
+// elke render één keer loopt.
+globalThis.__vpTest = { impl: { tekenPagina: () => { renders++; } } };
+const paginaSchilder = (...a) => globalThis.__vpTest.impl.tekenPagina(...a);
 
 register('./pdf-viewport-test-hooks.mjs', import.meta.url);
 const vp = await import('./pdf-viewport.js');
 const { viewport } = vp;
 const { WIEL_DUUR_MS } = await import('./wiel-scroll.js');
+// Vloeiend scrollen staat standaard uit (#1007); de uitlooptests zetten het aan.
+const { zetVloeiendScrollen } = await import('../core/vloeiend-scrollen.js');
 
 const nepCtx = new Proxy({}, {
   get: (doel, sleutel) => (sleutel in doel ? doel[sleutel] : () => {}),
@@ -65,7 +70,7 @@ const annotatieRedraw = () => { annotatieRedraws++; };
 // werk. Zo draait elke test ook los (--test-name-pattern).
 function opzet() {
   nepTijd = null;
-  vp.initViewport(canvas, annotatieRedraw);
+  vp.initViewport(canvas, annotatieRedraw, paginaSchilder);
   vp.setPage('a.pdf', 1, 600, 800, 0, 0, 0, 0);
   draaiFrames();
 }
@@ -75,14 +80,14 @@ test('alleen laden vraagt geen frame', () => {
 });
 
 test('initViewport zonder actieve pagina vraagt geen frame (leeg venster blijft stil)', () => {
-  vp.initViewport(canvas, annotatieRedraw);
+  vp.initViewport(canvas, annotatieRedraw, paginaSchilder);
   assert.equal(canvas.width, 800, 'canvas op containermaat');
   assert.equal(viewport.active, false);
   assert.equal(wachtend(), 0);
 });
 
 test('setPage plant precies één frame; na het tekenen komt er geen volgend frame', () => {
-  vp.initViewport(canvas, annotatieRedraw);
+  vp.initViewport(canvas, annotatieRedraw, paginaSchilder);
   const [r0, a0] = [renders, annotatieRedraws];
   vp.setPage('a.pdf', 1, 600, 800, 0, 0, 0, 0);
   assert.equal(viewport.active, true);
@@ -124,9 +129,26 @@ test('dirty bij een inactieve viewport wacht; active=true plant dan het frame', 
   assert.equal(wachtend(), 0, 'active zonder werk plant niets');
 });
 
-test('een wieluitloop pompt elk frame tot hij klaar is en stopt dan', (t) => {
-  t.after(() => { nepTijd = null; });
+test('vloeiend scrollen uit (standaard): een wielklik schuift direct op, zonder uitloop (#1007)', () => {
   opzet();
+  zetVloeiendScrollen(false, { doc: null });
+  viewport.zoom = 3; // 1800 x 2400 px op een canvas van 800 x 600: verticaal te pannen
+  viewport.offsetY = 0;
+  viewport.dirty = true;
+  draaiFrames();
+  const voor = renders;
+  vp.wielPanViewport(0, 100, true);
+  assert.ok(Math.abs(viewport.offsetY + 100) < 1e-6, `meteen de hele wieldelta (${viewport.offsetY})`);
+  assert.equal(wachtend(), 1, 'één frame om te tekenen');
+  draaiFrames();
+  assert.equal(renders - voor, 1);
+  assert.equal(wachtend(), 0, 'geen uitloop daarna');
+});
+
+test('een wieluitloop pompt elk frame tot hij klaar is en stopt dan', (t) => {
+  t.after(() => { nepTijd = null; zetVloeiendScrollen(false, { doc: null }); });
+  opzet();
+  zetVloeiendScrollen(true, { doc: null });
   viewport.zoom = 3; // 1800 x 2400 px op een canvas van 800 x 600: verticaal te pannen
   viewport.offsetY = 0;
   viewport.dirty = true;
@@ -151,8 +173,9 @@ test('een wieluitloop pompt elk frame tot hij klaar is en stopt dan', (t) => {
 });
 
 test('viewport uit tijdens de uitloop: één frame laat de rest vallen, daarna niets', (t) => {
-  t.after(() => { nepTijd = null; });
+  t.after(() => { nepTijd = null; zetVloeiendScrollen(false, { doc: null }); });
   opzet();
+  zetVloeiendScrollen(true, { doc: null });
   viewport.zoom = 3; // verticaal te pannen, zie de vorige test
   nepTijd = 5000;
   viewport.offsetY = 0;
@@ -198,9 +221,9 @@ test('ook als het tekenen faalt horen de volgers de nieuwe verschuiving', (t) =>
   opzet();
   viewport.zoom = 3; // 1800 x 2400 px op een canvas van 800 x 600: verticaal te pannen
   viewport.offsetY = 0;
-  const echt = globalThis.__vpTest.impl.renderVectorPage;
-  t.after(() => { globalThis.__vpTest.impl.renderVectorPage = echt; });
-  globalThis.__vpTest.impl.renderVectorPage = () => { throw new Error('tekenen faalt'); };
+  // Een fout midden in het tekenen (de schilder zelf wordt opgevangen).
+  t.after(() => { delete nepCtx.save; });
+  nepCtx.save = () => { throw new Error('tekenen faalt'); };
   const gezien = [];
   t.after(vp.volgViewport(() => { gezien.push(viewport.offsetY); }));
   for (let i = 1; i <= 3; i++) {
@@ -213,7 +236,7 @@ test('ook als het tekenen faalt horen de volgers de nieuwe verschuiving', (t) =>
     assert.equal(wachtend(), 0, 'geen foutlus per frame: pas de volgende schrijfactie plant weer');
   }
   // Tekent het weer, dan herstellen canvas en volgers bij de volgende schrijfactie.
-  globalThis.__vpTest.impl.renderVectorPage = echt;
+  delete nepCtx.save;
   const voor = renders;
   viewport.dirty = true;
   draaiFrames();
@@ -241,7 +264,7 @@ test('opnieuw initViewport laat nooit twee frames staan', () => {
   opzet();
   viewport.dirty = true;
   assert.equal(wachtend(), 1);
-  vp.initViewport(canvas, annotatieRedraw);
+  vp.initViewport(canvas, annotatieRedraw, paginaSchilder);
   assert.equal(wachtend(), 1);
   draaiFrames();
   assert.equal(wachtend(), 0);

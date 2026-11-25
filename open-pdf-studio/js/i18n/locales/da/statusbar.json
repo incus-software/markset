@@ -30,7 +30,8 @@
     "formRadio": "Formularalternativknap",
     "screenshot": "Skærmbillede",
     "pageLabelPick": "Vælg tekst til sideetiket",
-    "proofread": "Korrektur"
+    "proofread": "Korrektur",
+    "count": "Tæl"
   },
   "toolLabel": "Værktøj:",
   "annotationsLabel": "Annotationer:",
@@ -110,6 +111,7 @@
   "searchHitsOne": "1 match",
   "searchHitsMany": "{{count}} match",
   "passwordProtectedBar": "Beskyttet med adgangskode: åbnet skrivebeskyttet.",
+  "passwordProtectedEditableBar": "Beskyttet med en adgangskode. Når du gemmer, bevares beskyttelsen.",
   "documentSearch": {
     "title": "Søg i dokumenter",
     "query": "Søgetekst",
@@ -157,5 +159,12 @@
     "port": "Port: {{port}}",
     "lastTool": "Seneste værktøj: {{tool}} kl. {{time}}",
     "noTool": "Ingen værktøjskald endnu"
-  }
+  },
+  "sharedReviewActive": "Delt gennemgang",
+  "sharedReviewUpdates": "Delt gennemgang: {{n}} nye",
+  "sharedReviewTitle": "Annoteringer deles via {{folder}}. Klik for at åbne den delte gennemgang.",
+  "sharedReviewError": "Delt gennemgang: mappe utilgængelig",
+  "pdfaReadOnly": "Dette dokument overholder {{label}}-standarden og er åbnet skrivebeskyttet for at forhindre ændringer.",
+  "pdfaValidate": "Valider",
+  "countGroupTip": "Active count group: the next marker goes into this group"
 }

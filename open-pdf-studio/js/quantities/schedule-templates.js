@@ -3,6 +3,8 @@
 // categorieën/velden af uit categories.js zodat ze consistent blijven met de
 // bestaande hoeveelheden-functionaliteit.
 import { qLabel } from './categories.js';
+import { formatGetal, eenheidNotatie } from '../core/maat-notatie.js';
+import { toontVoetInch, formatVoetInch } from '../core/voet-inch.js';
 
 // Elk sjabloon levert een config die 1-op-1 aan quantities/engine.buildSchedule
 // gevoerd kan worden. `nameKey` verwijst naar i18n (namespace 'properties').
@@ -115,8 +117,24 @@ export function formatCell(val, col) {
   // Beeldkolom: geef de rauwe data-URL door zodat de canvas-renderer (en de
   // HTML-tabel) er een echte thumbnail van kan tekenen.
   if (col && col.kind === 'image') return String(val);
-  if (typeof val === 'number') return Number.isFinite(val) ? val.toFixed(col.decimals ?? 0) : '';
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return '';
+    // Lengtekolom in ft/in als voet-inch-breuk (#996).
+    if (toontVoetInch(col?.unit)) return formatVoetInch(val, col.unit);
+    return formatGetal(val, col?.decimals ?? 0);
+  }
   return String(val);
+}
+
+/**
+ * Cel-tekst van één rij. Een cel die niet naar de kolomeenheid om te rekenen
+ * was (zie engine.js, `foreignUnits`) draagt zijn eigen eenheid erachter, zodat
+ * hij niet ongemerkt onder de verkeerde kop staat.
+ */
+export function formatRowCell(row, col) {
+  const tekst = formatCell(row?.vals?.[col.key], col);
+  const eigen = row?.foreignUnits?.[col.key];
+  return tekst && eigen ? `${tekst} ${eenheidNotatie(eigen)}` : tekst;
 }
 
 /** True als een cel-string een teken-bare afbeelding (data-URL) is. */
@@ -126,7 +144,8 @@ export function isImageCell(s) {
 
 export function fmtTotal(val, col) {
   if (val == null) return '';
-  return val.toFixed(col.decimals ?? 2) + (col.unit ? ` ${col.unit}` : '');
+  if (toontVoetInch(col?.unit) && Number.isFinite(Number(val))) return formatVoetInch(val, col.unit);
+  return formatGetal(val, col?.decimals ?? 2) + (col?.unit ? ` ${eenheidNotatie(col.unit)}` : '');
 }
 
 // Zet een buildSchedule-resultaat om naar de tabel-vorm die de scheduleTable-
@@ -139,7 +158,7 @@ export function scheduleResultToTable(r, title) {
     if (g.key !== null) rows.push({ group: true, cells: [`${g.key} (${g.rows.length})`] });
     if (r.itemize) {
       for (const row of g.rows) {
-        rows.push({ cells: r.columns.map(c => formatCell(row.vals[c.key], c)) });
+        rows.push({ cells: r.columns.map(c => formatRowCell(row, c)) });
       }
     }
     rows.push({ total: true, cells: r.columns.map((c, i) => i === 0 ? qLabel('quantities.subtotal', 'Subtotal') : fmtTotal(g.subtotals[c.key], c)) });

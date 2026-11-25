@@ -3,6 +3,7 @@
     "openPopUpNote": "Obre la nota emergent",
     "hidePopUpNote": "Amaga la nota emergent",
     "resetPopUpLocation": "Reinicia la posició de la nota emergent",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Edita el text...",
     "addReply": "Afegeix una resposta",
     "locked": "Blocat",
@@ -12,11 +13,13 @@
     "printable": "Imprimible",
     "status": "Estat",
     "showByStatus": "Mostra per estat",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Cap",
     "statusAccepted": "Acceptat",
     "statusCancelled": "Cancel·lat",
     "statusCompleted": "Completat",
     "statusRejected": "Rebutjat",
+    "statusReviewed": "Revisat",
     "reviewHistory": "Historial de revisió...",
     "layer": "Capa:",
     "noLayersAvailable": "No hi ha capes disponibles",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Afegeix punts a la cadena de cotes",
     "dimChainRemove": "Treu la línia d'extensió de la cadena",
     "selectRoom": "Selecciona l'espai",
+    "checkScale": "Comprova l'escala amb aquesta línia...",
     "saveToToolSet": "Desa al conjunt d'eines"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Centra verticalment",
     "distributeHorizontally": "Distribueix horitzontalment",
     "distributeVertically": "Distribueix verticalment",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Retalla les cantonades dels murs",
     "deleteAnnotations": "Suprimeix {{count}} anotacions",
     "deleteConfirm": "Voleu suprimir {{count}} anotacions?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Niua sota un marcador nou...",
     "indent": "Augmenta el sagnat",
     "outdent": "Redueix el sagnat",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Suprimeix {{count}} marcadors"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Insereix des d'un fitxer...",
     "insertFromFileBefore": "Abans d'aquesta pàgina...",
     "insertFromFileAfter": "Després d'aquesta pàgina...",
-    "pageLabels": "Etiquetes de pàgina (generador de noms)..."
+    "pageLabels": "Etiquetes de pàgina (generador de noms)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Ressalta la selecció",
     "strikethroughSelection": "Ratlla la selecció",
     "underlineSelection": "Subratlla la selecció",
-    "curvedLeaderSelection": "Afegeix una crida corba"
+    "curvedLeaderSelection": "Afegeix una crida corba",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Voleu suprimir aquesta anotació?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Suprimeix el vèrtex",
     "insertVertex": "Insereix un vèrtex aquí",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Converteix en arc",
     "convertToLine": "Converteix en línia"
   },

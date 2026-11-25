@@ -202,14 +202,32 @@ export default function BehaviorTab(props) {
         </div>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">
+            <input type="checkbox" id="pref-reverse-wheel-zoom" checked={p.reverseWheelZoom[0]()} onChange={e => p.reverseWheelZoom[1](e.target.checked)} />
+            <span>{t('behavior.reverseWheelZoom')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
             <input type="checkbox" checked={p.middleDoubleClickFit[0]()} onChange={e => p.middleDoubleClickFit[1](e.target.checked)} />
             <span>{t('behavior.middleDoubleClickFit')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label" title={t('behavior.handClickZoomHint')}>
+            <input type="checkbox" id="pref-hand-click-zoom" checked={p.handClickZoom[0]()} onChange={e => p.handClickZoom[1](e.target.checked)} />
+            <span>{t('behavior.handClickZoom')}</span>
           </label>
         </div>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">
             <input type="checkbox" id="pref-ribbon-wheel-tabs" checked={p.ribbonWheelSwitchesTabs[0]()} onChange={e => p.ribbonWheelSwitchesTabs[1](e.target.checked)} />
             <span>{t('behavior.ribbonWheelSwitchesTabs')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label" title={t('behavior.smoothScrollingHint')}>
+            <input type="checkbox" id="pref-smooth-scrolling" checked={p.smoothScrolling[0]()} onChange={e => p.smoothScrolling[1](e.target.checked)} />
+            <span>{t('behavior.smoothScrolling')}</span>
           </label>
         </div>
       </fieldset>

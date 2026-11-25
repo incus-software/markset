@@ -9,7 +9,9 @@
     "measureTitle": "Todellinen pituus",
     "measureQuestion": "Mikä on tämän etäisyyden todellinen pituus?",
     "measuredOnPaper": "Mitattu paperilla",
-    "computedScale": "Laskettu mittakaava"
+    "computedScale": "Laskettu mittakaava",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Mittakaava",
@@ -17,7 +19,9 @@
     "viewports": "Näkymäikkunat",
     "noViewports": "Näkymäikkunoita ei ole määritetty",
     "measurements": "Mittaukset",
-    "noMeasurements": "Ei vielä mittauksia"
+    "noMeasurements": "Ei vielä mittauksia",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Ominaisuudet",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Asettanut {{author}} {{date}}",
     "layer": "Taso",
     "layerMarkupGroup": "Merkintätasot",
-    "layerDocumentGroup": "Asiakirjan tasot"
+    "layerDocumentGroup": "Asiakirjan tasot",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Ei mitään",
   "moreColors": "Lisää värejä...",
@@ -248,6 +254,7 @@
     "title": "Otsikko",
     "author": "Tekijä",
     "subject": "Aihe",
+    "keywords": "Avainsanat",
     "creator": "Luoja",
     "producer": "Tuottaja",
     "pdfVersion": "PDF-versio",
@@ -316,7 +323,8 @@
     "redaction": "Poisto",
     "scaleBar": "Mittakaavajana",
     "parametricSymbol": "Parametrinen symboli",
-    "fileAttachment": "Tiedostoliite"
+    "fileAttachment": "Tiedostoliite",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Näytä/piilota paneeli",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Poista kirjanmerkki",
     "findBookmark": "Etsi...",
     "findBookmarkTip": "Kirjoita siirtyäksesi kirjanmerkkiin. Enter avaa sen, uusi Enter siirtyy seuraavaan osumaan.",
+    "findPage": "Etsi...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "Lisää liite",
     "openAttachment": "Avaa liite",
     "saveAttachment": "Tallenna liite",
@@ -452,6 +462,9 @@
     "scaleAuto": "Asiakirjan mittakaava",
     "scaleTooltip": "Ohita tämän merkinnän mittakaava (yksikköä pistettä kohden). Jätä tyhjäksi käyttääksesi asiakirjan/alueen mittakaavaa.",
     "unit": "Yksikkö",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Tarkkuus (desimaalit)",
     "dimType": "Tyyppi",
     "dimTypeCustom": "Mukautettu",
@@ -473,7 +486,9 @@
     "depthNone": "Ei mitään",
     "depthTooltip": "Seinän korkeus, laatan paksuus jne. mittauksen yksikössä. Pituus × syvyys antaa pinta-alan, ala × syvyys tilavuuden.",
     "surface": "Pinta-ala",
-    "volume": "Tilavuus"
+    "volume": "Tilavuus",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Luettelot",
@@ -496,7 +511,18 @@
     },
     "preview": "Esikatselu",
     "exportCsv": "Vie CSV",
-    "workbookBindings": "Laskentataulukkolinkitykset"
+    "workbookBindings": "Laskentataulukkolinkitykset",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Ohjattu luettelon luonti",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Liitä alussa",
     "joinAtEnd": "Liitä lopussa",
-    "joinHint": "Pois: seinän tätä päätä ei koskaan jiirata, liitetä T-liitoksella eikä trimmata toista seinää vasten; se säilyttää suoran pään piirretyssä kohdassa."
+    "joinHint": "Pois: seinän tätä päätä ei koskaan jiirata, liitetä T-liitoksella eikä trimmata toista seinää vasten; se säilyttää suoran pään piirretyssä kohdassa.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Piirustusasetukset",
@@ -682,6 +804,7 @@
       "height": "Korkeus",
       "location": "Sijainti",
       "locationSource": "Sijainnin lähde",
+      "layer": "Taso",
       "rebarMark": "Positio",
       "rebarDiameter": "Ø",
       "rebarShape": "Taivutusmuoto",
@@ -807,6 +930,24 @@
     "rules": "Määritys käyttää merkinnän rajauslaatikon keskipistettä reunat mukaan lukien. Syvin vyöhyke voittaa, sitten pienin pinta-ala ja sitten vyöhykkeen tunnus. Käytä suorasivuisia monikulmioita ilman reikiä tai kiertämättömiä suorakulmioita. Virheelliset tai päällekkäiset vyöhyketunnisteet jätetään pois.",
     "loading": "Merkintöjä ladataan: sijainnit voivat vielä muuttua."
   },
+  "dynamicStamp": {
+    "title": "Leiman kentät",
+    "template": "Malli",
+    "refresh": "Päivitä päivämäärä, käyttäjä ja sivu",
+    "lock": "Lukitse leima",
+    "lockConfirm": "Lukitaanko tämä leima? Sen kenttiä ei voi enää muuttaa.",
+    "locked": "Tämä leima on lukittu: sen kenttiä ei voi enää muuttaa.",
+    "field": {
+      "date": "Päivämäärä",
+      "time": "Aika",
+      "datetime": "Päivämäärä ja aika",
+      "user": "Käyttäjä",
+      "page": "Sivu",
+      "pages": "Sivujen määrä",
+      "filename": "Tiedostonimi",
+      "title": "Asiakirjan otsikko"
+    }
+  },
   "toolSets": {
     "title": "Työkalusarjat",
     "typeWall": "Seinä",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "Tiedosto on liian suuri työkalusarjaksi.",
     "errorFileInvalid": "Tämä tiedosto ei ole kelvollinen työkalusarja.",
     "errorFileNewer": "Tämä työkalusarja on tehty Open PDF Studion uudemmalla versiolla. Päivitä sovellus tuodaksesi sen.",
-    "damagedStatus": "Tallennettuja työkalusarjoja ei voitu lukea. Vioittunut tiedosto säilytettiin nimellä \"{{name}}\"."
+    "damagedStatus": "Tallennettuja työkalusarjoja ei voitu lukea. Vioittunut tiedosto säilytettiin nimellä \"{{name}}\".",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Avaa",
     "saveAs": "Tallenna nimellä...",
     "noContent": "Tämän tiedoston sisältöä ei ole upotettu PDF-tiedostoon."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

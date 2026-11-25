@@ -10,10 +10,8 @@ import { updateTagsList } from './tags.js';
 import { updateLinksList } from './links.js';
 import { updateBookmarksList } from './bookmarks.js';
 import {
-  showMessage,
   switchToLeftPanelTab, toggleLeftPanelCollapsed,
-  leftPanelActiveTab as activeTab, setLeftPanelActiveTab as setActiveTab,
-  setLeftPanelCollapsed as setCollapsed,
+  leftPanelActiveTab as activeTab,
   setThumbnailPageCount as setPageCount, setThumbnailActivePage as setActivePage,
   setThumbnailPlaceholderSize as setPlaceholderSize,
   setThumbnailImage, clearAllThumbnails,
@@ -21,6 +19,7 @@ import {
   thumbnailSelectedPages, selectThumbnailPage,
 } from '../../bridge.js';
 import { renderBreedteVoorLijst, halveerStappen, MIN_RENDER } from './miniatuur-maat.js';
+import { scrollGedrag } from '../../core/vloeiend-scrollen.js';
 
 // Renderbreedte van nieuwe miniaturen in apparaatpixels (#579): de getoonde
 // kolombreedte maal devicePixelRatio, minstens 280 px, zodat ze scherp blijven
@@ -403,7 +402,7 @@ export function pauseThumbnails() {
 }
 
 // Resume thumbnail rendering immediately. Called by the page renderer once
-// its IPC-heavy work (extract_draw_commands / prepareImages) has finished,
+// its IPC-heavy work has finished,
 // so thumbnails don't have to wait the full pause window on initial load.
 export function resumeThumbnails() {
   if (!_thumbnailsPaused) return;
@@ -482,6 +481,16 @@ async function processNextThumbnail() {
 }
 
 // Process a priority (visible) thumbnail first
+function retryMissingThumbnail(docId, docState, pageNum, gen) {
+  const retries = docState.thumbnailRetries ??= new Map();
+  if (retries.get(pageNum) === gen) return;
+  retries.set(pageNum, gen);
+  setTimeout(() => {
+    if (documentState.get(docId) !== docState || !pageGenMatches(docId, pageNum, gen)) return;
+    if (getActiveDocument()?.id === docId) prioritizeThumbnails([pageNum]);
+  }, 500);
+}
+
 async function processPriorityThumbnail(docId) {
   const docState = documentState.get(docId);
   const docCache = thumbnailCache.get(docId);
@@ -502,7 +511,9 @@ async function processPriorityThumbnail(docId) {
   const gen = getPageGen(docId, pageNum);
   try {
     const imageData = await renderThumbnailToDataURL(pdfDoc, pageNum, docState.doc);
-    if (imageData) {
+    if (!imageData) {
+      retryMissingThumbnail(docId, docState, pageNum, gen);
+    } else {
       // Drop result if a newer invalidate raced past us — prevents stale
       // overlay (e.g. old annotation snapshot) from overwriting fresh cache.
       if (!pageGenMatches(docId, pageNum, gen)) {
@@ -518,6 +529,7 @@ async function processPriorityThumbnail(docId) {
     }
     return true;
   } catch (err) {
+    retryMissingThumbnail(docId, docState, pageNum, gen);
     console.warn(`[Thumbnails] Error rendering priority page ${pageNum}:`, err);
     return true;
   }
@@ -557,7 +569,9 @@ async function processDocumentThumbnail(docId) {
     const gen = getPageGen(docId, pageNum);
     try {
       const imageData = await renderThumbnailToDataURL(pdfDoc, pageNum, docState.doc);
-      if (imageData) {
+      if (!imageData) {
+        retryMissingThumbnail(docId, docState, pageNum, gen);
+      } else {
         if (!pageGenMatches(docId, pageNum, gen)) {
           return true;
         }
@@ -571,6 +585,7 @@ async function processDocumentThumbnail(docId) {
       }
       return true;
     } catch (err) {
+      retryMissingThumbnail(docId, docState, pageNum, gen);
       console.warn(`[Thumbnails] Error rendering page ${pageNum} of doc ${docId}:`, err);
       return true;
     }
@@ -619,10 +634,7 @@ async function overlayAnnotationsOnDataURL(dataURL, pageNum, width, height, scal
   }
 }
 
-// Render a single page thumbnail — prefers replaying JS-cached vector commands
-// (already extracted by the main viewer) for ~3-6× speedup; falls back to the
-// Rust backend, then PDF.js. Reusing the cache avoids re-parsing the PDF
-// content stream + IPC + JPEG encode + base64 round-trip.
+// Render a single page thumbnail: from the Rust backend (PDFium), then PDF.js.
 async function renderThumbnailToDataURL(pdfDoc, pageNum, doc) {
   // De breedte bij de START van de render: verandert het paneel intussen, dan
   // ziet isScherpGenoeg() dat deze miniatuur te klein is en volgt een nieuwe.
@@ -643,67 +655,6 @@ async function renderMiniatuur(pdfDoc, pageNum, doc, doel) {
   // several documents were open. Only fall back to the active doc for legacy
   // direct callers that don't pass one.
   if (!doc) doc = getActiveDocument();
-
-  // ── Fast path: JS replay of cached vector commands ────────────────────────
-  // Only viable if the main viewer has already populated the cache for this
-  // page (e.g. user navigated to it once, or it was prefetched).
-  try {
-    if (doc?.filePath) {
-      const vr = await import('../../pdf/vector-renderer.js');
-      const rotation = (typeof getPageRotation === 'function' ? getPageRotation(pageNum) : 0) || 0;
-      if (vr.hasCachedCommands(doc.filePath, pageNum, rotation)) {
-        const dims = vr.getCachedPageDimensions(doc.filePath, pageNum, rotation);
-        console.log(`[thumb] p${pageNum} JS-replay: dims=`, dims, `rotation=${rotation}`);
-        if (dims && dims.w > 0 && dims.h > 0) {
-          // Breedte-gericht, net als het Rust-pad: elke miniatuur is `doel`
-          // px breed, staand of liggend; het paneel schaalt hem naar de kolom.
-          const targetW = doel;
-          const scale = targetW / dims.w;
-          const w = Math.max(1, Math.round(dims.w * scale));
-          const h = Math.max(1, Math.round(dims.h * scale));
-          const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          // Paint white background so transparency doesn't bleed to JPEG.
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, w, h);
-          // Replay the cached vector commands at the thumbnail scale.
-          // renderVectorPage applies its own Y-flip + MediaBox-origin shift
-          // — caller transform is just (scale, scale) with zero translation.
-          vr.renderVectorPage(ctx, doc.filePath, pageNum, { a: scale, b: 0, c: 0, d: scale, e: 0, f: 0 }, rotation);
-          console.log(`[thumb] p${pageNum} JS-replay rendered: canvas=${w}x${h} scale=${scale.toFixed(4)}`);
-          // Blanco-vangnet: op pagina's met een gecentreerde MediaBox
-          // (x0/y0 negatief, AutoCAD/InDesign-export) plaatst de replay de
-          // content buiten het canvas — de hoofdweergave maskeert dat met een
-          // PDFium-bitmap eronder, maar de thumbnail blijft dan wit. Sample de
-          // canvas; is hij (vrijwel) leeg terwijl er wél commando's waren, val
-          // dan door naar het Rust-pad dat via PDFium correct rendert.
-          let _blank = true;
-          try {
-            const _d = ctx.getImageData(0, 0, w, h).data;
-            let _ink = 0;
-            for (let k = 0; k < _d.length; k += 4 * 7) {
-              if (!(_d[k] > 245 && _d[k + 1] > 245 && _d[k + 2] > 245)) { _ink++; if (_ink > 8) break; }
-            }
-            _blank = _ink <= 8;
-          } catch { _blank = false; /* sampling faalt → vertrouw de replay */ }
-          if (_blank) {
-            console.log(`[thumb] p${pageNum} JS-replay leeg → val terug op Rust-pad`);
-          } else {
-            const dataURL = canvas.toDataURL('image/jpeg', 0.7);
-            // Overlay annotations on top (same as Rust path).
-            try {
-              const composited = await overlayAnnotationsOnDataURL(dataURL, pageNum, w, h, scale, doc);
-              return { dataURL: composited, width: w, height: h };
-            } catch {
-              return { dataURL, width: w, height: h };
-            }
-          }
-        }
-      }
-    }
-  } catch (_) { /* fall through to Rust path */ }
 
   // ── Zware pagina's: thumbnail uit de progressieve whole-page-bitmap ──────
   // render_thumbnail is een SYNC in-proc command: op een zwaar CAD-blad
@@ -726,8 +677,13 @@ async function renderMiniatuur(pdfDoc, pageNum, doc, doel) {
       const _isTile = ptc.getCachedPageType(doc.filePath, pageNum - 1) === 'tile';
       if (_isTile || await prog.isHeavyPage(doc.filePath, pageNum)) {
         const pbc = await import('../../pdf/page-bitmap-cache.js');
-        const rotation = (typeof getPageRotation === 'function' ? getPageRotation(pageNum) : 0) || 0;
-        const best = pbc.getBestAvailableBitmap(doc.filePath, pageNum, rotation, 1);
+        const rotation = doc.pageRotations?.[pageNum] || 0;
+        // De schermbitmap mist de bewerkbare formuliervelden (die staan in de
+        // HTML-formulierlaag, #1101); een pagina met zulke velden krijgt een
+        // eigen render met alle velden hieronder.
+        const { heeftBewerkbareVelden } = await import('../../pdf/formulierlaag-scherm.js');
+        const metVelden = await heeftBewerkbareVelden(pdfDoc, pageNum).catch(() => false);
+        const best = metVelden ? null : pbc.getBestAvailableBitmap(doc.filePath, pageNum, rotation, 1);
         if (best && best.bitmap) {
           const targetW = doel;
           const s = targetW / best.w;
@@ -767,8 +723,9 @@ async function renderMiniatuur(pdfDoc, pageNum, doc, doel) {
           const thumbScale = Math.max(0.008, Math.min(2, renderW / widthPt));
           const { renderPdfPage } = await import('../../pdf/engine-router.js');
           const { RENDER_PRIORITY } = await import('../../pdf/render-queue.js');
+          // forms: de miniatuur heeft geen formulierlaag erboven (#1101).
           const raw = await renderPdfPage(
-            { path: doc.filePath, pageIndex: pageNum - 1, scale: thumbScale, rotation },
+            { path: doc.filePath, pageIndex: pageNum - 1, scale: thumbScale, rotation, forms: true },
             { priority: RENDER_PRIORITY.PREFETCH },
           );
           const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
@@ -824,7 +781,7 @@ async function renderMiniatuur(pdfDoc, pageNum, doc, doel) {
       // view. Without it, a rotated page's thumbnail stayed unrotated until the
       // rotation was baked into the PDF (save + reload) — the other thumbnail
       // paths (vector replay, prog-bitmap, PDF.js fallback) already rotate.
-      const extraRot = getPageRotation(pageNum);
+      const extraRot = doc?.pageRotations?.[pageNum] || 0;
       // maxWidth geldt voor de breedte van het blad zonder de extra draaiing;
       // bij een kwartslag de breedte zo kiezen dat het gedraaide beeld `doel`
       // px breed wordt (anders wordt het in de kolom opgeblazen).
@@ -869,14 +826,22 @@ async function renderMiniatuur(pdfDoc, pageNum, doc, doel) {
 
   // Fallback: PDF.js rendering
   console.log(`[PERF-THUMB] page ${pageNum}: PDF.js fallback START`);
+  let renderTask;
+  let timedOut = false;
+  let timer;
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Render timeout')), 10000);
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error('Render timeout'));
+      renderTask?.cancel();
+    }, 10000);
   });
 
   try {
     const renderPromise = (async () => {
       const page = await pdfDoc.getPage(pageNum);
-      const extraRot = getPageRotation(pageNum);
+      if (timedOut) return null;
+      const extraRot = doc?.pageRotations?.[pageNum] || 0;
       const trOpts = { scale: 1 };
       if (extraRot) trOpts.rotation = (page.rotate + extraRot) % 360;
       // Schaal zo dat de (eventueel gedraaide) pagina `doel` px breed wordt.
@@ -890,12 +855,14 @@ async function renderMiniatuur(pdfDoc, pageNum, doc, doel) {
       const ctx = canvas.getContext('2d');
 
       const { pdfjsLaagOpties } = await import('../../pdf/lagen-schakelen.js');
-      await page.render({
+      if (timedOut) return null;
+      renderTask = page.render({
         canvasContext: ctx,
         viewport: viewport,
         annotationMode: 0,
         ...pdfjsLaagOpties(doc),
-      }).promise;
+      });
+      await renderTask.promise;
 
       // Overlay plugin/Solid-store annotations op dezelfde ctx vóór toDataURL.
       // viewport.width = pdfPtWidth * thumbScale, dus scale-factor naar
@@ -933,38 +900,8 @@ async function renderMiniatuur(pdfDoc, pageNum, doc, doel) {
   } catch (err) {
     console.warn(`[PERF-THUMB] page ${pageNum}: PDF.js fallback FAILED (${(performance.now() - _th0).toFixed(0)}ms):`, err.message);
     return null;
-  }
-}
-
-// Show page properties dialog
-export async function showPageProperties(pageNum) {
-  const doc = getActiveDocument();
-  if (!doc?.pdfDoc) return;
-  try {
-    const page = await doc.pdfDoc.getPage(pageNum);
-    const rotation = getPageRotation(pageNum);
-    const viewport = page.getViewport({ scale: 1 });
-    const widthPt = viewport.width;
-    const heightPt = viewport.height;
-    const widthMm = (widthPt / 72 * 25.4).toFixed(1);
-    const heightMm = (heightPt / 72 * 25.4).toFixed(1);
-    const widthIn = (widthPt / 72).toFixed(2);
-    const heightIn = (heightPt / 72).toFixed(2);
-    const totalRotation = (page.rotate + (rotation || 0)) % 360;
-
-    const msg = `Page ${pageNum}\n\n` +
-      `Size: ${widthPt.toFixed(0)} x ${heightPt.toFixed(0)} pt\n` +
-      `Size: ${widthMm} x ${heightMm} mm\n` +
-      `Size: ${widthIn} x ${heightIn} in\n` +
-      `Rotation: ${totalRotation}\u00B0`;
-
-    if (window.__TAURI__?.dialog?.message) {
-      await window.__TAURI__.dialog.message(msg, { title: 'Page Properties', kind: 'info' });
-    } else {
-      showMessage(msg);
-    }
-  } catch (err) {
-    console.error('Error showing page properties:', err);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1049,7 +986,7 @@ export function updateActiveThumbnail(restoreScroll = false) {
       // Scroll active thumbnail into view (page navigation)
       const activeThumbnail = container.querySelector('.thumbnail-item.active');
       if (activeThumbnail) {
-        activeThumbnail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        activeThumbnail.scrollIntoView({ behavior: scrollGedrag(), block: 'nearest' });
       }
     }
   }, 0);

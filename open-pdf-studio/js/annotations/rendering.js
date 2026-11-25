@@ -1,6 +1,6 @@
 import { tekenDocument as getActiveDocument } from './rendering/document-context.js';
-import { state, imageCache } from '../core/state.js';
-import { imperialOr } from '../../markset/us-units.js'; // Markset
+import { kaleLijst } from './kale-lijst.js';
+import { state, imageCache, getAnnotationBounds } from '../core/state.js';
 import { getMarksetImage, registerMarksetImageRedraw } from '../../markset/smart/image-cache.js'; // Markset
 import { frozenTemplate } from '../../markset/smart/assets.js'; // Markset
 import { annotationCanvas, annotationCtx, textHighlightCanvas, textHighlightCtx } from '../ui/dom-elements.js';
@@ -21,9 +21,11 @@ import { drawDimension, drawMeasureAreaShape, drawCentroidLabel, drawMeasurePeri
 import { vlakZijdeTeksten } from './measurement.js';
 import { vormVan, bouwVakPad } from './rendering/textbox-vorm.js';
 import { maatlijnTekst } from './maat-label.js';
+import { formatGetal, formatMaat } from '../core/maat-notatie.js';
 import { maatlijnVelden } from './maatlijn-geometrie.js';
 import { tagWeergaveParams } from '../plattegrond/ruimte-koppeling.js';
 import { applyHatchFill, applyHatchFillPolygon } from './rendering/hatch-patterns.js';
+import { hasCurves, tracePath } from './curve-path.js';
 import { isVreemdeTelling, tellingStraal } from './telling.js';
 import { drawWall } from './rendering/walls.js';
 import { tekenBijlageIcoon } from './bijlage-iconen.js';
@@ -32,6 +34,7 @@ import { stavenreeksPxPerMm } from './stavenreeks-scale.js';
 import { buildBetonbalk } from './betonbalk.js';
 import { betonbalkBuildOpts } from './betonbalk-scale.js';
 import { drawBetonbalkGeom } from './rendering/betonbalk-draw.js';
+import { drawDynamicStamp } from './rendering/dynamic-stamp-draw.js';
 import { effectiveDraftingLineWidth } from './drafting-rules.js';
 import { buildSysteemraster } from './systeemraster.js';
 import { systeemrasterBuildOpts } from './systeemraster-scale.js';
@@ -49,16 +52,18 @@ import { drawProofreadingOverlay } from './corrections/proofreading-overlay.js';
 import { updateQuickAccessButtons, updateContextualTabs, drawGrid, snapToGrid } from './rendering/ui-state.js';
 import { drawCommentIcon } from './rendering/comment-icons.js';
 import { drawCaret, drawMarkupLines, replaceStrikeColor } from './rendering/caret.js';
+import { drawLink } from './rendering/link.js';
 import { spatialIndex, annotationBounds } from './spatial-index.js';
 import { blendCanvasWaarde, isGemengd } from './blend-modes.js';
+
 import { tekenGemengdTegenPagina } from './rendering/mengen-tegen-pagina.js';
-import { bitmapVoor, bijNieuweTegel, KNIPSEL_UITVOER_FOUT } from './vector-snippet-preview.js';
+import { bitmapVoor, tekenSchermPreview, bijNieuweTegel, KNIPSEL_UITVOER_FOUT, gekleurdeTegel } from './vector-snippet-preview.js';
 import { invalidateScaleRegionCache, pixelsPerUnitFor, userUnitVanPagina, getRegionScaleFactor } from './scale-region.js';
 import { metSchaalBronnen } from './schaal-bronnen.js';
 import { drawSnapIndicator } from '../tools/snap-engine.js';
 import { drawMoveInferenceOverlay } from '../tools/inference-overlay.js';
 import { drawImageAlignGuides } from '../tools/image-align-snap.js';
-import { getTemplate } from '../symbols/registry.js';
+import { getTemplate, bijTemplateDataGeladen } from '../symbols/registry.js';
 import { hasFill, hasStroke } from './fill-utils.js';
 import { eigenVulDekking } from './vul-dekking.js';
 import { EDITABLE_NUMBER_COLOR, shouldHighlightNumbers } from './editable-numbers.js';
@@ -67,6 +72,8 @@ import { EDITABLE_NUMBER_COLOR, shouldHighlightNumbers } from './editable-number
 import { labelHasNumericField } from './editable-numbers-providers.js';
 import { halftoneTypes as evHalftoneTypes } from '../solid/stores/elementVisibilityStore.js';
 import { isAnnotationHiddenInView, isAnnotationHiddenInOutput } from './view-filters.js';
+import { tekenStatusBadges } from '../review/status-badge.js';
+import { statusLijst } from '../review/status-sets.js';
 import { kruisEindpuntenEllips } from './kruis-geometrie.js';
 import { klemMaat, symboolRasterPxPerPt } from './minimummaat.js';
 import {
@@ -86,8 +93,16 @@ import {
 import { viewportGeometrie, rectNaarPagina } from '../pdf/weergave-rotatie.js';
 import { paginaMaat, paginaNaarWeergave, weergaveTransform, weergaveRectNaarPagina, zetRechtopRond } from '../pdf/weergave-ruimte.js';
 import { schaalgebiedStijl } from './scale-region-style.js';
+import { scaleDisplayLabel } from './scale-presets.js';
 import { meld as meldSplit } from '../pdf/split-view/split-haken.js';
 import { schermSchaal, weergaveRotatieVan } from '../pdf/split-view/paneel-weergave.js';
+
+// Text highlights inherently multiply, including imported highlights whose
+// default /BM was omitted from the editable model. Keep that default local
+// to rendering so drawing never changes the stored annotation.
+function effectiveBlendMode(annotation) {
+  return annotation.blendMode || (annotation.type === 'textHighlight' ? 'multiply' : 'normal');
+}
 
 // Re-export everything that external code needs
 export { drawPolygonShape, drawCloudShape, buildPolygonPath, buildCloudPath } from './rendering/shapes.js';
@@ -194,7 +209,7 @@ function _drawPolarOverlay(ctx, snapResult, scale) {
     }
   } catch (_) { /* ignore */ }
   const angleDeg = (angle * 180 / Math.PI + 360) % 360;
-  const text = `Polar: ${angleDeg.toFixed(2)}° < ${imperialOr(lenInUnits, unit, state.preferences, `${lenInUnits.toFixed(2)} ${unit}`)}`; // Markset
+  const text = `Polar: ${formatGetal(angleDeg, 2)}° < ${formatMaat(lenInUnits, unit, 2)}`;
   // Rechtop op het scherm, ook in een gedraaide weergave (#200).
   zetRechtopRond(ctx, snapResult.x, snapResult.y);
   const fontSize = 11 / scale;
@@ -515,6 +530,34 @@ function beeldUitImageData(annotation) {
   return img;
 }
 
+// Types whose drawing only reads the annotation's own fields: no comparison
+// with another object (selection, crop, join preview), no cache keyed by the
+// annotation that someone else fills, no registered type handler. The draw
+// loops hand these to drawAnnotation as the plain object under the store
+// (kale-lijst.js): with thousands of markups in view the store's proxy was a
+// third of the time of every redraw. Every other type gets the store's own
+// object, as before. Add a type here only after reading its case below.
+const KAAL_TEKENBAAR = new Set(['line', 'arrow', 'box', 'circle', 'polyline', 'polygon', 'highlight', 'draw']);
+
+/** What a draw loop passes to drawAnnotation for item `index` of the plain list. */
+// Statusbadges (#1076): een gekleurd vierkant op de hoek van elke markering
+// met een status, als de voorkeur aan staat. Alleen op het scherm en na de
+// markeringen getekend: het opgeslagen uiterlijk, een afdruk en een export
+// krijgen hem niet. Wat het weergavefilter verbergt, krijgt ook geen badge.
+function tekenStatusBadgesOpScherm(ctx, annotations, pageNum) {
+  if (!state.preferences?.showStatusBadges) return;
+  tekenStatusBadges(ctx, annotations, pageNum, {
+    lijst: statusLijst(state.preferences),
+    grenzen: getAnnotationBounds,
+    verborgen: isAnnotationHiddenInView,
+    dpr: window.devicePixelRatio || 1,
+  });
+}
+
+function tekenObject(annotations, kandidaat, index) {
+  return KAAL_TEKENBAAR.has(kandidaat.type) ? kandidaat : annotations[index];
+}
+
 export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
   // ── Weergavefilters ────────────────────────────────────────────────────
   // Eén centraal predicaat (annotations/view-filters.js) bundelt de
@@ -595,7 +638,7 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
   ctx.lineWidth = lw;
   ctx.globalAlpha = baseOpacity;
   // Alle zestien modi, met de canvasnamen (color-dodge, …) — #614.
-  ctx.globalCompositeOperation = _zonderMengmodus ? 'source-over' : blendCanvasWaarde(annotation.blendMode);
+  ctx.globalCompositeOperation = _zonderMengmodus ? 'source-over' : blendCanvasWaarde(effectiveBlendMode(annotation));
 
   switch (annotation.type) {
     case 'draw':
@@ -641,8 +684,19 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       break;
 
     case 'highlight':
+      // Gedraaid om het midden, zoals een rechthoek (#944); het selectiekader
+      // draaide al mee, de vulling bleef recht.
+      ctx.save();
+      if (annotation.rotation) {
+        const hcx = annotation.x + annotation.width / 2;
+        const hcy = annotation.y + annotation.height / 2;
+        ctx.translate(hcx, hcy);
+        ctx.rotate(annotation.rotation * Math.PI / 180);
+        ctx.translate(-hcx, -hcy);
+      }
       ctx.fillStyle = fillColor;
       ctx.fillRect(annotation.x, annotation.y, annotation.width, annotation.height);
+      ctx.restore();
       break;
 
     case 'line':
@@ -786,7 +840,10 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
         ctx.lineJoin = 'miter';
         applyBorderStyle(ctx, annotation.borderStyle);
         ctx.beginPath();
-        annotation.points.forEach((point, index) => {
+        if (hasCurves(annotation.curves)) {
+          // Segmenten met een kromme (#1169, curve-path.js).
+          tracePath(ctx, annotation.points, annotation.curves, false);
+        } else annotation.points.forEach((point, index) => {
           if (index === 0) {
             ctx.moveTo(point.x, point.y);
           } else {
@@ -992,7 +1049,7 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       const polyHasPoints = Array.isArray(annotation.points) && annotation.points.length >= 3;
       const buildPolyPath = () => {
         if (polyHasPoints) {
-          buildPolygonPointsPath(ctx, annotation.points, annotation.x, annotation.y, annotation.width, annotation.height);
+          buildPolygonPointsPath(ctx, annotation.points, annotation.x, annotation.y, annotation.width, annotation.height, annotation.curves);
         } else {
           buildPolygonPath(ctx, annotation.x, annotation.y, annotation.width, annotation.height, annotation.sides || 6);
         }
@@ -1453,7 +1510,9 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       if (bmp) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(bmp, annotation.x, annotation.y, annotation.width, annotation.height);
+        // Lijnwerk in één kleur (#1024); tekenSchermPreview kleurt ook de detailtegels.
+        if (snippetBitmaps || uitvoer) ctx.drawImage(annotation.lijnKleur ? gekleurdeTegel(bmp, annotation.lijnKleur) : bmp, annotation.x, annotation.y, annotation.width, annotation.height);
+        else tekenSchermPreview(ctx, annotation, bmp);
       } else {
         // Nog geen tegel: een kader met de herkomst, zodat je ziet dat er iets
         // staat en waar het vandaan komt.
@@ -1575,13 +1634,25 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       break;
 
     case 'textHighlight':
-      // Draw text highlight as a solid fill. The actual blending with the
-      // underlying text happens via CSS `mix-blend-mode: multiply` on the
-      // dedicated #text-highlight-canvas this is drawn onto. Drawing at full
-      // alpha gives the cleanest multiply result.
+      // Text highlights multiply with the page: the dedicated CSS layer in
+      // single-page view, or page-aware compositing in continuous view.
+      // Drawing at full alpha gives the cleanest multiply result.
       ctx.fillStyle = fillColor;
       ctx.globalAlpha = 1;
-      if (annotation.rects && annotation.rects.length > 0) {
+      if (Array.isArray(annotation.quads) && annotation.quads.length > 0) {
+        // Schuine tekst (#927): gedraaide quads [begin-boven, eind-boven,
+        // begin-onder, eind-onder] die de tekst volgen.
+        for (const q of annotation.quads) {
+          if (!Array.isArray(q) || q.length < 4) continue;
+          ctx.beginPath();
+          ctx.moveTo(q[0].x, q[0].y);
+          ctx.lineTo(q[1].x, q[1].y);
+          ctx.lineTo(q[3].x, q[3].y);
+          ctx.lineTo(q[2].x, q[2].y);
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else if (annotation.rects && annotation.rects.length > 0) {
         annotation.rects.forEach(rect => {
           ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
         });
@@ -1623,6 +1694,11 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       break;
 
     case 'stamp': {
+      // Dynamic stamp (#629): drawn from its template and field values.
+      if (annotation.dynamicStamp) {
+        drawDynamicStamp(ctx, annotation, { onImageLoad: hertekenActieveWeergave });
+        break;
+      }
       // Render stamp - image or text-based
       // Always prefer global imageCache (plain Map, no Proxy) for reliable .complete checks.
       // SolidJS createMutable can wrap _cachedImg in a Proxy, breaking HTMLImageElement checks.
@@ -2259,6 +2335,15 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       break;
     }
 
+    case 'link':
+      // Hyperlink (#953): rand of onderstreping zoals in het bestand; zonder
+      // rand alleen op het scherm een hulplijn (rendering/link.js).
+      drawLink(ctx, annotation, {
+        gids: laag('selectie'),
+        schermSchaal: schermSchaal(getActiveDocument()) || 1,
+      });
+      break;
+
     case 'redaction': {
       // Redaction mark - red hatched overlay
       const rw = annotation.width || 0;
@@ -2359,7 +2444,8 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       const scaleStr = annotation.scaleString || '1:100';
       const unitStr = annotation.units || 'mm';
       const labelStr = annotation.label || '';
-      const badgeText = (labelStr ? `${labelStr} · ` : '') + `${scaleStr} [${unitStr}]`;
+      // Imperiaal als 1/8" = 1'-0" (#1000).
+      const badgeText = (labelStr ? `${labelStr} · ` : '') + `${scaleDisplayLabel(scaleStr, unitStr, { withRatio: false })} [${unitStr}]`;
       ctx.font = 'bold 11px sans-serif';
       const badgeW = ctx.measureText(badgeText).width + 10;
       const badgeH = 16;
@@ -2445,7 +2531,9 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       ctx.setLineDash([]);
 
       // Name label (top-left corner)
-      const vpLabel = annotation.name || annotation.scaleRatio || '';
+      const vpLabel = (annotation.name && annotation.name !== annotation.scaleRatio)
+        ? annotation.name
+        : scaleDisplayLabel(annotation.scaleRatio, annotation.unit, { withRatio: false });
       if (vpLabel) {
         ctx.globalAlpha = 0.85;
         ctx.font = 'bold 9px sans-serif';
@@ -2493,7 +2581,7 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
         ctx.font = `bold ${Math.max(8, sbH * 0.65)}px sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(String(_sbMs.scaleRatio), sbX, sbY - 2);
+        ctx.fillText(scaleDisplayLabel(_sbMs.scaleRatio, _sbMs.unit, { withRatio: false }), sbX, sbY - 2);
       }
 
       // Alternating blocks
@@ -3077,7 +3165,7 @@ let _lastIndexedCount = -1;
 function _paginaOnder(canvas) {
   if (!canvas || typeof canvas.getBoundingClientRect !== 'function') return null;
   if (canvas.id === 'annotation-canvas') return document.getElementById('pdf-canvas');
-  if (canvas.classList?.contains('annotation-canvas')) {
+  if (canvas.classList?.contains('annotation-canvas') || canvas.classList?.contains('annotation-canvas-sharp')) {
     return canvas.parentElement?.querySelector(':scope > .pdf-canvas') || null;
   }
   return null;
@@ -3138,9 +3226,12 @@ function hertekenActieveWeergave() {
 bijNieuweTegel(hertekenActieveWeergave);
 
 registerSysteemSymbolRedraw(hertekenActieveWeergave);
+// Vloerdoorsneden laden hun geometrie bij het eerste tekenen (#454): daarna
+// de omtrek door de echte doorsnede vervangen.
+bijTemplateDataGeladen(() => { try { hertekenActieveWeergave(); } catch (_) { /* geen document */ } });
 
 registerMarksetImageRedraw(() => { // Markset: a stamp logo finished loading
-  const doc = state.documents[state.activeDocumentIndex];
+  const doc = getActiveDocument();
   if (doc?.viewMode === 'continuous') redrawContinuous();
   else redrawAnnotations();
 });
@@ -3309,23 +3400,28 @@ export function redrawAnnotations(lightweight = false) {
   // blend with #pdf-canvas below); everything else goes to #annotation-canvas.
   // One scale pass: annotations that look up their scale while drawing (walls,
   // bar series, hatches) share the scale sources collected once (#491).
-  metSchaalBronnen(() => annotations.forEach(annotation => {
-    if (annotation.page !== curPage) return;
-    if (_buitenBeeld(annotation, vpX, vpY, vpW, vpH)) return;
+  // Which annotations are on this page and in view is decided on the plain
+  // objects (kale-lijst.js): that test runs for every annotation of the
+  // document on every redraw. What is drawn is the store's own object.
+  const kaal = kaleLijst(annotations);
+  metSchaalBronnen(() => kaal.forEach((kandidaat, index) => {
+    if (kandidaat.page !== curPage) return;
+    if (_buitenBeeld(kandidaat, vpX, vpY, vpW, vpH)) return;
     // Een tekstmarkering met een andere mengmodus dan vermenigvuldigen mengt
     // zelf met de pagina; de markeerlaag kan alleen vermenigvuldigen.
-    const gemengd = isGemengd(annotation.blendMode);
-    if (gemengd && !(annotation.type === 'textHighlight' && textHighlightCtx && annotation.blendMode === 'multiply')) {
-      _tekenGemengd(annotationCtx, annotation, null,
+    const blendMode = effectiveBlendMode(kandidaat);
+    const gemengd = isGemengd(blendMode);
+    if (gemengd && !(kandidaat.type === 'textHighlight' && textHighlightCtx && blendMode === 'multiply')) {
+      _tekenGemengd(annotationCtx, annotations[index], null,
         textHighlightCanvas ? [{ canvas: textHighlightCanvas, op: 'multiply' }] : []);
       return;
     }
-    const targetCtx = (annotation.type === 'textHighlight' && textHighlightCtx)
+    const targetCtx = (kandidaat.type === 'textHighlight' && textHighlightCtx)
       ? textHighlightCtx
       : annotationCtx;
     // Wrap each annotation in save/restore to prevent clip leaks between annotations
     targetCtx.save();
-    drawAnnotation(targetCtx, annotation);
+    drawAnnotation(targetCtx, tekenObject(annotations, kandidaat, index));
     targetCtx.restore();
   }));
 
@@ -3335,6 +3431,8 @@ export function redrawAnnotations(lightweight = false) {
     textHighlightCtx.globalAlpha = 1;
     textHighlightCtx.globalCompositeOperation = 'source-over';
   }
+
+  tekenStatusBadgesOpScherm(annotationCtx, annotations, curPage);
 
   // Draw watermarks in front of content
   renderWatermarksInFront(annotationCtx, curPage, wmMaat.w, wmMaat.h);
@@ -3526,15 +3624,18 @@ function tekenPaginaLagen(ctx, pageNum, width, height, overrideDpr, renderOffset
     cvX = r.x; cvY = r.y; cvW = r.width; cvH = r.height;
   }
 
-  metSchaalBronnen(() => annotations.forEach(annotation => {
-    if (annotation.page !== pageNum) return;
-    if (_buitenBeeld(annotation, cvX, cvY, cvW, cvH)) return;
-    if (isGemengd(annotation.blendMode) && _paginaOnder(ctx.canvas)) {
-      _tekenGemengd(ctx, annotation, snippetBitmaps, []);
+  const kaal = kaleLijst(annotations);
+  metSchaalBronnen(() => kaal.forEach((kandidaat, index) => {
+    if (kandidaat.page !== pageNum) return;
+    if (_buitenBeeld(kandidaat, cvX, cvY, cvW, cvH)) return;
+    if (isGemengd(effectiveBlendMode(kandidaat)) && _paginaOnder(ctx.canvas)) {
+      _tekenGemengd(ctx, annotations[index], snippetBitmaps, []);
       return;
     }
-    drawAnnotation(ctx, annotation, snippetBitmaps);
+    drawAnnotation(ctx, tekenObject(annotations, kandidaat, index), snippetBitmaps);
   }));
+
+  if (lagen.schermlijndikte && lagen.markeringen) tekenStatusBadgesOpScherm(ctx, annotations, pageNum);
 
   // Draw watermarks in front of content
   if (lagen.watermerken) renderWatermarksInFront(ctx, pageNum, wmW, wmH);

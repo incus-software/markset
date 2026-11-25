@@ -3,6 +3,7 @@
     "openPopUpNote": "팝업 메모 열기",
     "hidePopUpNote": "팝업 메모 숨기기",
     "resetPopUpLocation": "팝업 메모 위치 초기화",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "텍스트 편집...",
     "addReply": "답글 추가",
     "locked": "잠김",
@@ -12,11 +13,13 @@
     "printable": "인쇄 가능",
     "status": "상태",
     "showByStatus": "상태별 표시",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "없음",
     "statusAccepted": "수락됨",
     "statusCancelled": "취소됨",
     "statusCompleted": "완료됨",
     "statusRejected": "거부됨",
+    "statusReviewed": "검토됨",
     "reviewHistory": "검토 기록...",
     "layer": "레이어:",
     "noLayersAvailable": "사용 가능한 레이어가 없습니다",
@@ -49,6 +52,7 @@
     "dimChainAdd": "치수 체인에 점 추가",
     "dimChainRemove": "체인에서 치수 보조선 제거",
     "selectRoom": "실 선택",
+    "checkScale": "이 선으로 축척 확인...",
     "saveToToolSet": "도구 세트에 저장"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "세로 가운데 맞춤",
     "distributeHorizontally": "가로 균등 배분",
     "distributeVertically": "세로 균등 배분",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "벽 모서리 자르기",
     "deleteAnnotations": "주석 {{count}}개 삭제",
     "deleteConfirm": "주석 {{count}}개를 삭제하시겠습니까?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "새 책갈피 아래에 넣기...",
     "indent": "들여쓰기",
     "outdent": "내어쓰기",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "책갈피 {{count}}개 삭제"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "파일에서 삽입...",
     "insertFromFileBefore": "이 페이지 앞에...",
     "insertFromFileAfter": "이 페이지 뒤에...",
-    "pageLabels": "페이지 레이블(이름 작성기)..."
+    "pageLabels": "페이지 레이블(이름 작성기)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "선택 영역 하이라이트",
     "strikethroughSelection": "선택 영역 취소선",
     "underlineSelection": "선택 영역 밑줄",
-    "curvedLeaderSelection": "곡선 설명선 추가"
+    "curvedLeaderSelection": "곡선 설명선 추가",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "이 주석을 삭제하시겠습니까?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "꼭짓점 삭제",
     "insertVertex": "여기에 꼭짓점 삽입",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "호로 변환",
     "convertToLine": "선으로 변환"
   },

@@ -9,7 +9,9 @@
     "measureTitle": "אורך אמיתי",
     "measureQuestion": "מהו האורך האמיתי של מרחק זה?",
     "measuredOnPaper": "נמדד על הנייר",
-    "computedScale": "קנה מידה מחושב"
+    "computedScale": "קנה מידה מחושב",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "קנה מידה",
@@ -17,7 +19,9 @@
     "viewports": "חלונות תצוגה",
     "noViewports": "לא הוגדרו חלונות תצוגה",
     "measurements": "מדידות",
-    "noMeasurements": "אין עדיין מדידות"
+    "noMeasurements": "אין עדיין מדידות",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "מאפיינים",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "הוגדר על ידי {{author}} בתאריך {{date}}",
     "layer": "שכבה",
     "layerMarkupGroup": "שכבות סימון",
-    "layerDocumentGroup": "שכבות המסמך"
+    "layerDocumentGroup": "שכבות המסמך",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "ללא",
   "moreColors": "צבעים נוספים...",
@@ -248,6 +254,7 @@
     "title": "כותרת",
     "author": "מחבר",
     "subject": "נושא",
+    "keywords": "מילות מפתח",
     "creator": "יוצר",
     "producer": "מפיק",
     "pdfVersion": "גרסת PDF",
@@ -316,7 +323,8 @@
     "redaction": "השחרה",
     "scaleBar": "סרגל קנה מידה",
     "parametricSymbol": "סמל פרמטרי",
-    "fileAttachment": "קובץ מצורף"
+    "fileAttachment": "קובץ מצורף",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "החלפת לוח",
@@ -341,6 +349,8 @@
     "deleteBookmark": "מחיקת סימנייה",
     "findBookmark": "חיפוש...",
     "findBookmarkTip": "הקלידו כדי לקפוץ לסימנייה. Enter פותח אותה, Enter נוסף עובר להתאמה הבאה.",
+    "findPage": "חיפוש...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "הוספת קובץ מצורף",
     "openAttachment": "פתיחת קובץ מצורף",
     "saveAttachment": "שמירת קובץ מצורף",
@@ -452,6 +462,9 @@
     "scaleAuto": "קנה המידה של המסמך",
     "scaleTooltip": "עקיפת קנה המידה עבור הערה זו (יחידות לנקודה). השאר ריק כדי להשתמש בקנה המידה של המסמך/האזור.",
     "unit": "יחידה",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "דיוק (ספרות עשרוניות)",
     "dimType": "סוג",
     "dimTypeCustom": "מותאם אישית",
@@ -473,7 +486,9 @@
     "depthNone": "ללא",
     "depthTooltip": "גובה קיר, עובי תקרה וכדומה, ביחידת המדידה. אורך × עומק נותן שטח פנים, שטח × עומק נותן נפח.",
     "surface": "שטח פנים",
-    "volume": "נפח"
+    "volume": "נפח",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "טבלאות כמויות",
@@ -496,7 +511,18 @@
     },
     "preview": "תצוגה מקדימה",
     "exportCsv": "ייצוא CSV",
-    "workbookBindings": "קישורי גיליון אלקטרוני"
+    "workbookBindings": "קישורי גיליון אלקטרוני",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "אשף טבלאות",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "חיבור בהתחלה",
     "joinAtEnd": "חיבור בסוף",
-    "joinHint": "כבוי: קצה זה של הקיר לעולם אינו מחובר בחיבור אלכסוני, בצורת T או בגיזום מול קיר אחר; הוא נשאר עם קצה ישר במקום שבו שורטט."
+    "joinHint": "כבוי: קצה זה של הקיר לעולם אינו מחובר בחיבור אלכסוני, בצורת T או בגיזום מול קיר אחר; הוא נשאר עם קצה ישר במקום שבו שורטט.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "הגדרות שרטוט",
@@ -682,6 +804,7 @@
       "height": "גובה",
       "location": "מיקום",
       "locationSource": "מקור המיקום",
+      "layer": "שכבה",
       "rebarMark": "מספר מוט",
       "rebarDiameter": "Ø",
       "rebarShape": "צורת כיפוף",
@@ -807,6 +930,24 @@
     "rules": "השיוך משתמש במרכז התיבה התוחמת של הסימון, כולל הקצוות. האזור העמוק ביותר גובר, אחריו השטח הקטן ביותר, ואחריו מזהה האזור. השתמש במצולעים ישרים ללא חורים או בתיבות ללא סיבוב. זהויות אזור לא תקינות או כפולות מוחרגות.",
     "loading": "ההערות נטענות: המיקומים עדיין עשויים להשתנות."
   },
+  "dynamicStamp": {
+    "title": "שדות החותמת",
+    "template": "תבנית",
+    "refresh": "עדכון תאריך, משתמש ועמוד",
+    "lock": "נעילת החותמת",
+    "lockConfirm": "לנעול את החותמת? לא ניתן יהיה עוד לשנות את שדותיה.",
+    "locked": "החותמת נעולה: לא ניתן עוד לשנות את שדותיה.",
+    "field": {
+      "date": "תאריך",
+      "time": "שעה",
+      "datetime": "תאריך ושעה",
+      "user": "משתמש",
+      "page": "עמוד",
+      "pages": "מספר עמודים",
+      "filename": "שם קובץ",
+      "title": "כותרת המסמך"
+    }
+  },
   "toolSets": {
     "title": "ערכות כלים",
     "typeWall": "קיר",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "הקובץ גדול מדי עבור ערכת כלים.",
     "errorFileInvalid": "קובץ זה אינו ערכת כלים תקינה.",
     "errorFileNewer": "ערכת כלים זו נוצרה בגרסה חדשה יותר של Open PDF Studio. עדכנו את היישום כדי לייבא אותה.",
-    "damagedStatus": "לא ניתן היה לקרוא את ערכות הכלים השמורות. הקובץ הפגום נשמר בשם \"{{name}}\"."
+    "damagedStatus": "לא ניתן היה לקרוא את ערכות הכלים השמורות. הקובץ הפגום נשמר בשם \"{{name}}\".",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "פתיחה",
     "saveAs": "שמירה בשם...",
     "noContent": "תוכן הקובץ הזה אינו מוטמע ב-PDF."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

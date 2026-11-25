@@ -1,4 +1,5 @@
 import { state, getActiveDocument, getPageRotation } from '../core/state.js';
+import { paginaBitmapMaat, paginaVakRect } from '../pdf/pagina-vak.js';
 import { execute } from '../core/undo-manager.js';
 import { verwijderTextEditRecord } from './text-edit-verwijderen.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
@@ -40,6 +41,7 @@ import {
   opmaakGewijzigd,
   tekstGewist,
   textEditLineCharSpacing,
+  textEditScreenRotation,
 } from '../text/text-edit-appearance.js';
 import { weergaveRotatie, paginaNaarClient, clientNaarPagina } from '../pdf/weergave-ruimte.js';
 import { groepeerTekstBlokken, blokRegelafstand } from '../text/tekst-blokken.js';
@@ -369,8 +371,10 @@ function reRenderAddedText(pageNum) {
     const vp = window.__pdfViewport;
     const useViewport = vp?.active && doc?.filePath && vp.pageW > 0 && vp.pageH > 0;
     const sc = doc?.scale || 1.5;
-    const pw = useViewport ? vp.pageW : canvasEl.width / sc;
-    const ph = useViewport ? vp.pageH : canvasEl.height / sc;
+    // (Doorlopend boven de bitmap-cap is het canvas een uitsnede, #1163.)
+    const beeldMaat = paginaBitmapMaat(canvasEl);
+    const pw = useViewport ? vp.pageW : beeldMaat.width / sc;
+    const ph = useViewport ? vp.pageH : beeldMaat.height / sc;
     injectSyntheticTextSpans(textLayer, pageNum, pw, ph);
   }
   if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
@@ -444,8 +448,10 @@ function getTextEditGeometry(pageNum, canvasEl) {
   const doc = getActiveDocument();
   const scale = doc?.scale || 1;
   const dpr = window.devicePixelRatio || 1;
-  const displayWidth = canvasEl?.width ? canvasEl.width / (scale * dpr) : 0;
-  const displayHeight = canvasEl?.height ? canvasEl.height / (scale * dpr) : 0;
+  // De maat van de hele pagina, ook als het canvas een uitsnede is (#1163).
+  const beeldMaat = paginaBitmapMaat(canvasEl, dpr);
+  const displayWidth = beeldMaat.width ? beeldMaat.width / (scale * dpr) : 0;
+  const displayHeight = beeldMaat.height ? beeldMaat.height / (scale * dpr) : 0;
   return resolveTextEditPageGeometry(
     doc?.pageDims?.[pageNum],
     displayWidth,
@@ -1526,101 +1532,6 @@ function cancelPdfTextEditing() {
   hideProperties();
 }
 
-/**
- * Programmatically replace text within a single span on the current page.
- * Used by Find & Replace. Uses the span's own PDF coordinates and font data
- * so the cover rectangle matches only that span, not the entire text block.
- *
- * @param {number} pageNum - Page number
- * @param {string} originalText - The original span text
- * @param {string} newText - The replacement span text
- * @param {HTMLElement} matchSpan - The span element containing the text to replace
- * @returns {{ editRecord: Object } | null}
- */
-export function createReplaceTextEdit(pageNum, originalText, newText, matchSpan) {
-  // Read PDF coordinates directly from the span's data attributes
-  let transform;
-  try {
-    transform = JSON.parse(matchSpan.dataset.pdfTransform);
-  } catch (_) {
-    return null;
-  }
-  if (!transform) return null;
-
-  const fontSize = Math.sqrt(transform[2] ** 2 + transform[3] ** 2) || 12;
-  const pdfX = transform[4];
-  const pdfY = transform[5]; // baseline Y in PDF space
-  const pdfWidth = parseFloat(matchSpan.dataset.pdfWidth) || fontSize * originalText.length * 0.5;
-
-  // Detect font from span data attributes (set by text-layer.js)
-  const pdfFontFamily = matchSpan.dataset.pdfFontFamily || 'sans-serif';
-  const actualFontName = matchSpan.dataset.pdfActualFontName || '';
-  const loadedFontName = matchSpan.dataset.pdfLoadedFontName || '';
-  const pdfFontName = matchSpan.dataset.pdfFontName || '';
-  const isBold = matchSpan.dataset.pdfBold === 'true';
-  const isItalic = matchSpan.dataset.pdfItalic === 'true';
-
-  const an = actualFontName.toLowerCase();
-  const fl = pdfFontFamily.toLowerCase();
-  let fontFamily;
-  if (an.includes('courier') || an.includes('consolas') || an.includes('mono') || fl === 'monospace') {
-    fontFamily = isBold && isItalic ? 'Courier-BoldOblique'
-      : isBold ? 'Courier-Bold'
-      : isItalic ? 'Courier-Oblique'
-      : 'Courier';
-  } else if (an.includes('times') || an.includes('garamond') || an.includes('georgia')
-      || an.includes('palatino') || an.includes('cambria') || an.includes('bookman')
-      || fl === 'serif') {
-    fontFamily = isBold && isItalic ? 'TimesRoman-BoldItalic'
-      : isBold ? 'TimesRoman-Bold'
-      : isItalic ? 'TimesRoman-Italic'
-      : 'TimesRoman';
-  } else {
-    fontFamily = isBold && isItalic ? 'Helvetica-BoldOblique'
-      : isBold ? 'Helvetica-Bold'
-      : isItalic ? 'Helvetica-Oblique'
-      : 'Helvetica';
-  }
-
-  const textLayer = matchSpan.closest('.textLayer');
-  const canvasEl = textLayer?.parentElement?.querySelector('canvas.pdf-canvas')
-    || document.getElementById('pdf-canvas');
-  const color = sampleTextColor(canvasEl, matchSpan.getBoundingClientRect());
-
-  const editRecord = {
-    id: Date.now() + Math.random().toString(36).substr(2, 9),
-    page: pageNum,
-    originalText,
-    newText,
-    pdfX,
-    pdfY,
-    pdfWidth,
-    fontSize: Math.round(fontSize),
-    lineSpacing: fontSize * 1.2,
-    numOriginalLines: 1,
-    fontFamily,
-    loadedFontName,
-    pdfFontName,
-    color,
-    textAngle: textEditAngleFromTransform(transform),
-    // Anker + ruwe tekst voor de in-place-route van de saver.
-    originalLineInfo: [{
-      x: pdfX,
-      y: pdfY,
-      width: pdfWidth,
-      fontSize,
-      angle: textEditAngleFromTransform(transform),
-      text: originalText,
-    }],
-    originalSpanTexts: [[originalText]]
-  };
-
-  // Update span text visually
-  matchSpan.textContent = newText;
-
-  return { editRecord };
-}
-
 function getTextEditViewGeometry(canvasEl, doc) {
   const vp = window.__pdfViewport;
   if (vp?.active && doc?.filePath && vp.pageH > 0 && vp.zoom > 0) {
@@ -1635,7 +1546,7 @@ function getTextEditViewGeometry(canvasEl, doc) {
   const dpr = window.devicePixelRatio || 1;
   const visualScale = doc?.scale || 1.5;
   return {
-    pageHeight: canvasEl.height / (visualScale * dpr),
+    pageHeight: paginaBitmapMaat(canvasEl, dpr).height / (visualScale * dpr),
     visualScale,
     offsetX: 0,
     offsetY: 0,
@@ -1667,13 +1578,16 @@ export function findTextEditAtPosition(x, y, pageNum, canvasEl) {
 
     const firstBaseY = (geometry.offsetYPt || 0) + pageHeight - edit.pdfY;
     const editLeft = edit.pdfX - (geometry.offsetXPt || 0);
-    const editTop = firstBaseY - fontSize;
+    const editTop = -fontSize;
     const editHeight = (numLines - 1) * ls + fontSize * 1.3;
     const maxCharCount = Math.max(...newLines.map(l => l.length), 1);
     const editWidth = Math.max(edit.pdfWidth || 0, fontSize * 0.6 * maxCharCount) + fontSize * 0.5;
 
-    if (unrotatedPoint.x >= editLeft && unrotatedPoint.x <= editLeft + editWidth &&
-        unrotatedPoint.y >= editTop && unrotatedPoint.y <= editTop + editHeight) {
+    const rad = (Number(edit.textAngle) || 0) * Math.PI / 180;
+    const dx = unrotatedPoint.x - editLeft, dy = unrotatedPoint.y - firstBaseY;
+    const localX = Math.cos(rad) * dx - Math.sin(rad) * dy;
+    const localY = Math.sin(rad) * dx + Math.cos(rad) * dy;
+    if (localX >= 0 && localX <= editWidth && localY >= editTop && localY <= editTop + editHeight) {
       return edit;
     }
   }
@@ -1701,7 +1615,8 @@ export function startTextEditEditing(textEdit, pageNum, canvasEl) {
   const container = canvasEl.parentElement;
   if (!container) return;
   const containerRect = container.getBoundingClientRect();
-  const canvasRect = canvasEl.getBoundingClientRect();
+  // Het vak van de pagina: bij een uitsnede (#1163) de container zelf.
+  const canvasRect = paginaVakRect(canvasEl);
   const offsetX = canvasRect.left - containerRect.left;
   const offsetY = canvasRect.top - containerRect.top;
 
@@ -1741,11 +1656,9 @@ export function startTextEditEditing(textEdit, pageNum, canvasEl) {
   );
   // Op het scherm staat het paginakader gedraaid over de paginarotatie plus
   // de weergaverotatie (#200): de editor draait daarover mee.
-  const schermRotatie = schermRotatieVan(geometry);
-  const [, , rotationC, rotationD] = getPageRotationMatrix(
-    geometry.pageWidth,
-    geometry.pageHeight,
-    schermRotatie,
+  const pageScreenRotation = schermRotatieVan(geometry);
+  const { angle: schermRotatie, rotationC, rotationD } = textEditScreenRotation(
+    pageScreenRotation, textEdit.textAngle,
   );
   // Met een gedraaide weergave via de centrale omrekening naar het scherm.
   const basisOpScherm = weergaveRotatie(editDoc)
@@ -1950,6 +1863,7 @@ export function startTextEditEditing(textEdit, pageNum, canvasEl) {
     pageNum,
     kind: 'record',
     _recordRef: textEdit,
+    pageScreenRotation,
     originalText: textEdit.newText,
     pdfX: textEdit.pdfX,
     pdfY: textEdit.pdfY,
@@ -1985,6 +1899,8 @@ export function startTextEditEditing(textEdit, pageNum, canvasEl) {
   const ffLower = (textEdit.fontFamily || 'Helvetica').toLowerCase();
   showTextEditProperties({
     text: textEdit.newText,
+    canRotate: !textEdit.originalText,
+    rotation: Number(textEdit.textAngle) || 0,
     fontSize: textEdit.fontSize,
     fontFamily: textEdit.fontFamily || 'Helvetica',
     color: textEdit.color || '#000000',
@@ -2159,6 +2075,21 @@ function applyColorToEditorSelection(color) {
 export function applyActiveTextEditStyle(key, value) {
   if (!activeEditor || !activeEditor.styleState) return;
   const st = activeEditor.styleState;
+  if (key === 'rotation') {
+    const record = activeEditor._recordRef;
+    const angle = Number(value);
+    if (!record || record.originalText || value === '' || !Number.isFinite(angle)) return;
+    record.textAngle = angle;
+    delete record.unchangedLines;
+    const rotation = textEditScreenRotation(activeEditor.pageScreenRotation, angle);
+    Object.assign(activeEditor.editorBaseline, {
+      rotationC: rotation.rotationC, rotationD: rotation.rotationD,
+    });
+    updatePdfEditorStyle({ transform: `rotate(${rotation.angle}deg)` });
+    applyStyleStateToEditor(st);
+    reRenderAddedText(record.page);
+    return;
+  }
   switch (key) {
     case 'fontFamily':
       if (st.family !== value) st.fontFaceChanged = true;

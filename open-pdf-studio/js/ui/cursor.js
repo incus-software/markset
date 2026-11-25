@@ -65,6 +65,7 @@ function _toolCursor(tool) {
 const cursor = createMemo(() => {
   // 1. Pan in progress (any kind) → grabbing
   if (interactionState.isPanning) return 'grabbing';
+  if (interactionState.spacePanHeld) return 'grab';
 
   // 2. Resize handle being dragged → handle's directional cursor
   if (interactionState.isResizing && interactionState.activeHandle) {
@@ -123,6 +124,7 @@ function _findMainView() {
 // cascade work and don't force overrides on children.
 function _isOverrideMode() {
   return interactionState.isPanning ||
+         interactionState.spacePanHeld ||
          interactionState.busy ||
          interactionState.snapPick;
 }

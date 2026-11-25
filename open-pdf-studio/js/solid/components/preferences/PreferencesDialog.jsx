@@ -7,6 +7,8 @@ import { savePreferences, applyTheme } from '../../../core/preferences.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { isMobile, isTauri, getUsername } from '../../../core/platform.js';
 import { zetPaginaAchtergrond } from '../../../pdf/pagina-achtergrond.js';
+import { pasUiSchaalToe } from '../../../core/ui-scale.js';
+import { leesLayout, zelfdeLayout } from '../../../core/werkruimte.js';
 
 import GeneralTab from './GeneralTab.jsx';
 import AnnotationsTab from './AnnotationsTab.jsx';
@@ -88,6 +90,10 @@ export default function PreferencesDialog(props) {
   // new one).
   createEffect(() => zetPaginaAchtergrond(prefs.pageBackgroundColor[0]()));
   onCleanup(() => zetPaginaAchtergrond(state.preferences.pageBackgroundColor));
+  // Interfacegrootte (#932) idem: meteen zichtbaar tijdens het kiezen,
+  // annuleren zet de bewaarde grootte terug.
+  createEffect(() => pasUiSchaalToe(prefs.uiScale[0]()));
+  onCleanup(() => pasUiSchaalToe(state.preferences.uiScale));
 
   function close() {
     closeDialog('preferences');
@@ -96,6 +102,11 @@ export default function PreferencesDialog(props) {
   function handleSave() {
     const prevThinLines = state.preferences.thinLines;
     const prevPageSharpen = state.preferences.pageSharpen;
+    const prevLayout = leesLayout(state.preferences);
+    const prevLengte = `${state.preferences.imperialLengthFormat}|${state.preferences.imperialFractionPrecision}`;
+    const statusVoorkeuren = () => JSON.stringify([state.preferences.markupStatusSets, state.preferences.activeMarkupStatusSet,
+      state.preferences.markupStatuses, state.preferences.showStatusBadges]);
+    const prevStatus = statusVoorkeuren();
     for (const key of Object.keys(DEFAULT_PREFERENCES)) {
       state.preferences[key] = prefs[key][0]();
     }
@@ -107,6 +118,22 @@ export default function PreferencesDialog(props) {
     import('../../stores/propertiesStore.js').then(m => m.setPanelVisible(state.preferences.propertiesPanelVisible));
     // Apply tool palette visibility change
     import('../ToolPalette.jsx').then(m => m.initToolPalette());
+    // Indeling gewijzigd (bv. na 'Standaardwaarden', #932): alle panelen volgen.
+    if (!zelfdeLayout(prevLayout, leesLayout(state.preferences))) {
+      import('../../../ui/panels/werkruimte-toepassen.js').then(m => m.pasHuidigeLayoutToe());
+    }
+    // Voet-inch of decimale voet gewijzigd (#996): maatteksten opnieuw opbouwen.
+    if (`${state.preferences.imperialLengthFormat}|${state.preferences.imperialFractionPrecision}` !== prevLengte) {
+      import('../../../annotations/measurement.js').then(m => m.recalculateAllMeasurements());
+    }
+    // Statussets of de statusbadge gewijzigd (#1076): lijst en tekening volgen.
+    if (statusVoorkeuren() !== prevStatus) {
+      import('../../../annotations/rendering.js').then(m => {
+        if (getActiveDocument()?.viewMode === 'continuous') m.redrawContinuous();
+        else m.redrawAnnotations();
+      });
+      import('../../../ui/panels/annotations-list.js').then(m => m.updateAnnotationsList());
+    }
     // Thin Lines changed (#595): re-render the page view in the new line mode.
     if (state.preferences.thinLines !== prevThinLines) {
       import('../../../pdf/thin-lines.js').then(m => m.refreshAfterThinLinesChange());
@@ -139,6 +166,12 @@ export default function PreferencesDialog(props) {
     }
     if (confirmed) {
       for (const key of Object.keys(DEFAULT_PREFERENCES)) {
+        // Werkruimten met een naam zijn eigen werk, geen instelling (#932).
+        if (key === 'workspaces') continue;
+        // Net zo de eigen statuslijst van het team (#1076).
+        if (key === 'markupStatuses' || key === 'markupStatusSets' || key === 'activeMarkupStatusSet') continue;
+        // Net zo wat de gebruiker al eens heeft uitgesteld bij het herstellen.
+        if (key === 'recoveryPostponed') continue;
         prefs[key][1](DEFAULT_PREFERENCES[key]);
       }
       // Resolve OS username for authorName since default is empty

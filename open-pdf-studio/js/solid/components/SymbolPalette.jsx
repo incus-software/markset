@@ -1,4 +1,5 @@
-import { Show, For, createSignal, createEffect, createMemo } from 'solid-js';
+import { Show, For, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
+import { klemPaletPositie } from './palette-grenzen.js';
 import { Portal } from 'solid-js/web';
 import { state } from '../../core/state.js';
 import { setTool } from '../../tools/manager.js';
@@ -26,7 +27,7 @@ import {
 import { registerPaletteDock, unregisterPaletteDock } from '../stores/paletteOrder.js';
 import { ifcCategoryForSymbol } from '../data/ifcCategoryMap.js';
 import { nenIfcForSymbolId } from '../data/nenIfcMap.js';
-import { SYMBOL_STAMP_DEFAULT_SIZE } from '../../annotations/stamp-defaults.js';
+import { SYMBOL_PAPER_HEIGHT_MM } from '../../annotations/stamp-defaults.js';
 import { setPendingSymbolId, setPendingSymbolWithParams } from '../stores/parametricSymbolStore.js';
 import ProToolGroup from '../../../markset/pro-group/ProToolGroup.jsx'; // Markset
 import { symboolSchaal, setSymboolSchaal } from '../../symbols/symbol-scale-store.js';
@@ -35,6 +36,7 @@ import { SCHAAL_STAPPEN, schaalLabel, leesSchaalInvoer, volgendeSchaalStap } fro
 import useDropdown from './preferences/useDropdown.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
 import { parseLineworkCatalog, lineworkCatalogToGroup, LINEWORK_TEMPLATE_PREFIX } from '../../symbols/linework-catalog.js';
+import { saneerSvg, svgAlsDataUrl } from '../../core/svg-veilig.js';
 
 // Alleen catalogus-FAMILIES (maat-keuze, geen sprekend pictogram) krijgen de
 // brede tegel met naam; gewone parametrische symbolen houden het compacte
@@ -49,6 +51,12 @@ import { isTauri } from '../../core/platform.js';
 import { knopUit, meldingTekst } from '../../core/webfuncties.js';
 
 const DOCK_SNAP = 60;
+
+// Keep the floating palette inside the window and below the title bar (#1027).
+function klemSymboolPalet(pos) {
+  const el = document.querySelector('.sp-float');
+  return klemPaletPositie(pos, el ? el.offsetWidth : 240, el ? el.offsetHeight : 300);
+}
 
 // --- Shared drag logic ---
 function startDrag(e, fromDocked) {
@@ -78,12 +86,7 @@ function startDrag(e, fromDocked) {
         unregisterPaletteDock('symbols');
       }
     }
-    const el = document.querySelector('.sp-float');
-    const pw = el ? el.offsetWidth : 240;
-    const ph = el ? el.offsetHeight : 300;
-    const nx = Math.max(0, Math.min(ev.clientX - offsetX, window.innerWidth - pw));
-    const ny = Math.max(0, Math.min(ev.clientY - offsetY, window.innerHeight - ph));
-    setSymbolFloatPos({ x: nx, y: ny });
+    setSymbolFloatPos(klemSymboolPalet({ x: ev.clientX - offsetX, y: ev.clientY - offsetY }));
   }
 
   function onUp(ev) {
@@ -150,11 +153,12 @@ export function selectSymbol(symbol) { // Markset: exported for the K/X shortcut
     stampSvg: effectiveSvg,
     stampBaseSvg: symbol.svg,
     stampName: symbol.name,
-    // Alleen de hoogte vastzetten: de breedte volgt uit de beeldverhouding van
-    // de SVG (placeOverrideStamp), zodat een niet-vierkant symbool niet in een
-    // vierkant wordt geduwd. Voor de vierkante meegeleverde symbolen blijft de
-    // uitkomst 400 x 400.
-    stampHeight: SYMBOL_STAMP_DEFAULT_SIZE,
+    // Annotatiesymbool: een vaste hoogte op papier, los van de tekeningschaal
+    // (#983). De breedte volgt uit de beeldverhouding van de SVG
+    // (placeOverrideStamp), zodat een niet-vierkant symbool niet in een
+    // vierkant wordt geduwd. Declareert de SVG zelf een echte maat (mm), dan
+    // gaat die voor en volgt hij de tekeningschaal (svg-real-size.js).
+    stampPaperHeightMm: SYMBOL_PAPER_HEIGHT_MM,
     lockAspectRatio: true,
     ifcCategory: ifcCategoryForSymbol(symbol),
     // Symbool-id + IFC PredefinedType meegeven zodat de geplaatste stempel
@@ -170,21 +174,56 @@ export function selectSymbol(symbol) { // Markset: exported for the K/X shortcut
   setTool('stamp');
 }
 
+// Alleen een kleurwaarde, nooit iets dat een attribuut kan openbreken.
+const CATEGORIE_KLEUR = /^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]{1,30})$/;
+
 // Colorize SVG: replace #000 and #d00 strokes/fills with category color
 function colorizeSvg(svg, color) {
-  if (!color) return svg;
+  if (!color || !CATEGORIE_KLEUR.test(color)) return svg;
   return svg.replace(/stroke="#000"/g, `stroke="${color}"`)
             .replace(/fill="#000"/g, `fill="${color}"`)
             .replace(/stroke="#d00"/g, `stroke="${color}"`)
             .replace(/fill="#d00"/g, `fill="${color}"`);
 }
 
+// Miniaturen van symbolen die niet met de app meekomen (online bibliotheek,
+// eigen en geimporteerde groepen) tonen we als <img> met een data-URL van de
+// schoongemaakte SVG: in een afbeelding draait nooit een script en raakt een
+// <style> de rest van de app niet. Ingebouwde symbolen blijven inline SVG.
+const _miniaturen = new Map();
+function externeMiniatuur(svg, color) {
+  if (typeof svg !== 'string') return '';
+  const sleutel = (color || '') + '|' + svg;
+  let url = _miniaturen.get(sleutel);
+  if (url === undefined) {
+    const schoon = saneerSvg(colorizeSvg(svg, color));
+    url = schoon ? svgAlsDataUrl(schoon) : '';
+    if (_miniaturen.size > 4000) _miniaturen.clear();
+    _miniaturen.set(sleutel, url);
+  }
+  return url;
+}
+
+function SymboolMiniatuur(props) {
+  return (
+    <Show when={props.cat.builtin} fallback={
+      <span class={props.class} title={props.title}>
+        <Show when={externeMiniatuur(props.sym.svg, props.cat.color)}>
+          {(url) => <img src={url()} alt="" draggable={false} />}
+        </Show>
+      </span>
+    }>
+      <span class={props.class} title={props.title} innerHTML={colorizeSvg(props.sym.svg, props.cat.color)} />
+    </Show>
+  );
+}
+
 // Grip icon (6 dots)
 const gripSvg = `<svg width="8" height="14" viewBox="0 0 8 14"><circle cx="2" cy="2" r="1" fill="currentColor"/><circle cx="6" cy="2" r="1" fill="currentColor"/><circle cx="2" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="2" cy="10" r="1" fill="currentColor"/><circle cx="6" cy="10" r="1" fill="currentColor"/></svg>`;
 
-const searchSvg = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>`;
+const searchSvg = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>`;
 
-const settingsSvg = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2M3 3l1.5 1.5m7 7L13 13M3 13l1.5-1.5m7-7L13 3"/></svg>`;
+const settingsSvg = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2M3 3l1.5 1.5m7 7L13 13M3 13l1.5-1.5m7-7L13 3"/></svg>`;
 
 const closeSvg = `<svg width="8" height="8" viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="2" x2="2" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>`;
 
@@ -345,7 +384,7 @@ function SymbolContent() {
                             cat.onEdit(sym);
                           }}
                         >
-                          <span class="sp-symbol-icon" innerHTML={colorizeSvg(sym.svg, cat.color)} />
+                          <SymboolMiniatuur class="sp-symbol-icon" sym={sym} cat={cat} />
                           {/* Catalogus-ingangen zijn families met een maat-keuze,
                               geen pictogrammen: aan de miniatuur alleen zie je niet
                               welk aanzicht je aanklikt. Platte symboolsets houden
@@ -392,6 +431,18 @@ export function DockedSymbolPalette(props) {
 export function FloatingSymbolPalette() {
   const { t } = useTranslation('ribbon');
   const shouldShow = () => symbolPaletteVisible() && symbolPaletteMode() === 'float';
+
+  // A saved position from a larger window, or from before the clamp above,
+  // can put the header out of reach: pull it back when shown and on resize.
+  const herstel = () => {
+    if (!shouldShow()) return;
+    const oud = symbolFloatPos();
+    const nieuw = klemSymboolPalet(oud);
+    if (nieuw.x !== oud.x || nieuw.y !== oud.y) { setSymbolFloatPos(nieuw); saveSymbolPaletteState(); }
+  };
+  createEffect(() => { if (shouldShow()) requestAnimationFrame(herstel); });
+  onMount(() => window.addEventListener('resize', herstel));
+  onCleanup(() => window.removeEventListener('resize', herstel));
 
   return (
     <Show when={shouldShow()}>
@@ -457,7 +508,7 @@ export function SymbolSettingsDialog() {
       if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
         // Vector SVG
         const text = await file.text();
-        addSymbolToGroup(groupId, name, text);
+        if (!addSymbolToGroup(groupId, name, text)) console.warn('Symbool-SVG niet bruikbaar:', file.name);
       } else if (file.type.startsWith('image/')) {
         // Raster image → convert to data URL
         const reader = new FileReader();
@@ -528,8 +579,8 @@ export function SymbolSettingsDialog() {
       const groupId = addCustomGroup(data.name);
       // Add all symbols from the imported group
       for (const sym of data.symbols) {
-        if (sym.name && sym.svg) {
-          addSymbolToGroup(groupId, sym.name, sym.svg);
+        if (sym.name && sym.svg && !addSymbolToGroup(groupId, sym.name, sym.svg)) {
+          console.warn('Symbool-SVG niet bruikbaar:', sym.name);
         }
       }
     } catch (err) {
@@ -637,8 +688,7 @@ export function SymbolSettingsDialog() {
                   <div class="sp-settings-symbols">
                     <For each={cat.symbols}>
                       {(sym) => (
-                        <div class="sp-settings-symbol" title={sym.name}
-                          innerHTML={colorizeSvg(sym.svg, cat.color)} />
+                        <SymboolMiniatuur class="sp-settings-symbol" title={sym.name} sym={sym} cat={cat} />
                       )}
                     </For>
                     <Show when={cat.symbols.length === 0}>

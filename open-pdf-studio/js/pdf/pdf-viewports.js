@@ -3,10 +3,13 @@
 // DWG/DXF-import van deze app ook (#400). De maatvoering gebruikt ze nu
 // meteen, zonder dat de gebruiker hoeft te kalibreren (zie getMeasureScale).
 //
-// De viewports worden alleen gelezen; de PDF blijft ongewijzigd.
+// Hier wordt alleen gelezen. De eigen schalen van de app schrijft
+// schaal-in-pdf.js bij het opslaan, met /OPS_Bron gemarkeerd; die slaat deze
+// lezer over (#629).
 
 import { PDFName, PDFArray, PDFDict, PDFNumber, PDFString, PDFHexString } from 'pdf-lib';
-import { restorePageCalibrations } from '../../markset/page-scale.js'; // Markset
+import { restorePageCalibrations, withoutCalibrationViewports } from '../../markset/page-scale.js'; // Markset
+import { opmaakUitGetalopmaken } from '../core/maat-opmaak.js';
 
 /** Millimeters per eenheid voor de eenheden die in een `/U`-label voorkomen. */
 const MM_PER = Object.freeze({ mm: 1, cm: 10, dm: 100, m: 1000, km: 1000000, in: 25.4, ft: 304.8, yd: 914.4, mi: 1609344 });
@@ -99,6 +102,31 @@ function tekst(obj) {
     try { return obj.decodeText(); } catch { return ''; }
   }
   return '';
+}
+
+/**
+ * Een /X-, /D- of /A-reeks van getalopmaken als gewone objecten
+ * [{ U, C, F, D }, …] voor core/maat-opmaak.js. Een losse opmaak telt als
+ * reeks van één.
+ * @param {*} raw  PDFArray, PDFDict of iets anders
+ * @param {(v: *) => *} [opzoeken]  zet een verwijzing om (context.lookup)
+ */
+export function getalopmaakReeks(raw, opzoeken = (v) => v) {
+  const lijst = raw instanceof PDFArray ? raw.asArray() : (raw instanceof PDFDict ? [raw] : []);
+  const uit = [];
+  for (const item of lijst) {
+    const d = opzoeken(item);
+    if (!(d instanceof PDFDict)) continue;
+    const get = (k) => opzoeken(d.get(PDFName.of(k)));
+    const f = get('F');
+    uit.push({
+      U: tekst(get('U')),
+      C: getal(get('C')),
+      F: f instanceof PDFName ? f.decodeText() : undefined,
+      D: getal(get('D')),
+    });
+  }
+  return uit;
 }
 
 function rechthoek(arr) {
@@ -195,9 +223,19 @@ export function leesViewportsVanPagina(pagina) {
       console.warn(`[pdf-viewports] pagina met ${vp.size()} viewports: meer dan ${MAX_VIEWPORTS}, de lijst wordt overgeslagen`);
       return lijst;
     }
-    for (let j = 0; j < vp.size(); j++) {
-      const d = vp.lookup(j);
+    // Markset: a sheet calibrated in Markset keeps its own scale as a
+    // "Markset calibration" viewport and the PDF's original ones under
+    // /OPS_OriginalVP (markset/page-scale-pdf.js): those originals are the
+    // PDF's scale on that sheet, the one a Reset of the calibration returns to.
+    const bewaard = node.lookup(PDFName.of('OPS_OriginalVP'));
+    const reeksen = [vp];
+    if (bewaard instanceof PDFArray && bewaard.size() <= MAX_VIEWPORTS) reeksen.push(bewaard);
+    for (const reeks of reeksen) for (let j = 0; j < reeks.size(); j++) {
+      const d = reeks.lookup(j);
       if (!(d instanceof PDFDict)) continue;
+      // Een eigen viewport (schaal-in-pdf.js, #629) spiegelt een schaalgebied,
+      // viewport-annotatie of de documentschaal: die komen zelf terug.
+      if (d.get(PDFName.of('OPS_Bron')) !== undefined) continue;
       const measure = d.lookup(PDFName.of('Measure'));
       const bbox = rechthoek(d.lookup(PDFName.of('BBox')));
       if (!(measure instanceof PDFDict) || !bbox) continue;
@@ -217,6 +255,14 @@ export function leesViewportsVanPagina(pagina) {
         ratio: tekst(measure.lookup(PDFName.of('R'))).trim(),
         name: tekst(d.lookup(PDFName.of('Name'))).trim(),
       };
+      // Getalopmaak van lengtes (/D): decimalen of voet-inch met een breuk.
+      // Een maat die op deze pagina getekend wordt, neemt hem over.
+      const opmaakD = opmaakUitGetalopmaken(getalopmaakReeks(measure.lookup(PDFName.of('D')), (v) => d.context.lookup(v) ?? v));
+      if (opmaakD && (opmaakD.fractie || opmaakD.decimalen !== undefined)) {
+        viewport.opmaak = opmaakD.fractie
+          ? { fractie: opmaakD.fractie, ...(opmaakD.inch ? { inch: true } : {}) }
+          : { decimalen: opmaakD.decimalen };
+      }
       const veelhoek = veelhoekUit(d.lookup(PDFName.of('OPS_Clip')), view, rot);
       if (veelhoek) viewport.veelhoek = veelhoek;
       // Alleen een viewport met een modelmatrix draagt een terugweg naar CAD;
@@ -330,6 +376,8 @@ export function rondViewportLezingAf(doc, kenmerk, viewports, userUnits) {
   if (viewports) { // Markset: a calibration saved in the PDF is that sheet's calibration again
     const ms = restorePageCalibrations(doc.measureScale, viewports);
     if (ms !== doc.measureScale) doc.measureScale = ms;
+    // ... and not also the PDF's own scale, or Reset would leave it in force.
+    doc.pdfViewports = withoutCalibrationViewports(doc.pdfViewports);
   }
   if (viewports && userUnits) {
     doc.pageUserUnits = Object.keys(userUnits).length ? userUnits : undefined;

@@ -1,18 +1,11 @@
-import { Show, Switch, Match, ErrorBoundary, createEffect, onMount, onCleanup } from 'solid-js';
+import { Show, Switch, Match, ErrorBoundary, createEffect, createSignal, onMount, onCleanup, lazy } from 'solid-js';
 import RibbonTab from './RibbonTab.jsx';
 import HomeTab from './HomeTab.jsx';
-import DrawingTab from './DrawingTab.jsx';
-import CommentTab from './CommentTab.jsx';
-import ViewTab from './ViewTab.jsx';
-import OrganizeTab from './OrganizeTab.jsx';
-import HelpTab from './HelpTab.jsx';
-import FormatTab from './FormatTab.jsx';
-import ArrangeTab from './ArrangeTab.jsx';
-import ImageTab from './ImageTab.jsx';
 import ProRibbonTab from '../../../../markset/pro-group/ProRibbonTab.jsx'; // Markset
-import ExtensionRibbonTab,{ ExtensionTabStrip, isExtensieTabblad } from './ExtensionRibbonTab.jsx';
+import ExtensionRibbonTab, { ExtensionTabStrip, isExtensieTabblad } from './ExtensionRibbonTab.jsx';
 import { volgendeTab } from './ribbon-toetsenbord.js';
 import { maakWielStapper, wielTab, lintTabs, heeftEigenWiel } from './ribbon-wiel.js';
+import { tijdelijkNaTabKlik, tijdelijkSluitenBij } from './ribbon-ingeklapt.js';
 import { lintRegister } from '../../../plugins/ribbon-tab-registry.js';
 import { activeTab, setActiveTab, contextualTabsVisible } from '../../stores/ribbonStore.js';
 import { imageSelected } from '../../stores/imageEditStore.js';
@@ -22,6 +15,24 @@ import { state } from '../../../core/state.js';
 import { savePreferences } from '../../../core/preferences.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { zetLintUitvoerder } from '../../../core/keybindings/app-shortcuts.js';
+import { maakTabLader, zetTabLader, naDeStart } from './lint-tab-laden.js';
+
+// Start staat bij het opstarten klaar; de andere tabbladen zijn eigen chunks
+// (#454) die na de start in een rustig moment laden (naDeStart hieronder),
+// of eerder bij het eerste gebruik. Na het laden tekent een tabblad synchroon.
+const DrawingTab = lazy(() => import('./DrawingTab.jsx'));
+const CommentTab = lazy(() => import('./CommentTab.jsx'));
+const ViewTab = lazy(() => import('./ViewTab.jsx'));
+const OrganizeTab = lazy(() => import('./OrganizeTab.jsx'));
+const HelpTab = lazy(() => import('./HelpTab.jsx'));
+const FormatTab = lazy(() => import('./FormatTab.jsx'));
+const ArrangeTab = lazy(() => import('./ArrangeTab.jsx'));
+const ImageTab = lazy(() => import('./ImageTab.jsx'));
+const tabLader = maakTabLader({
+  home: HomeTab, drawing: DrawingTab, comment: CommentTab, view: ViewTab, organize: OrganizeTab,
+  help: HelpTab, format: FormatTab, arrange: ArrangeTab, image: ImageTab,
+});
+zetTabLader(tabLader);
 
 // Het register van extensietabbladen (#551) zet een verdwenen actief tabblad
 // zelf terug op 'home'; daarvoor kent het hier het actieve tabblad.
@@ -30,8 +41,10 @@ lintRegister.koppelLint({ lees: activeTab, zet: setActiveTab });
 // Een sneltoets voor een lintknop (#714) klikt die knop. Alleen het open
 // tabblad staat in de DOM: staat de knop op een ander tabblad (of is het lint
 // ingeklapt), dan zet dit dat tabblad heel even neer, klikt en zet alles
-// terug. Solid werkt de DOM synchroon bij, er komt geen frame tussen.
-zetLintUitvoerder((knopId, tab) => {
+// terug. Solid werkt de DOM synchroon bij, er komt geen frame tussen. Is de
+// chunk van dat tabblad nog niet geladen (vlak na de start), dan eerst laden
+// en dan pas neerzetten en klikken; anders blijft alles synchroon.
+function klikLintKnop(knopId, tab) {
   const klik = (el) => {
     if (!el || el.disabled) return false;
     el.click();
@@ -50,6 +63,10 @@ zetLintUitvoerder((knopId, tab) => {
     setActiveTab(vorigTab);
     if (ingeklapt) state.preferences.ribbonCollapsed = true;
   }
+}
+zetLintUitvoerder((knopId, tab) => {
+  if (!tab || tabLader.isGeladen(tab) || document.getElementById(knopId)) return klikLintKnop(knopId, tab);
+  return tabLader.laad(tab).then((ok) => ok && klikLintKnop(knopId, tab));
 });
 
 // De ingebouwde tab-id's ('measure' is de oude naam van 'comment').
@@ -95,6 +112,9 @@ export default function Ribbon() {
     setActiveTab(volgende);
     requestAnimationFrame(() => knopVan(volgende)?.focus());
   };
+  // De andere tabbladen voorladen zodra het venster staat en rustig is.
+  onMount(() => onCleanup(naDeStart(() => { tabLader.laadAlles(); })));
+
   // Muiswiel boven het lint (#852): één wielklik is één tabblad, zonder
   // rondloop, alsof de gebruiker het tabblad aanklikt. Het wiel van het lint
   // scrollt of zoomt nooit het document; invoervakken, keuzelijsten, galerijen
@@ -113,7 +133,10 @@ export default function Ribbon() {
       const tabs = lintTabs(tablistEl.querySelectorAll('.ribbon-tab[role="tab"]'));
       const huidig = commentActive() ? 'comment' : activeTab();
       const volgende = wielTab(tabs, huidig, stap);
-      if (volgende) knopVan(volgende)?.click();
+      if (!volgende) return;
+      // Ingeklapt en niet tijdelijk open: het wiel wisselt alleen van tabblad.
+      if (ribbonCollapsed() && !tijdelijk()) { setActiveTab(volgende); return; }
+      knopVan(volgende)?.click();
     };
     houder.addEventListener('wheel', opWiel, { passive: false });
     onCleanup(() => houder.removeEventListener('wheel', opWiel));
@@ -134,9 +157,44 @@ export default function Ribbon() {
 
   const ribbonCollapsed = () => state.preferences.ribbonCollapsed === true;
   const toggleCollapsed = () => {
+    setTijdelijk(false);
     state.preferences.ribbonCollapsed = !ribbonCollapsed();
     savePreferences();
   };
+
+  // Ingeklapt lint (#960): een klik op een tabtitel klapt het tijdelijk open,
+  // als paneel over het document; een klik buiten het lint, Esc of nog eens
+  // dezelfde titel klapt het weer in. Het pijltje zet het vast open.
+  const [tijdelijk, setTijdelijk] = createSignal(false);
+  const inhoudZichtbaar = () => !ribbonCollapsed() || tijdelijk();
+  const isHuidigeTab = (id) => (id === 'comment' || id === 'measure') ? commentActive() : activeTab() === id;
+  const kiesTab = (id) => {
+    setTijdelijk(tijdelijkNaTabKlik({ ingeklapt: ribbonCollapsed(), tijdelijkOpen: tijdelijk(), zelfdeTab: isHuidigeTab(id) }));
+    setActiveTab(id);
+  };
+  createEffect(() => { if (!ribbonCollapsed()) setTijdelijk(false); });
+  createEffect(() => {
+    tablistEl?.parentElement?.classList.toggle('ribbon-tijdelijk-open', ribbonCollapsed() && tijdelijk());
+  });
+  onMount(() => {
+    const lint = () => tablistEl?.parentElement;
+    const opDruk = (e) => {
+      if (tijdelijkSluitenBij({ tijdelijkOpen: tijdelijk(), soort: 'pointerdown', binnenLint: !!lint()?.contains(e.target) })) setTijdelijk(false);
+    };
+    const opToetsDoc = (e) => {
+      if (tijdelijkSluitenBij({ tijdelijkOpen: tijdelijk(), soort: 'keydown', toets: e.key })) setTijdelijk(false);
+    };
+    const opVensterBlur = () => setTijdelijk(false);
+    document.addEventListener('pointerdown', opDruk, true);
+    document.addEventListener('keydown', opToetsDoc);
+    window.addEventListener('blur', opVensterBlur);
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', opDruk, true);
+      document.removeEventListener('keydown', opToetsDoc);
+      window.removeEventListener('blur', opVensterBlur);
+      lint()?.classList.remove('ribbon-tijdelijk-open');
+    });
+  });
 
   return (
     <>
@@ -146,40 +204,40 @@ export default function Ribbon() {
           onClick={() => openAppMenu()} />
         <RibbonTab label={t('tabs.home')} dataTab="home"
           isActive={activeTab() === 'home'}
-          onClick={() => setActiveTab('home')} />
+          onClick={() => kiesTab('home')} />
         <RibbonTab label={t('tabs.view')} dataTab="view"
           isActive={activeTab() === 'view'}
-          onClick={() => setActiveTab('view')} />
+          onClick={() => kiesTab('view')} />
         <RibbonTab label={t('tabs.drawing')} dataTab="drawing"
           isActive={activeTab() === 'drawing'}
-          onClick={() => setActiveTab('drawing')} />
+          onClick={() => kiesTab('drawing')} />
         <RibbonTab label={t('tabs.comment')} dataTab="comment"
           isActive={commentActive()}
-          onClick={() => setActiveTab('comment')} />
+          onClick={() => kiesTab('comment')} />
         <RibbonTab label={t('tabs.organize')} dataTab="organize"
           isActive={activeTab() === 'organize'}
-          onClick={() => setActiveTab('organize')} />
+          onClick={() => kiesTab('organize')} />
         {/* Markset: the Pro tools, also listed at the top of the Toolpalette. */}
         <RibbonTab label={t('tabs.pro')} dataTab="pro"
           isActive={activeTab() === 'pro'}
-          onClick={() => setActiveTab('pro')} />
+          onClick={() => kiesTab('pro')} />
         <RibbonTab label={t('tabs.help')} dataTab="help"
           isActive={activeTab() === 'help'}
-          onClick={() => setActiveTab('help')} />
+          onClick={() => kiesTab('help')} />
         {/* Linttabbladen van extensies (#551): na Instellingen, vóór de contextuele. */}
-        <ExtensionTabStrip activeTab={activeTab} setActiveTab={setActiveTab} strookOuder={() => tablistEl} />
+        <ExtensionTabStrip activeTab={activeTab} setActiveTab={kiesTab} strookOuder={() => tablistEl} />
         <Show when={contextualTabsVisible()}>
           <span class="ribbon-tab-separator contextual-tabs visible" id="contextual-tabs-separator"></span>
           <RibbonTab label={t('tabs.format')} dataTab="format" isContextual={true} id="tab-format-btn"
             isActive={activeTab() === 'format'}
-            onClick={() => setActiveTab('format')} />
+            onClick={() => kiesTab('format')} />
           {/* Schikken werkt op een selectie; tijdens het invoegen van
               symbolen (#587) of het tekenen met een gereedschap (#668)
               staat alleen Opmaak open. */}
           <Show when={!opmaakVoorNieuw()}>
             <RibbonTab label={t('tabs.arrange')} dataTab="arrange" isContextual={true} id="tab-arrange-btn"
               isActive={activeTab() === 'arrange'}
-              onClick={() => setActiveTab('arrange')} />
+              onClick={() => kiesTab('arrange')} />
           </Show>
         </Show>
         <Show when={imageSelected()}>
@@ -188,7 +246,7 @@ export default function Ribbon() {
           </Show>
           <RibbonTab label={t('tabs.image')} dataTab="image" isContextual={true} id="tab-image-btn"
             isActive={activeTab() === 'image'}
-            onClick={() => setActiveTab('image')} />
+            onClick={() => kiesTab('image')} />
         </Show>
         {/* Collapse/expand toggle (issue #278): hides the ribbon body so only
             the tab strip remains. State is remembered in preferences. */}
@@ -211,7 +269,7 @@ export default function Ribbon() {
           omhulling: bestaande extensies verbergen de ingebouwde inhoud met
           een kindselector (`.x > .ribbon-content`). Elke tabknop wijst met
           aria-controls naar de inhoud van zijn eigen tabblad (#tab-<id>). */}
-      <Show when={!ribbonCollapsed()}>
+      <Show when={inhoudZichtbaar()}>
         <Switch>
           <Match when={activeTab() === 'drawing'}><DrawingTab /></Match>
           <Match when={commentActive()}><CommentTab /></Match>

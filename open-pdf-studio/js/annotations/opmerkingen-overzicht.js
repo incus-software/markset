@@ -7,6 +7,7 @@
 // en rapport dezelfde opmerkingen in dezelfde volgorde tonen.
 
 import { csvDatum } from './opmerkingen-export.js';
+import { setStatusWithHistory } from '../review/status-history.js';
 
 /** De auteur zoals de lijst hem toont: zonder auteur heet hij 'User'. */
 export function auteurVan(ann) {
@@ -146,10 +147,14 @@ const opTekst = (sleutel) => (a, b) => {
  * De vergelijker voor een sorteer-/groeperingswijze van het paneel.
  * @param {string} wijze  page | type | modifiedDate | creationDate | author |
  *   color | subject | status | statusAndAuthor | lastStatusAuthor
- * @param {{ typeNaam?: (type: string) => string }} [opties]
+ * @param {{ typeNaam?: (type: string) => string,
+ *   vergelijkStatus?: (a: string, b: string) => number }} [opties]
+ *   vergelijkStatus: de volgorde van twee statussleutels; het paneel geeft
+ *   de volgorde van de statussets (#1076), zonder is het op naam
  */
 export function vergelijkerVoor(wijze, opties = {}) {
   const typeNaam = opties.typeNaam || ((t) => String(t || ''));
+  const opStatus = opties.vergelijkStatus || ((a, b) => a.localeCompare(b));
   switch (wijze) {
     case 'type': return opTekst((a) => typeNaam(a.type));
     case 'modifiedDate': return (a, b) => tijd(b.modifiedAt) - tijd(a.modifiedAt);
@@ -157,11 +162,16 @@ export function vergelijkerVoor(wijze, opties = {}) {
     case 'author': return opTekst((a) => auteurVan(a).toLowerCase());
     case 'color': return opTekst((a) => String(a.color || a.strokeColor || '#000').toLowerCase());
     case 'subject': return opTekst((a) => String(a.subject || '').toLowerCase());
-    case 'status': return opTekst(statusSleutel);
+    case 'status': return (a, b) => {
+      const sa = statusSleutel(a);
+      const sb = statusSleutel(b);
+      if (sa !== sb) return opStatus(sa, sb);
+      return paginaDanDatum(a, b);
+    };
     case 'statusAndAuthor': return (a, b) => {
       const sa = statusSleutel(a);
       const sb = statusSleutel(b);
-      if (sa !== sb) return sa.localeCompare(sb);
+      if (sa !== sb) return opStatus(sa, sb);
       return opTekst((x) => auteurVan(x).toLowerCase())(a, b);
     };
     case 'lastStatusAuthor': return opTekst((a) => laatsteStatusAuteur(a).toLowerCase());
@@ -201,16 +211,8 @@ export function statusDoelen(annotations, status) {
  * door wie en wanneer.
  */
 export function zetStatus(ann, status, { door = 'User', nu = new Date().toISOString() } = {}) {
-  const doel = String(status || 'none').toLowerCase();
-  if (doel === 'none') {
-    ann.status = undefined;
-    delete ann.statusBy;
-    delete ann.statusAt;
-  } else {
-    ann.status = doel;
-    ann.statusBy = door;
-    ann.statusAt = nu;
-  }
+  // De stap komt ook in de reviewgeschiedenis (#629).
+  setStatusWithHistory(ann, status, { door, nu });
   ann.modifiedAt = nu;
   return ann;
 }

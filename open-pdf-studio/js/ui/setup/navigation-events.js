@@ -1,7 +1,9 @@
+import { wheelZoomDelta } from '../../core/wheel-zoom.js';
 import { state, getActiveDocument } from '../../core/state.js';
 import { goToPage } from '../../pdf/renderer.js';
 import { viewport, zoomStepAtPoint, suppressNextFit, wielPanViewport, stopPanMomentum, schermPaginaMaat } from '../../pdf/pdf-viewport.js';
 import { leesWielDelta, maakWielHerkenning, maakWielScroller, maakElementVerschuiver } from '../../pdf/wiel-scroll.js';
+import { vloeiendScrollenAan } from '../../core/vloeiend-scrollen.js';
 import { getTool } from '../../tools/tool-registry.js';
 import { nextScaleStep } from '../../core/zoom-display.js';
 
@@ -27,11 +29,15 @@ import { nextScaleStep } from '../../core/zoom-display.js';
 // een klik tot de rand, zoals de browser zijn eigen scrolldoel klemt.
 const _wielHerkenning = maakWielHerkenning();
 const _containerVerschuiver = maakElementVerschuiver(() => (viewport.active ? null : document.getElementById('pdf-container')));
+// Met vloeiend scrollen uit (standaard, #1007) schuift een klik direct op;
+// ook dan houdt de app het wiel zelf vast, zodat de eigen wielanimatie van de
+// webview er niet alsnog overheen komt.
 const _containerWiel = maakWielScroller({
   nu: () => performance.now(),
   vraagFrame: (f) => requestAnimationFrame(f),
   verschuif: _containerVerschuiver,
   ruimte: _containerVerschuiver.ruimte,
+  vloeiend: vloeiendScrollenAan,
 });
 
 let _pageNavCooldown = false;
@@ -68,6 +74,10 @@ let _contZoomRaf = 0;
 
 export function setupWheelZoom() {
   document.querySelector('.main-view')?.addEventListener('wheel', async (e) => {
+    // Compare is nested inside the main container but owns all wheel input,
+    // including zoom, Shift-scroll and page navigation (#1180).
+    if (e.target?.closest?.('.compare-view')) return;
+
     const activeDoc = getActiveDocument();
     if (!activeDoc?.pdfDoc) return;
 
@@ -80,6 +90,8 @@ export function setupWheelZoom() {
     // wielrol ook (Ctrl+wiel blijft altijd werken).
     if (e.ctrlKey || e.metaKey || state.preferences.wheelZoomWithoutCtrl) {
       e.preventDefault();
+      const zoomDelta = wheelZoomDelta(e.deltaY, state.preferences);
+      if (zoomDelta === 0) return;
       // Starting a zoom gesture: kill any in-flight wheel scroll so the page
       // doesn't keep gliding mid-zoom (would tear the cursor anchor away).
       stopPanMomentum();
@@ -89,8 +101,8 @@ export function setupWheelZoom() {
         // (renderContinuous() disables it) — route the zoom through the
         // continuous helper, anchored at the cursor's Y position so the
         // content under the mouse stays put.
-        if (activeDoc.viewMode === 'continuous' && activeDoc.filePath) {
-          const contDy = e.deltaY || 0;
+        if (activeDoc.viewMode === 'continuous') {
+          const contDy = zoomDelta;
           if (contDy !== 0) {
             const container = document.getElementById('pdf-container');
             // Anker op beide assen: ook horizontaal moet het punt onder de
@@ -125,19 +137,15 @@ export function setupWheelZoom() {
           }
           return;
         }
-        // No PDF loaded → bail (preventDefault already ran).
-        // Blank docs (filePath===null) bypass the vector viewport and use
-        // PDF.js + doc.scale instead. zoomStepAtPoint() below would mutate
-        // the stale viewport state from a previously-opened real PDF, not
-        // the blank doc's doc.scale → ctrl+wheel appears dead. Fall back
-        // to the legacy zoomIn/zoomOut path (loses cursor anchor, but at
-        // least the user can zoom).
-        if (activeDoc.pdfDoc && activeDoc.filePath === null) {
-          const wheelDy = e.deltaY || 0;
-          if (wheelDy !== 0) {
-            const m = await import('../../pdf/renderer.js');
-            if (wheelDy < 0) await m.zoomIn(); else await m.zoomOut();
-          }
+        // PDF.js single-page fallback: both unsaved documents and web PDFs
+        // use a page-sized canvas. Pass client coordinates so its resize
+        // preserves the content under the cursor, just like the native view.
+        const wheelDy = zoomDelta;
+        if (wheelDy !== 0) {
+          const point = { x: e.clientX, y: e.clientY };
+          const m = await import('../../pdf/renderer.js');
+          if (getActiveDocument() !== activeDoc) return;
+          if (wheelDy < 0) await m.zoomIn(point); else await m.zoomOut(point);
         }
         return;
       }
@@ -153,8 +161,8 @@ export function setupWheelZoom() {
         || e.target.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      const dy = e.deltaY || 0;
-      const direction = dy < 0 ? 1 : -1;  // wheel up = zoom in (+1)
+      const dy = zoomDelta;
+      const direction = dy < 0 ? 1 : -1;  // preference-adjusted zoom direction
 
       // Mouse wheel notch (large deltaY) → step immediately.
       // Trackpad pinch (small deltaY) → accumulate, only step at threshold.
@@ -302,9 +310,8 @@ export function setupWheelZoom() {
     // traagheid van het OS), en buiten de hoofdthread, ook als er net een
     // zware pagina rendert.
     const doel = e.target;
-    // Alleen wielen binnen het documentgebied; de vergelijkingsweergave (ook
-    // binnen #pdf-container) heeft haar eigen wielafhandeling.
-    if (!(doel instanceof Element) || !pdfContainer.contains(doel) || doel.closest('.compare-view')) return;
+    // Alleen wielen binnen het documentgebied.
+    if (!(doel instanceof Element) || !pdfContainer.contains(doel)) return;
     const delta = leesWielDelta(e, pdfContainer.clientHeight);
     if (!_wielHerkenning.isStap(e, delta.dx, delta.dy, performance.now())) return;
     // De browser houdt een scrollreeks vast: was het eerste event niet

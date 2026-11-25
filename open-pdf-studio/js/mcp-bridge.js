@@ -28,42 +28,10 @@ function tauriInvoke() {
   return window.__TAURI__?.core?.invoke ?? null;
 }
 
-// ─── Console ring buffer for MCP/AI observability ────────────────────────
-// Captures the most recent N console messages whose text matches the
-// observer regex. The MCP tool `app_get_recent_console` reads this and
-// returns the slice the AI client wants. Default-on so an AI agent can
-// always look back at what happened during the last few seconds without
-// any setup step on the user side.
-const CONSOLE_RING = [];
-const CONSOLE_RING_MAX = 500;
-// Expose the ring on window so in-app UI (e.g. MiniLog) can read recent
-// engine events without going through the MCP/IPC round-trip. The MCP
-// tool handler still reads the same array — single source of truth.
-try { window.__consoleRing = CONSOLE_RING; } catch { /* noop */ }
-// Patterns the render pipeline uses: [render], [tile], [wheel-zoom],
-// [PERF], [pre-render], STALE markers. Adjust if more subsystems need
-// capture later.
-const CONSOLE_CAPTURE_RE = /\[render\]|\[tile\]|\[wheel-zoom\]|\[PERF\]|\[pre-render\]|\[thumb\]|\[bitmap-orch\]|\[tile-orch\]|\[prog\]|\[prog-guard\]|\[pbc\]|\[bo\]|STALE|JANK/;
-
-function _captureConsole(level, args) {
-  try {
-    const s = args.map(a => typeof a === 'string' ? a : (a && a.message) ? a.message : String(a)).join(' ');
-    if (!CONSOLE_CAPTURE_RE.test(s)) return;
-    CONSOLE_RING.push({ t: Date.now(), level, text: s });
-    if (CONSOLE_RING.length > CONSOLE_RING_MAX) CONSOLE_RING.shift();
-  } catch {
-    // Swallow — observability MUST NOT crash the app.
-  }
-}
-
-(function patchConsole() {
-  const ORIG_LOG = console.log;
-  const ORIG_WARN = console.warn;
-  const ORIG_ERROR = console.error;
-  console.log = function (...args) { _captureConsole('log', args); ORIG_LOG.apply(console, args); };
-  console.warn = function (...args) { _captureConsole('warn', args); ORIG_WARN.apply(console, args); };
-  console.error = function (...args) { _captureConsole('error', args); ORIG_ERROR.apply(console, args); };
-})();
+// Console ring buffer: js/core/console-ring.js (loaded at start by main.js).
+import { CONSOLE_RING, CONSOLE_RING_MAX } from './core/console-ring.js';
+// Eenheden van metingen en schalen (#1129): klein en puur, daarom vast geladen.
+import * as eenheden from './annotations/oppervlakte-eenheid.js';
 
 /** Send the response payload back to the awaiting Rust task. */
 async function respond(requestId, result) {
@@ -114,19 +82,47 @@ async function compositeCurrentView(maxWidth = 2000) {
     if (doc.viewMode === 'continuous') rendering.redrawContinuous();
     else rendering.redrawAnnotations();
   }
-  const pdfCanvas = document.getElementById('pdf-canvas');
-  const annCanvas = document.getElementById('annotation-canvas');
-  const hlCanvas  = document.getElementById('text-highlight-canvas');
+  // Het paginabeeld en de lagen erboven. Enkele pagina: de vaste canvassen. In
+  // de doorlopende weergave (de standaard) zijn die verborgen en heeft elke
+  // pagina haar eigen canvassen; dan telt de huidige pagina. Zonder dit
+  // onderscheid gaf een opname in de doorlopende weergave een leeg beeld.
+  const { laagVolgorde, laagPlek } = await import('./core/mcp-schermafdruk.js');
+  let pdfCanvas;
+  let lagen;
+  // Boven de bitmap-cap is het paginacanvas een scherpe uitsnede van het
+  // zichtbare deel (#1163): dan is de paginacontainer het vak van de pagina,
+  // met de hele pagina op lage resolutie als achtergrond en de uitsnede op
+  // haar plek erover.
+  let uitsnede = null;
+  if (doc?.viewMode === 'continuous') {
+    const blad = document.querySelector(`#continuous-container .page-wrapper[data-page="${pagina}"]`);
+    const { doorlopendPaginaBeeld } = await import('./pdf/renderer.js');
+    const beeld = blad ? await doorlopendPaginaBeeld(pagina) : null;
+    pdfCanvas = beeld?.canvas || null;
+    if (!pdfCanvas || pdfCanvas.width === 0 || pdfCanvas.height === 0) {
+      throw new Error(`page ${pagina} is not drawn yet in the continuous view`);
+    }
+    if (beeld.uitsnede) uitsnede = beeld;
+    lagen = [...blad.querySelectorAll('canvas')].filter((c) => c !== pdfCanvas);
+  } else {
+    pdfCanvas = document.getElementById('pdf-canvas');
+    lagen = [document.getElementById('text-highlight-canvas'), document.getElementById('annotation-canvas')];
+  }
+  lagen = lagen.filter((c) => c && c.width > 0 && c.height > 0);
   if (!pdfCanvas || pdfCanvas.width === 0 || pdfCanvas.height === 0) {
     throw new Error('pdf-canvas not visible');
   }
 
   // Scale the composite so the longer side fits within maxWidth (avoids
   // multi-megabyte payloads on 4K displays at 800% zoom).
-  const longest = Math.max(pdfCanvas.width, pdfCanvas.height);
+  const dpr = window.devicePixelRatio || 1;
+  const basisVak = uitsnede ? uitsnede.vak : pdfCanvas.getBoundingClientRect();
+  const basisB = uitsnede ? basisVak.width * dpr : pdfCanvas.width;
+  const basisH = uitsnede ? basisVak.height * dpr : pdfCanvas.height;
+  const longest = Math.max(basisB, basisH);
   const scale = longest > maxWidth ? maxWidth / longest : 1;
-  const outW = Math.max(1, Math.round(pdfCanvas.width * scale));
-  const outH = Math.max(1, Math.round(pdfCanvas.height * scale));
+  const outW = Math.max(1, Math.round(basisB * scale));
+  const outH = Math.max(1, Math.round(basisH * scale));
 
   const out = document.createElement('canvas');
   out.width = outW;
@@ -135,18 +131,27 @@ async function compositeCurrentView(maxWidth = 2000) {
   // White background so transparent regions don't read as black.
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, outW, outH);
-  ctx.drawImage(pdfCanvas, 0, 0, outW, outH);
-  if (hlCanvas && hlCanvas.width > 0 && hlCanvas.height > 0) {
-    // Zoals het scherm: de markeerlaag vermenigvuldigt met de pagina (CSS
-    // mix-blend-mode). Met source-over zag een controle hier een andere
-    // pagina dan de gebruiker (#614). Gemengde annotaties staan al gemengd
-    // op de annotatielaag (rendering/mengen-tegen-pagina.js).
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.drawImage(hlCanvas, 0, 0, outW, outH);
-    ctx.globalCompositeOperation = 'source-over';
+  if (uitsnede) {
+    if (uitsnede.achtergrond) ctx.drawImage(uitsnede.achtergrond, 0, 0, outW, outH);
+    if (pdfCanvas.width > 1 && pdfCanvas.height > 1) {
+      const plek = laagPlek(pdfCanvas.getBoundingClientRect(), basisVak, { width: outW, height: outH });
+      if (plek.w > 0 && plek.h > 0) ctx.drawImage(pdfCanvas, plek.x, plek.y, plek.w, plek.h);
+    }
+  } else {
+    ctx.drawImage(pdfCanvas, 0, 0, outW, outH);
   }
-  if (annCanvas && annCanvas.width > 0 && annCanvas.height > 0) {
-    ctx.drawImage(annCanvas, 0, 0, outW, outH);
+  // Zoals het scherm: de markeerlaag vermenigvuldigt met de pagina (CSS
+  // mix-blend-mode). Met source-over zag een controle hier een andere
+  // pagina dan de gebruiker (#614). Gemengde annotaties staan al gemengd
+  // op de annotatielaag (rendering/mengen-tegen-pagina.js). Een scherpe
+  // tegel dekt maar een deel van de pagina en komt op zijn eigen plek.
+  for (const { index, mengen } of laagVolgorde(lagen.map((c) => ({ id: c.id, klasse: String(c.className || '') })))) {
+    const laag = lagen[index];
+    const plek = laagPlek(laag.getBoundingClientRect(), basisVak, { width: outW, height: outH });
+    if (!(plek.w > 0) || !(plek.h > 0)) continue;
+    ctx.globalCompositeOperation = mengen;
+    ctx.drawImage(laag, plek.x, plek.y, plek.w, plek.h);
+    ctx.globalCompositeOperation = 'source-over';
   }
   const dataURL = out.toDataURL('image/png');
   // Strip the `data:image/png;base64,` prefix so the returned string is
@@ -155,8 +160,8 @@ async function compositeCurrentView(maxWidth = 2000) {
   const { rechthoek } = await import('./core/mcp-schermafdruk.js');
   return {
     png_base64: b64, width: outW, height: outH,
-    bounds: rechthoek(pdfCanvas.getBoundingClientRect()),
-    devicePixelRatio: window.devicePixelRatio || 1,
+    bounds: rechthoek(basisVak),
+    devicePixelRatio: dpr,
   };
 }
 
@@ -1008,13 +1013,13 @@ async function handleClearCaches() {
 }
 
 /** Dispatch a synthetic WheelEvent matching what the OS sends for ctrl+wheel.
- *  deltaY < 0 → zoom in (wheel up). deltaY > 0 → zoom out (wheel down).
+ *  By default deltaY < 0 zooms in; the reverse-wheel preference flips it.
  *  Routes through the same .main-view listener the user's wheel hits, so we
  *  exercise the actual zoom path and not some test-only shortcut. */
 async function handleWheelZoom(params) {
   const x = Number(params?.x);
   const y = Number(params?.y);
-  const deltaY = Number(params?.deltaY ?? -120); // default zoom-in (one notch)
+  const deltaY = Number(params?.deltaY ?? -120); // default wheel-up (one notch)
   const ctrlKey = params?.ctrlKey !== false;     // default true
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return { ok: false, error: 'missing or invalid params.x/y' };
@@ -1144,6 +1149,25 @@ function _isNum(v) {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
+/**
+ * Krommen (#1169) in een opgave voor een polylijn of veelhoek: nagekeken en
+ * in vaste vorm op `merged` gezet (of weggehaald als er geen kromme is).
+ * Geeft een foutmelding, of null als het goed is. Andere soorten blijven
+ * ongemoeid.
+ */
+async function _krommenInOpgave(type, props, merged) {
+  if (!('curves' in props) || (type !== 'polyline' && type !== 'polygon')) return null;
+  if (type === 'polygon' && props.points === undefined) {
+    return "polygon: curves need the corners as points:[{x,y}, ...]";
+  }
+  const vorm = await import('./annotations/curve-shape.js');
+  const k = vorm.leesKrommenOpgave(props.curves, merged.points.length, type === 'polygon');
+  if (!k.ok) return `${type}: ${k.error}`;
+  if (k.curves) merged.curves = k.curves;
+  else delete merged.curves;
+  return null;
+}
+
 /** True when `arr` is an array of at least `min` {x, y} points. */
 function _validPoints(arr, min) {
   return Array.isArray(arr) && arr.length >= min &&
@@ -1167,6 +1191,16 @@ function _sanitizeAnnotation(ann) {
   }));
 }
 
+/** De oppervlakte van een meetvlak als getal in de eenheid waarin het blad
+ *  hem toont (acres, hectares, ... of het kwadraat van de schaal-eenheid,
+ *  #1129), zodat een aanroeper niet zelf hoeft om te rekenen. Null voor een
+ *  andere annotatie of een vlak zonder gemeten waarde. */
+function _vlakUitkomst(ann) {
+  if (ann?.type !== 'measureArea') return null;
+  const u = eenheden.vlakUitkomst(ann);
+  return u && u.unit ? { value: u.value, unit: u.unit } : null;
+}
+
 /** Compact one-line summary used by app_list_annotations. */
 function _summarizeAnnotation(a) {
   const s = { id: a.id, type: a.type, page: a.page ?? 1 };
@@ -1184,6 +1218,8 @@ function _summarizeAnnotation(a) {
     s.text = a.text.length > 200 ? a.text.slice(0, 200) + '…' : a.text;
   }
   if (a.measureText) s.measureText = a.measureText;
+  const area = _vlakUitkomst(a);
+  if (area) s.area = area;
   if (a.scaleString) s.scaleString = a.scaleString;
   if (a.locked) s.locked = true;
   return s;
@@ -1195,17 +1231,27 @@ function _summarizeAnnotation(a) {
 function _recomputeMeasureFields(ann, meas, userProps = {}) {
   const keepText = typeof userProps.measureText === 'string';
   if (ann.type === 'measureDistance') {
-    const d = meas.calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page);
+    // Een maat met een eigen schaal houdt die (zoals bij slepen, transforms.js);
+    // de tekst volgt de opmaak van de maat of de viewport (core/maat-opmaak.js).
+    let d;
+    if (ann.measureScale) {
+      const pixels = Math.hypot(ann.endX - ann.startX, ann.endY - ann.startY);
+      d = { value: pixels * ann.measureScale, unit: ann.measureUnit || 'mm', pixels };
+    } else {
+      d = meas.calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page, ann);
+    }
     ann.measureValue = d.value;
     ann.measureUnit = d.unit;
     ann.measurePixels = d.pixels;
-    if (!keepText) ann.measureText = meas.formatMeasurement(d);
+    if (!keepText) ann.measureText = meas.maatlijnTekst(ann, d);
   } else if (ann.type === 'measureArea') {
     // Met de eigen schaal van het vlak als die er is (#536).
+    // Waarde en eenheid blijven in het kwadraat van de schaal-eenheid; de
+    // tekst volgt de weergave-eenheid van het vlak (measureAreaUnit, #1129).
     const a = meas.vlakMeting(ann);
     ann.measureValue = a.value;
     ann.measureUnit = a.unit;
-    if (!keepText) ann.measureText = meas.formatMeasurement(a);
+    if (!keepText) ann.measureText = meas.vlakTekst(ann, a);
   } else if (ann.type === 'measurePerimeter') {
     const p = meas.calculatePerimeter(ann.points, ann.page);
     ann.measureValue = p.value;
@@ -1283,6 +1329,37 @@ async function _buildCreateProps(type, page, props) {
         : creators.buildAnnotationProps(type, p.x, p.y, p.x + p.width, p.y + p.height, null);
       if (!base) return { error: `could not build '${type}' props` };
       return { base };
+    }
+
+    case 'textHighlight': {
+      // Tekstmarkering zoals de selectie of de tekstmodus van Markeren haar
+      // maakt (#946): één quad per stuk tekst, [lb, rb, lo, ro] met {x, y}
+      // in paginacoördinaten op 100%; op schuine tekst gedraaid. Vak, rects en
+      // quadPoints volgen uit de quads (markering-quads.js).
+      const quads = p.quads;
+      if (!Array.isArray(quads) || quads.length === 0 || !quads.every(q => Array.isArray(q) && q.length === 4 && _validPoints(q, 4))) {
+        return { error: "type 'textHighlight' requires props.quads: [[{x,y} x4], ...] (upper left, upper right, lower left, lower right)" };
+      }
+      const { tekstMarkeringUitQuads } = await import('./annotations/markering-quads.js');
+      const geo = tekstMarkeringUitQuads(quads);
+      if (!geo || !(geo.width > 0) || !(geo.height > 0)) {
+        return { error: "type 'textHighlight': props.quads must span an area" };
+      }
+      return {
+        base: { type, page, ...geo, color: p.color || '#FFFF00', opacity: _isNum(p.opacity) ? p.opacity : 0.3 },
+        vasteGeometrie: ['quads', 'rects', 'quadPoints', 'textDir', 'x', 'y', 'width', 'height'],
+      };
+    }
+
+    case 'link': {
+      // Hyperlink (#953), dezelfde annotatie als het venster maakt: props.uri
+      // of props.page (doelpagina, + view), op een vak of op quads. De
+      // annotatie zelf staat op de `page` naast props (link-mcp.js).
+      const { linkUitMcp, LINK_MCP_VASTE_VELDEN } = await import('./annotations/link/link-mcp.js');
+      const aantal = stateMod.getActiveDocument()?.pdfDoc?.numPages ?? 1;
+      const link = linkUitMcp(p, page, aantal);
+      if (link.error) return { error: link.error };
+      return { base: link.base, vasteGeometrie: LINK_MCP_VASTE_VELDEN };
     }
 
     case 'polygon': {
@@ -1497,9 +1574,22 @@ async function _buildCreateProps(type, page, props) {
       if (!_validPoints(p.points, 2)) {
         return { error: "type 'measurePerimeter' requires props.points: [{x,y}, ...] (>= 2)" };
       }
+      if (p.closed !== undefined && typeof p.closed !== 'boolean') {
+        return { error: "props.closed must be a boolean for measurePerimeter" };
+      }
+      if (p.closed === true && p.points.length < 3) {
+        return { error: "closed measurePerimeter requires at least 3 points" };
+      }
+      // Use the existing explicit closing vertex so measuring, rendering,
+      // editing and PDF round-trips all see the same polyline geometry.
+      const points = p.points.map(pt => ({ ...pt }));
+      const first = points[0], last = points.at(-1);
+      if (p.closed === true && (first.x !== last.x || first.y !== last.y)) {
+        points.push({ ...first });
+      }
       return { base: {
         type, page,
-        points: p.points.map(pt => ({ ...pt })),
+        points,
         color: prefs.measurePerimStrokeColor || '#ff0000',
         strokeColor: prefs.measurePerimStrokeColor || '#ff0000',
         lineWidth: prefs.measurePerimLineWidth || 1,
@@ -1508,7 +1598,7 @@ async function _buildCreateProps(type, page, props) {
         startHead: prefs.measurePerimStartHead || 'none',
         endHead: prefs.measurePerimEndHead || 'none',
         headSize: prefs.measurePerimHeadSize || 12,
-      }, measure: true };
+      }, measure: true, vasteGeometrie: ['points', 'closed'] };
     }
 
     case 'scaleRegion': {
@@ -1634,8 +1724,9 @@ async function handleCreateAnnotation(params) {
   if (!doc?.pdfDoc) return { ok: false, error: 'no active document' };
 
   // Page: top-level param wins, then props.page, then the current page.
+  // Bij een link is props.page de DOELpagina (#953), niet waar hij staat.
   let page = doc.currentPage || 1;
-  const pageArg = params?.page ?? props.page;
+  const pageArg = params?.page ?? (type === 'link' ? undefined : props.page);
   if (pageArg != null) {
     page = Number(pageArg);
     const numPages = doc.pdfDoc?.numPages ?? 1;
@@ -1649,10 +1740,42 @@ async function handleCreateAnnotation(params) {
 
   // Caller props win over tool defaults; type and the page param are pinned.
   const merged = { ...built.base, ...props, type, page };
+  // Eenheden (#1129). Een meetvlak kan zijn oppervlakte in acres, hectares of
+  // een andere oppervlakte-eenheid tonen (`units` of `measureAreaUnit`); een
+  // schaalgebied rekent in een lengte-eenheid. Een eenheid die niet kan wordt
+  // geweigerd in plaats van stil te vervallen.
+  let vlakEenheid = null;
+  if (type === 'measureArea') {
+    vlakEenheid = eenheden.vlakEenheidUitProps(props);
+    if (!vlakEenheid.ok) return { ok: false, error: vlakEenheid.error };
+    delete merged.units;
+    // Zonder eigen keuze: de standaard van het gereedschap, zoals getekend.
+    const eenheid = vlakEenheid.heeft
+      ? vlakEenheid.unit
+      : eenheden.oppervlakteEenheid(stateMod.state.preferences?.measureAreaDisplayUnit);
+    if (eenheid) merged.measureAreaUnit = eenheid;
+    else delete merged.measureAreaUnit;
+  } else if (type === 'scaleRegion' && props.units != null) {
+    const gelezen = eenheden.leesSchaalEenheid(props.units, eenheden.SCHAALGEBIED_EENHEDEN);
+    if (!gelezen.ok) return { ok: false, error: `scaleRegion: ${gelezen.error}` };
+    merged.units = gelezen.unit;
+  }
   // Veelhoek: de geometrie (punten, vak, zijden) komt uit de bouwer — een
   // meegegeven vak of zijdenaantal beschreef alleen waar de punten liggen.
   if (built.veelhoekPunten) {
     for (const k of ['points', 'x', 'y', 'width', 'height', 'sides']) merged[k] = built.base[k];
+  }
+  {
+    const krommenFout = await _krommenInOpgave(type, props, merged);
+    if (krommenFout) return { ok: false, error: krommenFout };
+  }
+  // Tekstmarkering (#946): vak, rects en quads komen uit de quads; een
+  // meegegeven x/y/width/height wordt genegeerd.
+  if (built.vasteGeometrie) {
+    for (const k of built.vasteGeometrie) {
+      if (k in built.base) merged[k] = built.base[k];
+      else delete merged[k];
+    }
   }
   // parametricSymbol without an explicit rect: (x,y) was an INSERT POINT —
   // the builder centred a real-size bbox on it. Keep that computed bbox
@@ -1684,6 +1807,13 @@ async function handleCreateAnnotation(params) {
     // Compute measureText/value from geometry + the scale at the target page
     // BEFORE the undo snapshot so redo restores a complete annotation.
     _recomputeMeasureFields(ann, meas, props);
+    // Kan de gevraagde eenheid hier? Een vlak zonder echte schaal is niet in
+    // acres uit te drukken; een lengte volgt altijd de eenheid van de schaal.
+    const eenheidFout = type === 'measureArea'
+      ? (vlakEenheid?.heeft ? eenheden.vlakEenheidFout(ann.measureUnit, ann.measureAreaUnit) : null)
+      : eenheden.lengteEenheidFout(props.units, ann.measureUnit, type);
+    if (eenheidFout) return { ok: false, error: eenheidFout };
+    if (type !== 'measureArea') delete ann.units;
   }
 
   doc.annotations.push(ann);
@@ -1739,6 +1869,8 @@ async function handleGetAnnotation(params) {
   const ann = (doc.annotations || []).find(a => a.id === id);
   if (!ann) return { ok: false, error: `annotation not found: ${id}` };
   const uit = { ok: true, annotation: _sanitizeAnnotation(ann) };
+  const area = _vlakUitkomst(ann);
+  if (area) uit.area = area;
   // Stramienlijn (#486): per uiteinde de koppeling met de andere uiteinden.
   const koppelMod = await import('./annotations/stramien-koppeling.js');
   if (koppelMod.isStramien(ann)) uit.gridAlignment = koppelMod.koppelingOverzicht(doc.annotations || [], ann);
@@ -1773,7 +1905,7 @@ async function _pasUitlijningToe(doc, ann, uitlijning) {
 const _GEOMETRY_KEYS = [
   'x', 'y', 'width', 'height',
   'startX', 'startY', 'endX', 'endY',
-  'points', 'holes', 'path', 'controlPoints',
+  'points', 'holes', 'path', 'controlPoints', 'curves',
 ];
 
 async function handleUpdateAnnotation(params) {
@@ -1873,8 +2005,51 @@ async function handleUpdateAnnotation(params) {
     const vh = await import('./annotations/veelhoek-punten.js');
     patch = { ...patch, ...vh.veelhoekUitPunten(patch.points) };
   }
+  // Krommen van een polylijn of veelhoek (#1169): `curves` zet ze (null =
+  // alles recht), in de coördinaten van `points`. Nieuwe punten zonder
+  // krommen geven rechte segmenten: de oude krommen hoorden bij de oude punten.
+  const metKrommen = (ann.type === 'polyline' || ann.type === 'polygon') && ('curves' in patch || 'points' in patch);
+  if (metKrommen) {
+    const punten = 'points' in patch ? patch.points : ann.points;
+    if (!_validPoints(punten, ann.type === 'polygon' ? 3 : 2)) {
+      return { ok: false, error: `${ann.type} points must be [{x,y}, ...]` };
+    }
+    const vorm = await import('./annotations/curve-shape.js');
+    const k = vorm.leesKrommenOpgave('curves' in patch ? patch.curves : null, punten.length, ann.type === 'polygon');
+    if (!k.ok) return { ok: false, error: `${ann.type}: ${k.error}` };
+    patch = { ...patch, curves: k.curves };
+  }
+  // Eenheden (#1129): `units` / `measureAreaUnit` op een meetvlak is de
+  // weergave-eenheid van de oppervlakte (ac, ha, m², ...; "auto" volgt weer
+  // de schaal). Een lengte of omtrek volgt de schaal, een schaalgebied rekent
+  // in een lengte-eenheid. Gecontroleerd vóór er iets aan de annotatie wijzigt.
+  const meas = await import('./annotations/measurement.js');
+  let vlakEenheid = null;
+  if (ann.type === 'measureArea' && ('units' in patch || 'measureAreaUnit' in patch)) {
+    vlakEenheid = eenheden.vlakEenheidUitProps(patch);
+    if (!vlakEenheid.ok) return { ok: false, error: vlakEenheid.error };
+    const fout = eenheden.vlakEenheidFout(meas.vlakMeting(ann).unit, vlakEenheid.unit);
+    if (fout) return { ok: false, error: fout };
+    const { units: _u, measureAreaUnit: _m, ...rest } = patch;
+    patch = rest;
+  } else if ((ann.type === 'measureDistance' || ann.type === 'measurePerimeter') && 'units' in patch) {
+    const fout = eenheden.lengteEenheidFout(patch.units, ann.measureUnit || 'mm', ann.type);
+    if (fout) return { ok: false, error: fout };
+    const { units: _u, ...rest } = patch;
+    patch = rest;
+  } else if (ann.type === 'scaleRegion' && 'units' in patch) {
+    const gelezen = eenheden.leesSchaalEenheid(patch.units, eenheden.SCHAALGEBIED_EENHEDEN);
+    if (!gelezen.ok) return { ok: false, error: `scaleRegion: ${gelezen.error}` };
+    patch = { ...patch, units: gelezen.unit };
+  }
   const andereDikte = 'lineWidth' in patch && patch.lineWidth !== ann.lineWidth;
   Object.assign(ann, patch);
+  // Zonder krommen geen veld: het model van een vorm zonder krommen.
+  if (metKrommen && !patch.curves) delete ann.curves;
+  if (vlakEenheid) {
+    if (vlakEenheid.unit) ann.measureAreaUnit = vlakEenheid.unit;
+    else delete ann.measureAreaUnit;
+  }
   // Een andere randdikte laat een tekstinzet uit het bestand vallen (zie zetRanddikte).
   if (andereDikte && !('textPadding' in patch)) delete ann.textPadding;
   if (psParams && !('width' in patch) && !('height' in patch)) {
@@ -1897,11 +2072,10 @@ async function handleUpdateAnnotation(params) {
   }
 
   const geometryTouched = _GEOMETRY_KEYS.some(k => k in patch);
-  const meas = await import('./annotations/measurement.js');
   const isMeasure = ann.type === 'measureDistance' ||
                     ann.type === 'measureArea' ||
                     ann.type === 'measurePerimeter';
-  if (isMeasure && geometryTouched) {
+  if (isMeasure && (geometryTouched || vlakEenheid)) {
     _recomputeMeasureFields(ann, meas, patch);
   }
 
@@ -1939,6 +2113,8 @@ async function handleUpdateAnnotation(params) {
     await lagen.brug.annotationLayersChanged({ modified: false });
   }
   const resultaat = { ok: true, id: ann.id, annotation: _sanitizeAnnotation(ann) };
+  const area = _vlakUitkomst(ann);
+  if (area) resultaat.area = area;
   if (uitlijning.length) {
     resultaat.gridAlignment = koppelMod.koppelingOverzicht(doc.annotations || [], ann);
     if (uitlijnFouten.length) resultaat.warning = uitlijnFouten.join('; ');
@@ -2057,6 +2233,17 @@ async function handleListTabs() {
   };
 }
 
+/**
+ * `pdf_stand` (#977): de stand in één klein antwoord, uit dezelfde handlers en
+ * met dezelfde samenstelling als in de werkplek (core/werkplek-app.js).
+ */
+async function handleStand() {
+  const [stateMod, { standUit }] = await Promise.all([import('./core/state.js'), import('./core/werkplek-app.js')]);
+  const doc = stateMod.state.documents?.[stateMod.state.activeDocumentIndex];
+  const selectie = () => (doc?.selectedAnnotations || []).map((a) => a?.id).filter((id) => id != null);
+  return standUit(await handleListTabs(), await handleGetCurrentTool(), selectie);
+}
+
 async function handleSwitchTab(params) {
   const index = Number(params?.index);
   const stateMod = await import('./core/state.js');
@@ -2146,6 +2333,11 @@ async function handleSavePdf(params) {
     // savePDF() without a real path falls through to the Save As file picker
     // — never acceptable on a headless bridge. The caller must supply a path.
     return { ok: false, error: 'document has no saved file path — pass params.path' };
+  }
+  // Alleen-lezen geopend (#1005): opslaan zonder pad wordt Opslaan als, en
+  // die dialoog kan hier niet.
+  if (!path && doc.bestandAlleenLezen) {
+    return { ok: false, error: 'document was opened read-only (the file could not be reserved or is read-only) — pass params.path to save a copy', readOnly: true };
   }
   const invoke = tauriInvoke();
   if (path && invoke) {
@@ -2248,13 +2440,14 @@ async function handleTranslatePage(params) {
 
 async function handleSetMeasureScale(params) {
   const pixelsPerUnit = Number(params?.pixelsPerUnit);
-  const unit = params?.unit;
   if (!Number.isFinite(pixelsPerUnit) || pixelsPerUnit <= 0) {
     return { ok: false, error: 'missing or invalid params.pixelsPerUnit (> 0)' };
   }
-  if (typeof unit !== 'string' || !unit) {
-    return { ok: false, error: 'missing or invalid params.unit' };
-  }
+  // Een schaal staat in een lengte-eenheid; acres en hectares zijn eenheden
+  // van alleen oppervlakte en horen bij het meetvlak zelf (#1129).
+  const gelezen = eenheden.leesSchaalEenheid(params?.unit);
+  if (!gelezen.ok) return { ok: false, error: `params.unit: ${gelezen.error}` };
+  const unit = gelezen.unit;
   const stateMod = await import('./core/state.js');
   const doc = stateMod.getActiveDocument();
   if (!doc) return { ok: false, error: 'no active document' };
@@ -2381,14 +2574,29 @@ async function handleFacadeElement(params) {
 
 /** Return take-off totals for a named schedule (or all schedules). Numeric
  *  columns are summed into grand totals and per-group subtotals; image
- *  columns are reported as counts, never as data-URLs. */
+ *  columns are reported as counts, never as data-URLs. Schedules are shared
+ *  by the whole app; the totals come from the active document, which the
+ *  answer names (#1130). */
 async function handleGetTakeoff(params) {
+  // Oppervlaktekolommen in een gevraagde eenheid (#1129): ac, ha, m², ...
+  // De staat zelf verandert niet; alleen dit antwoord rekent om.
+  let areaUnit = null;
+  if (params?.areaUnit != null) {
+    const gelezen = eenheden.leesVlakEenheid(params.areaUnit);
+    if (!gelezen.ok) return { ok: false, error: `params.areaUnit: ${gelezen.error}` };
+    areaUnit = gelezen.unit;
+  }
+  const { configMetOppervlakteEenheid } = await import('./quantities/staat-oppervlakte-eenheid.js');
+
   const store = await import('./solid/stores/schedulesStore.js');
+  const stateMod = await import('./core/state.js');
+  const docNaam = stateMod.getActiveDocument()?.fileName ?? null;
   const all = store.schedules();
-  if (!all.length) return { ok: true, schedules: [], note: 'no schedules defined' };
+  if (!all.length) return { ok: true, document: docNaam, schedules: [], note: 'no schedules defined' };
 
   const wanted = (s) => {
-    const r = store.buildResultForSchedule(s);
+    const r = store.buildResultForSchedule(
+      areaUnit ? { ...s, config: configMetOppervlakteEenheid(s.config, areaUnit) } : s);
     const numCols = r.columns.filter(c => c.kind === 'number');
     return {
       id: s.id,
@@ -2410,63 +2618,108 @@ async function handleGetTakeoff(params) {
   if ((params?.scheduleId || params?.name) && !sel.length) {
     return { ok: false, error: `schedule not found: ${params.scheduleId || params.name}` };
   }
-  return { ok: true, schedules: sel.map(wanted) };
+  return { ok: true, document: docNaam, schedules: sel.map(wanted) };
+}
+
+// ── Staten (#1130) ────────────────────────────────────────────────────────
+// De regels staan in quantities/schedule-mcp.js; hier de store, het document
+// en de ongedaan-stap. Een staat is een definitie die de hele app deelt; de
+// cijfers komen uit het actieve document.
+
+/** Naam en/of config van een staat in de store zetten. */
+function _werkStaatBij(store, id, wijziging) {
+  if (wijziging.name !== undefined) store.renameSchedule(id, wijziging.name);
+  if (wijziging.config !== undefined) store.updateScheduleConfig(id, wijziging.config);
 }
 
 /** Maak (of hergebruik) een staat en zet hem als tabel op de tekening.
  *  Zonder scheduleId wordt er een nieuwe staat uit een sjabloon gemaakt;
- *  `config` overschrijft daarna de kolommen/groepering. De tabel zelf wordt
- *  door de app opgebouwd uit de actuele annotaties — de aanroeper levert dus
- *  geen celwaarden aan, alleen waar de staat over gaat en waar hij komt. */
+ *  `config` gaat over het sjabloon (of de bestaande staat) heen. De config
+ *  wordt eerst gecontroleerd: bij een fout wordt er niets aangemaakt. De tabel
+ *  zelf wordt door de app opgebouwd uit de actuele annotaties — de aanroeper
+ *  levert dus geen celwaarden aan, alleen waar de staat over gaat en waar hij
+ *  komt. */
 async function handlePlaceSchedule(params) {
   const stateMod = await import('./core/state.js');
   const doc = stateMod.getActiveDocument();
-  if (!doc?.pdfDoc) return { ok: false, error: 'no active document' };
-
   const store = await import('./solid/stores/schedulesStore.js');
-  let id = params?.scheduleId || null;
-  if (id && !store.getScheduleById(id)) {
-    return { ok: false, error: `schedule not found: ${id}` };
-  }
-  if (!id) {
-    const templateId = params?.templateId || 'area';
-    const item = store.addScheduleFromTemplate(templateId, params?.name || templateId);
-    if (!item) return { ok: false, error: `unknown template: ${templateId}` };
-    id = item.id;
-  } else if (params?.name) {
-    store.renameSchedule(id, params.name);
-  }
-  if (params?.config && typeof params.config === 'object' && !Array.isArray(params.config)) {
-    store.updateScheduleConfig(id, params.config);
-  }
-
-  let page = doc.currentPage || 1;
-  if (params?.page != null) {
-    page = Number(params.page);
-    const numPages = doc.pdfDoc?.numPages ?? 1;
-    if (!Number.isInteger(page) || page < 1 || page > numPages) {
-      return { ok: false, error: `page ${params.page} out of range (doc has ${numPages} pages)` };
-    }
-  }
-
-  const x = _isNum(params?.x) ? params.x : 40;
-  const y = _isNum(params?.y) ? params.y : 40;
-
+  const regels = await import('./quantities/schedule-mcp.js');
+  const sjablonen = await import('./quantities/schedule-templates.js');
   const drop = await import('./quantities/schedule-drop.js');
-  const ann = drop.placeScheduleAt(id, x, y, page);
-  if (!ann) {
-    return { ok: false, error: 'schedule produced no columns — check its categories/fields' };
+  const uit = regels.plaatsStaat(params, {
+    doc: doc?.pdfDoc ? { currentPage: doc.currentPage, numPages: doc.pdfDoc.numPages } : null,
+    lijst: () => store.schedules(),
+    sjabloon: (id) => sjablonen.getTemplateById(id),
+    sjabloonIds: () => sjablonen.STANDARD_SCHEDULE_TEMPLATES.map((t) => t.id),
+    voegToe: (gegevens) => store.addScheduleWithConfig(gegevens),
+    werkBij: (id, wijziging) => _werkStaatBij(store, id, wijziging),
+    verwijder: (id) => store.removeSchedule(id),
+    plaats: (id, x, y, page) => drop.placeScheduleAt(id, x, y, page),
+  });
+  // Uit welk document de cijfers in de tabel komen.
+  if (uit.ok) uit.document = doc.fileName ?? null;
+  return uit;
+}
+
+/** Een staat hernoemen en/of zijn config aanpassen, zonder iets te plaatsen. */
+async function handleUpdateSchedule(params) {
+  const store = await import('./solid/stores/schedulesStore.js');
+  const regels = await import('./quantities/schedule-mcp.js');
+  return regels.werkStaatBij(params, {
+    lijst: () => store.schedules(),
+    werkBij: (id, wijziging) => _werkStaatBij(store, id, wijziging),
+  });
+}
+
+/** Een staat verwijderen, samen met zijn geplaatste tabellen in het actieve
+ *  document. De tabellen en de staat gaan in ÉÉN ongedaan-stap weg; zonder
+ *  geplaatste tabellen verandert het document niet en komt er geen stap. */
+async function handleDeleteSchedule(params) {
+  const stateMod = await import('./core/state.js');
+  const store = await import('./solid/stores/schedulesStore.js');
+  const regels = await import('./quantities/schedule-mcp.js');
+  const undoMod = await import('./core/undo-manager.js');
+  const doc = stateMod.getActiveDocument();
+  let geraakt = false;
+  const uit = regels.verwijderStaat(params, {
+    lijst: () => store.schedules(),
+    annotaties: () => doc?.annotations || [],
+    elders: (id) => (stateMod.state.documents || [])
+      .filter((d) => d && d.id !== doc?.id)
+      .reduce((n, d) => n + regels.tabellenVanStaat(d.annotations, id).length, 0),
+    verwijder: (staat, index, tabellen) => {
+      if (!tabellen.length) { store.removeSchedule(staat.id); return; }
+      geraakt = true;
+      const definitie = JSON.parse(JSON.stringify(staat));
+      undoMod.beginUndoTransaction();
+      try {
+        undoMod.recordBulkDelete(tabellen);
+        // Op id, en ter plekke uit de lijst van het document (achteraan
+        // beginnen): het document bewaart bij toewijzen een kopie.
+        const weg = new Set(tabellen.map((a) => a.id));
+        const isWeg = (a) => !!a && weg.has(a.id);
+        for (let i = doc.annotations.length - 1; i >= 0; i--) {
+          if (isWeg(doc.annotations[i])) doc.annotations.splice(i, 1);
+        }
+        doc.selectedAnnotations = (doc.selectedAnnotations || []).filter((a) => !isWeg(a));
+        if (isWeg(doc.selectedAnnotation)) doc.selectedAnnotation = doc.selectedAnnotations[0] || null;
+        undoMod.execute({ type: 'removeSchedule', schedule: definitie, index });
+        store.removeSchedule(staat.id);
+      } finally {
+        undoMod.endUndoTransaction();
+      }
+    },
+  });
+  if (geraakt) {
+    if (!doc.selectedAnnotation) {
+      try {
+        const panel = await import('./ui/panels/properties-panel.js');
+        panel.hideProperties();
+      } catch { /* best-effort */ }
+    }
+    await _redrawActive();
   }
-  return {
-    ok: true,
-    scheduleId: id,
-    annotationId: ann.id,
-    page: ann.page,
-    x: ann.x, y: ann.y, width: ann.width, height: ann.height,
-    title: ann.title,
-    columns: ann.columns,
-    rowCount: Array.isArray(ann.rows) ? ann.rows.length : 0,
-  };
+  return uit;
 }
 
 /** Maat van een profielsymbool uit de symbolenbibliotheek, in werkelijke mm.
@@ -2571,6 +2824,12 @@ async function handleStructuralLayout(params) {
     // Veelhoek (#622): de geometrie komt uit de bouwer (punten en vak samen).
     if (built.veelhoekPunten) {
       for (const k of ['points', 'x', 'y', 'width', 'height', 'sides']) merged[k] = built.base[k];
+    }
+    if (built.vasteGeometrie) {
+      for (const k of built.vasteGeometrie) {
+        if (k in built.base) merged[k] = built.base[k];
+        else delete merged[k];
+      }
     }
     klaar.push({ opgave, merged });
   }
@@ -2689,10 +2948,22 @@ function _tabVanKnop(el) {
   return _naamVanTabKnop(knop);
 }
 
-/** Click the tab button and give Solid time to mount the content. */
+/** Load the chunk of a built-in ribbon tab (#454); extension tabs are there already. */
+async function _laadTab(tab) {
+  try {
+    const { laadLintTab } = await import('./solid/components/ribbon/lint-tab-laden.js');
+    await laadLintTab(tab);
+  } catch {
+    // loader unavailable: the wait after the click still gives the tab time
+  }
+}
+
+/** Click the tab button and give Solid time to mount the content. The
+ *  built-in tabs other than Home are their own chunks (#454): load it first. */
 async function _activeerTab(tab) {
   const knop = _tabKnop(tab);
   if (!knop) return false;
+  await _laadTab(tab);
   knop.click();
   await _wacht(150);
   return true;
@@ -2946,6 +3217,7 @@ async function handleRunCommand(params) {
     const knop = _tabKnop(lint.tab);
     if (!knop) return { ok: false, error: `tab not available: ${lint.tab} — see app_list_commands` };
     if (_isElementDisabled(knop)) return { ok: false, found: true, disabled: true, error: 'tab is disabled' };
+    await _laadTab(lint.tab);
     knop.click();
     await _wacht(150);
     return { ok: true, clicked: true, command, activatedTab: lint.tab, activeTab: await _actiefTabblad() };
@@ -3827,6 +4099,7 @@ const HANDLERS = {
   'mcp:redo':               handleRedo,
   // App control: documents / tabs
   'mcp:list-tabs':          handleListTabs,
+  'mcp:stand':              handleStand,
   'mcp:switch-tab':         handleSwitchTab,
   'mcp:close-tab':          handleCloseTab,
   'mcp:new-blank-pdf':      handleNewBlankPdf,
@@ -3848,6 +4121,8 @@ const HANDLERS = {
   // Take-off / schedules
   'mcp:get-takeoff':        handleGetTakeoff,
   'mcp:place-schedule':     handlePlaceSchedule,
+  'mcp:update-schedule':    handleUpdateSchedule,
+  'mcp:delete-schedule':    handleDeleteSchedule,
   'mcp:structural-layout':  handleStructuralLayout,
   // Commandolaag: elke lintknop en elk gereedschap
   'mcp:list-commands':      handleListCommands,
@@ -3890,6 +4165,24 @@ const HANDLERS = {
   'mcp:agent-task-pending': (p) => import('./plugins/agent-tasks.js').then((m) => m.handleAgentTaskPending(p)),
   'mcp:agent-task-result':  (p) => import('./plugins/agent-tasks.js').then((m) => m.handleAgentTaskResult(p)),
 };
+
+/**
+ * Eén opdracht in de app zelf: dezelfde handler die een `mcp:*`-event van de
+ * Rust-server uitvoert. Voor de assistent van de werkplek (#977,
+ * core/werkplek-app.js), die in de browser draait zonder de MCP-server van
+ * de desktop-app. Een handler die gooit, geeft { ok: false, error }, net als
+ * over de brug van Tauri; een fout met een code (NIET_IN_BROWSER van
+ * core/platform.js) gaat door, zodat de werkplek hem herkent.
+ */
+export async function runAppEvent(name, params = {}) {
+  if (!Object.hasOwn(HANDLERS, name)) throw new Error(`unknown app command: ${name}`);
+  try {
+    return await HANDLERS[name](params ?? {});
+  } catch (e) {
+    if (e && typeof e === 'object' && typeof e.code === 'string') throw e;
+    return { ok: false, error: `${e?.message ?? e}` };
+  }
+}
 
 /**
  * Gestructureerde opdrachten van extensies (#575) staan in tools/list van de

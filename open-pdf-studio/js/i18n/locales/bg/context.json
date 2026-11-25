@@ -3,6 +3,7 @@
     "openPopUpNote": "Отваряне на изскачаща бележка",
     "hidePopUpNote": "Скриване на изскачаща бележка",
     "resetPopUpLocation": "Нулиране на позицията на изскачащата бележка",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Редактиране на текст...",
     "addReply": "Добавяне на отговор",
     "locked": "Заключено",
@@ -12,11 +13,13 @@
     "printable": "За печат",
     "status": "Състояние",
     "showByStatus": "Показване по състояние",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "Няма",
     "statusAccepted": "Прието",
     "statusCancelled": "Отменено",
     "statusCompleted": "Завършено",
     "statusRejected": "Отхвърлено",
+    "statusReviewed": "Прегледано",
     "reviewHistory": "История на прегледа...",
     "layer": "Слой:",
     "noLayersAvailable": "Няма налични слоеве",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Добавяне на точки към оразмерителната верига",
     "dimChainRemove": "Премахване на изнесената линия от веригата",
     "selectRoom": "Избор на помещение",
+    "checkScale": "Проверка на мащаба с тази линия...",
     "saveToToolSet": "Запазване в набор инструменти"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Центриране вертикално",
     "distributeHorizontally": "Разпределяне хоризонтално",
     "distributeVertically": "Разпределяне вертикално",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Подрязване на ъглите на стените",
     "deleteAnnotations": "Изтриване на {{count}} анотации",
     "deleteConfirm": "Изтриване на {{count}} анотации?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Влагане под нова отметка...",
     "indent": "Увеличаване на отстъпа",
     "outdent": "Намаляване на отстъпа",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "Изтриване на {{count}} отметки"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Вмъкване от файл...",
     "insertFromFileBefore": "Преди тази страница...",
     "insertFromFileAfter": "След тази страница...",
-    "pageLabels": "Етикети на страници (създаване на имена)..."
+    "pageLabels": "Етикети на страници (създаване на имена)...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "Маркиране на избраното",
     "strikethroughSelection": "Зачеркване на избраното",
     "underlineSelection": "Подчертаване на избраното",
-    "curvedLeaderSelection": "Добавяне на извита износка"
+    "curvedLeaderSelection": "Добавяне на извита износка",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Изтриване на тази анотация?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Изтриване на връх",
     "insertVertex": "Вмъкване на връх тук",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "Преобразуване в дъга",
     "convertToLine": "Преобразуване в линия"
   },

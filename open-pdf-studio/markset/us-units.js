@@ -52,7 +52,8 @@ function gcd(a, b) {
 }
 
 function validDenominator(d) {
-  return FRACTION_DENOMINATORS.includes(d) ? d : DEFAULT_DENOMINATOR;
+  // 1 = whole inches (upstream's imperialFractionPrecision allows it).
+  return d === 1 || FRACTION_DENOMINATORS.includes(d) ? d : DEFAULT_DENOMINATOR;
 }
 
 // Whole inches plus a reduced fraction: (6, 6, 16) → "6 3/8". With
@@ -309,13 +310,42 @@ export function formatImperialLength(value, unit, format = 'feet-inch', denomina
  * Lets upstream call sites keep their expression as the fallback.
  */
 export function imperialOr(value, unit, prefs, fallback) {
-  return formatImperialLength(value, unit, prefs?.measureImperialFormat,
-    prefs?.measureFractionDenominator) ?? fallback;
+  return formatImperialLength(value, unit, imperialFormatOf(prefs),
+    fractionDenominatorOf(prefs)) ?? fallback;
+}
+
+// --- Preferences ------------------------------------------------------------
+//
+// Since the 2026.48.1 merge Markset uses upstream's unit preferences (#996,
+// #1158): scaleUnitSystem ('imperial' | 'metric' | 'both'), imperialLengthFormat
+// ('feetInch' | 'decimal') and imperialFractionPrecision. Markset's own keys
+// (unitSystem, measureImperialFormat, measureFractionDenominator) are only read
+// when the upstream ones are missing, and moved over once by pref-migrations.js.
+
+/** 'feet-inch' or 'decimal', from the preferences. */
+export function imperialFormatOf(prefs) {
+  if (prefs?.imperialLengthFormat) return prefs.imperialLengthFormat === 'decimal' ? 'decimal' : 'feet-inch';
+  return prefs?.measureImperialFormat === 'decimal' ? 'decimal' : 'feet-inch';
+}
+
+/** Smallest inch fraction (1 = whole inches, 2 .. 64), from the preferences. */
+export function fractionDenominatorOf(prefs) {
+  const d = Number(prefs?.imperialFractionPrecision ?? prefs?.measureFractionDenominator);
+  return validDenominator(d);
+}
+
+/**
+ * Markset's unit system, 'us' or 'metric'. Upstream's 'both' (metric, with the
+ * imperial scales in the lists) starts dialogs in metric, as upstream does.
+ */
+export function unitSystemOf(prefs) {
+  if (prefs?.scaleUnitSystem) return prefs.scaleUnitSystem === 'imperial' ? 'us' : 'metric';
+  return prefs?.unitSystem === 'metric' ? 'metric' : 'us';
 }
 
 // --- Unit system ------------------------------------------------------------
 //
-// The unitSystem preference ('us' by default in Markset, or 'metric') picks the
+// The unit system (unitSystemOf: 'us' by default in Markset, or 'metric') picks the
 // starting values of the scale and sheet dialogs. Existing scales on a
 // document always win; this only fills in what the user has not chosen yet.
 
@@ -328,7 +358,7 @@ const DEFAULTS = Object.freeze({
 
 /** Dialog defaults for the unit system in `prefs` (state.preferences). */
 export function unitDefaultsFor(prefs) {
-  return prefs?.unitSystem === 'metric' ? DEFAULTS.metric : DEFAULTS.us;
+  return unitSystemOf(prefs) === 'metric' ? DEFAULTS.metric : DEFAULTS.us;
 }
 
 // A new scale bar: 5 m in metric units, 20' (5' steps) or 24" (6" steps) in
@@ -382,7 +412,7 @@ const US_MEASURE_FALLBACK = Object.freeze({
  * Returns the keys to apply (empty for metric).
  */
 export function usMeasureFallback(prefs) {
-  if (prefs?.unitSystem === 'metric') return {};
+  if (unitSystemOf(prefs) === 'metric') return {};
   const out = {};
   for (const kind of ['Dist', 'Area', 'Perim']) {
     const s = `measure${kind}DimScale`, u = `measure${kind}DimUnit`;

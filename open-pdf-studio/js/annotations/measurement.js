@@ -1,3 +1,4 @@
+import { meetPunt } from './meet-punt.js';
 import { tekenDocument as getActiveDocument } from './rendering/document-context.js';
 import { batch } from 'solid-js';
 import { state } from '../core/state.js';
@@ -14,7 +15,12 @@ import { cloneAnnotation } from './factory.js';
 import { leesOpslagJson, schrijfOpslagJson, verwijderOpslag } from '../core/opslag.js';
 import { nettoVlakOppervlak } from './vlak-ringen.js';
 import { vlakZijden, lengteEenheid } from './vlak-zijden.js';
+import { vlakWeergave, isAlleenOppervlakte, decimalenAlleenOppervlakte } from './oppervlakte-eenheid.js';
 import { isSpotCoord, spotCoordTekst } from './spot-coord.js';
+import { formatGetal, eenheidNotatie } from '../core/maat-notatie.js';
+import { toontVoetInch, formatVoetInch, lengteNotatie } from '../core/voet-inch.js';
+import { maatTekst, opmaakVanMaat, maatEenheid } from '../core/maat-opmaak.js';
+import { standaardenVoorStelsel } from './eenhedenstelsel.js';
 import {
   recordBulkModify,
   recordMeasureScale,
@@ -22,17 +28,20 @@ import {
   endUndoTransaction,
 } from '../core/undo-manager.js';
 // Markset
-import { formatImperialLength, imperialOr } from '../../markset/us-units.js';
+import { imperialOr } from '../../markset/us-units.js';
 
 // Scale calibration: pixels per unit
 // Priority: scaleRegion (innermost containing point) → viewport annotation →
 //          scaleBar on the page → PDF viewport (/VP + /Measure in the file
 //          itself, #400) → per-document scale → scaleBar elsewhere →
-//          legacy global → default (px)
+//          legacy global → default
 // The point-bound part of that order lives in schaal-op-punt.js (via
 // getScaleForPoint), shared with the light scale bridges.
+// Without any scale the default follows the Units preference (#1158): metric
+// counts points as millimetres (as it always did), imperial gives the size on
+// paper in inches.
 export function getMeasureScale(pageNum, x, y) {
-  return findMeasureScale(pageNum, x, y) || { pixelsPerUnit: 1, unit: 'mm' };
+  return findMeasureScale(pageNum, x, y) || { ...standaardenVoorStelsel().zonderSchaal };
 }
 
 // Dezelfde opzoeking als getMeasureScale, maar null als er nergens een schaal
@@ -89,20 +98,22 @@ export function snapDistanceTo10(fromX, fromY, toX, toY, pageNum) {
 }
 
 // Calculate distance between two points
-// Optionally pass pageNum to resolve scale from scaleBar annotations at the midpoint
-export function calculateDistance(x1, y1, x2, y2, pageNum) {
+// Optionally pass pageNum to resolve the scale at the midpoint. An annotation
+// with extension lines resolves it at the measured points, before the offset.
+export function calculateDistance(x1, y1, x2, y2, pageNum, annotation) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const pixelDist = Math.sqrt(dx * dx + dy * dy);
-  const midX = (x1 + x2) / 2;
-  const midY = (y1 + y2) / 2;
+  const { x: midX, y: midY } = meetPunt(annotation || { startX: x1, startY: y1, endX: x2, endY: y2 });
   const scale = (pageNum != null)
     ? getMeasureScale(pageNum, midX, midY)
     : getMeasureScale();
   return {
     value: pixelDist / scale.pixelsPerUnit,
     unit: scale.unit,
-    pixels: pixelDist
+    pixels: pixelDist,
+    // Getalopmaak van de viewport van de pagina (core/maat-opmaak.js).
+    ...(scale.opmaak ? { opmaak: scale.opmaak } : {}),
   };
 }
 
@@ -182,14 +193,30 @@ export function vlakMeting(ann) {
 }
 
 /**
+ * De oppervlaktetekst van een meetvlak: de meting in de weergave-eenheid van
+ * het vlak (`measureAreaUnit`: acres, hectares, ..., #1129). Zonder die keuze
+ * het kwadraat van de schaal-eenheid, zoals altijd. `ann` mag ook alleen
+ * `{ measureAreaUnit }` zijn (de voorvertoning van een nieuw vlak).
+ * @param {{measureAreaUnit?: string}|null} ann
+ * @param {{value: number, unit: string}} meting  in het kwadraat van de schaal-eenheid
+ */
+export function vlakTekst(ann, meting) {
+  return formatMeasurement(vlakWeergave(meting, ann?.measureAreaUnit));
+}
+
+/**
  * Tekst, waarde en eenheid van een meetvlak opnieuw uit zijn punten en zijn
  * (eigen of document-)schaal. Eén routine voor het eigenschappenpaneel, het
  * verslepen van hoekpunten en het toevoegen van een gat.
+ *
+ * measureValue en measureUnit blijven in het kwadraat van de schaal-eenheid
+ * (daar rekenen de eigen schaal, de omtrek en de inhoud mee); alleen de tekst
+ * volgt de weergave-eenheid van het vlak.
  */
 export function herberekenVlakMaat(ann) {
   if (!ann?.points || ann.points.length < 3) return;
   const meting = vlakMeting(ann);
-  ann.measureText = formatMeasurement(meting);
+  ann.measureText = vlakTekst(ann, meting);
   ann.measureValue = meting.value;
   ann.measureUnit = meting.unit;
 }
@@ -207,7 +234,8 @@ export function vlakZijdeTeksten(ann) {
 }
 
 // Calculate perimeter of a polyline
-// Optionally pass pageNum to resolve scale from scaleBar annotations at the midpoint
+// Optionally pass pageNum to resolve the scale at the midpoint. An annotation
+// with extension lines resolves it at the measured points, before the offset.
 export function calculatePerimeter(points, pageNum) {
   if (!points || points.length < 2) return { value: 0, unit: 'px', pixels: 0 };
 
@@ -251,19 +279,51 @@ export function formatDimensionText(measurement) {
   return (measurement?.unit || 'mm') === 'mm' ? s.replace(/\s*mm$/, '') : s;
 }
 
+/**
+ * De tekst van een maatlijn (core/maat-opmaak.js): de eigen opmaak van de
+ * maat (measureFraction of measurePrecision), anders die van de viewport van
+ * de pagina (`measurement.opmaak`), anders de voorkeur. Een maat zonder eigen
+ * opmaak volgt ook de afrondingsvoorkeur, zoals formatDimensionText.
+ * @param {object|null} ann
+ * @param {{value: number, unit: string, opmaak?: object}} measurement
+ */
+export function maatlijnTekst(ann, measurement) {
+  // Zonder uitdrukkelijke keuze (measureFraction niet gezet) neemt een maat
+  // die de schaal van de pagina volgt niet zijn measurePrecision: de
+  // voorkeur measureDistDimPrecision is standaard 0 en zou "7 m" geven in
+  // plaats van "7.06 m". Zie opmaakVanMaat.
+  const eigenSchaal = Number(ann?.measureScale) > 0;
+  const opmaak = opmaakVanMaat(ann, measurement?.opmaak, { eigenSchaal });
+  if (!opmaak.fractie && !opmaak.decimaal && opmaak.decimalen === undefined) {
+    const rounding = state.preferences?.measureRounding;
+    if (rounding && rounding !== 'none' && !toontVoetInch(maatEenheid(measurement.unit))) {
+      return formatDimensionText({ value: measurement.value, unit: maatEenheid(measurement.unit) });
+    }
+  }
+  return maatTekst(measurement.value, measurement.unit, opmaak, { voorkeur: lengteNotatie() });
+}
+
 // Format measurement for display
 // Default: mm → no decimals; m/cm → 1 decimal; ft/in → 2 decimals
 // Distances in mm >= 1000 are automatically shown as meters
 // Area measurements in mm² are automatically converted to m² for readability
+// The number uses the decimal separator of the app language (or the
+// preference override) via core/maat-notatie.js: "2,50 m" in Dutch (#629).
 export function formatMeasurement(measurement) {
+  // Lengtes in ft/in als voet-inch-breuk als de voorkeur dat zegt (#996):
+  // 12'-6 3/8". De breuk is de afronding; oppervlaktes blijven sq ft.
+  if (toontVoetInch(measurement.unit) && Number.isFinite(Number(measurement.value))) {
+    return formatVoetInch(measurement.value, measurement.unit);
+  }
+  // Acres en hectares (#1129): geen afronding op de stap van de lengtematen
+  // (die zou 2,3 ac tot 2 ac maken), wel genoeg decimalen voor een kavel.
+  if (isAlleenOppervlakte(measurement.unit)) {
+    const waarde = Number(measurement.value);
+    return `${formatGetal(waarde, decimalenAlleenOppervlakte(waarde))} ${eenheidNotatie(measurement.unit)}`;
+  }
   let val = applyRounding(measurement.value, measurement.unit);
-  let unit = measurement.unit || 'mm';
-
-  // Markset: ft/in lengths as feet-inch fractions (12'-6 3/8"). The fraction
-  // is the rounding, so the mm-based measureRounding step does not apply.
-  const imperial = formatImperialLength(measurement.value, unit,
-    state.preferences.measureImperialFormat, state.preferences.measureFractionDenominator);
-  if (imperial) return imperial;
+  let unit = eenheidNotatie(measurement.unit || 'mm') || 'mm';
+  const fg = (v, d) => formatGetal(v, d);
 
   // Keep mm as mm — common architectural/CAD convention. Whole numbers only
   // (no decimals) — millimeters are already the smallest practical unit.
@@ -272,9 +332,9 @@ export function formatMeasurement(measurement) {
     const rounding = state.preferences.measureRounding;
     if (rounding && rounding !== 'none') {
       const step = parseFloat(rounding);
-      if (step >= 1) return `${Math.round(val / step) * step}${suffix}`;
+      if (step >= 1) return `${fg(Math.round(val / step) * step, 0)}${suffix}`;
     }
-    return `${Math.round(val)}${suffix}`;
+    return `${fg(Math.round(val), 0)}${suffix}`;
   }
 
   // Always convert mm² areas to m²
@@ -288,20 +348,17 @@ export function formatMeasurement(measurement) {
   const rounding = state.preferences.measureRounding;
   if (rounding && rounding !== 'none' && unit !== 'px') {
     const step = parseFloat(rounding);
-    if (step >= 1) return `${Math.round(val)}${suffix}`;
-    return `${val.toFixed(2)}${suffix}`;
+    if (step >= 1) return `${fg(Math.round(val), 0)}${suffix}`;
+    return `${fg(val, 2)}${suffix}`;
   }
   // Default formatting per unit
-  if (unit === 'm\u00B2') return `${val.toFixed(2)}${suffix}`;
-  if (unit === 'm') return `${val.toFixed(2)}${suffix}`;
-  if (unit === 'cm\u00B2') return `${val.toFixed(2)}${suffix}`;
-  if (unit === 'cm') return `${val.toFixed(1)}${suffix}`;
-  if (unit === 'ft\u00B2' || unit === 'in\u00B2') return `${val.toFixed(2)}${suffix}`;
-  if (unit === 'ft' || unit === 'in') return `${val.toFixed(2)}${suffix}`;
-  if (unit === '°') return `${val.toFixed(1)}${suffix}`;
-  if (val < 0.01) return `0${suffix}`;
-  if (val < 1) return `${val.toFixed(2)}${suffix}`;
-  return `${val.toFixed(2)}${suffix}`;
+  if (unit === 'cm') return `${fg(val, 1)}${suffix}`;
+  if (unit === '°') return `${fg(val, 1)}${suffix}`;
+  if (val < 0.01 && unit !== 'm\u00B2' && unit !== 'm' && unit !== 'cm\u00B2'
+      && unit !== 'ft\u00B2' && unit !== 'in\u00B2' && unit !== 'ft' && unit !== 'in') {
+    return `0${suffix}`;
+  }
+  return `${fg(val, 2)}${suffix}`;
 }
 
 // Show scale calibration dialog, optionally with a reference pixel length
@@ -321,7 +378,8 @@ export function setScaleFromLine(pixelLength, realValue, unit, sourceAnnotation)
     ? doc.measureScale
     : JSON.parse(JSON.stringify(doc.measureScale));
   const sourceOriginal = sourceAnnotation ? cloneAnnotation(sourceAnnotation) : null;
-  doc.measureScale = { pixelsPerUnit, unit, method: 'quick-scale', scaleRatio: 0 };
+  doc.measureScale = { pixelsPerUnit, unit, method: 'quick-scale', scaleRatio: 0,
+    ...(oldMeasureScale?.overridePdfScale === true ? { overridePdfScale: true } : {}) };
   saveDocumentScale();
 
   // Update default preferences so future measurements use this scale/unit
@@ -339,7 +397,7 @@ export function setScaleFromLine(pixelLength, realValue, unit, sourceAnnotation)
     sourceAnnotation.measureScale = realValue / pixelLength;
     sourceAnnotation.measureUnit = unit;
     const prec = sourceAnnotation.measurePrecision !== undefined ? sourceAnnotation.measurePrecision : 2;
-    sourceAnnotation.measureText = imperialOr(realValue, unit, state.preferences, `${realValue.toFixed(prec)} ${unit}`); // Markset
+    sourceAnnotation.measureText = imperialOr(realValue, unit, state.preferences, `${formatGetal(realValue, prec)} ${unit}`); // Markset
     sourceAnnotation.modifiedAt = new Date().toISOString();
 
     // Redraw canvas
@@ -365,7 +423,7 @@ export function setScaleFromLine(pixelLength, realValue, unit, sourceAnnotation)
 // Get the representative point of a measurement annotation (for scale lookup)
 function getAnnotationPoint(ann) {
   if (ann.type === 'measureDistance') {
-    return { page: ann.page || 1, x: (ann.startX + ann.endX) / 2, y: (ann.startY + ann.endY) / 2 };
+    return { page: ann.page || 1, ...meetPunt(ann) };
   }
   if ((ann.type === 'measureArea' || ann.type === 'measurePerimeter') && ann.points?.length > 0) {
     // Centroid
@@ -423,7 +481,7 @@ function recalculateMeasurementsIn(doc) {
       ann.measureValue = value;
       ann.measureUnit = scale.unit;
       ann.measureScale = undefined; // Clear legacy per-annotation scale so formatMeasurement uses the scaleBar
-      ann.measureText = formatDimensionText({ value, unit: scale.unit });
+      ann.measureText = maatlijnTekst(ann, { value, unit: scale.unit, opmaak: scale.opmaak });
     } else if (ann.type === 'measureArea') {
       if (ann.points && ann.points.length >= 3) {
         // Use position-aware scale directly instead of calculateArea's global fallback;
@@ -434,7 +492,7 @@ function recalculateMeasurementsIn(doc) {
         ann.measureValue = scaledArea;
         ann.measureUnit = areaUnit;
         ann.measureScale = undefined;
-        ann.measureText = formatMeasurement({ value: scaledArea, unit: areaUnit });
+        ann.measureText = vlakTekst(ann, { value: scaledArea, unit: areaUnit });
       }
     } else if (ann.type === 'measurePerimeter') {
       if (ann.points && ann.points.length >= 2) {

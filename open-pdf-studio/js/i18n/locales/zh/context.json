@@ -3,6 +3,7 @@
     "openPopUpNote": "打开弹出便签",
     "hidePopUpNote": "隐藏弹出便签",
     "resetPopUpLocation": "重置弹出便签位置",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "编辑文本...",
     "addReply": "添加回复",
     "locked": "已锁定",
@@ -12,11 +13,13 @@
     "printable": "可打印",
     "status": "状态",
     "showByStatus": "按状态显示",
+    "showOnlyOpen": "Show only open items",
     "statusNone": "无",
     "statusAccepted": "已接受",
     "statusCancelled": "已取消",
     "statusCompleted": "已完成",
     "statusRejected": "已拒绝",
+    "statusReviewed": "已审阅",
     "reviewHistory": "审阅历史...",
     "layer": "图层：",
     "noLayersAvailable": "没有可用的图层",
@@ -49,6 +52,7 @@
     "dimChainAdd": "向尺寸链添加点",
     "dimChainRemove": "从尺寸链中移除尺寸界线",
     "selectRoom": "选择房间",
+    "checkScale": "用此线检查比例...",
     "saveToToolSet": "保存到工具集"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "垂直居中",
     "distributeHorizontally": "水平分布",
     "distributeVertically": "垂直分布",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "修剪墙角",
     "deleteAnnotations": "删除 {{count}} 个批注",
     "deleteConfirm": "删除 {{count}} 个批注？",
@@ -109,6 +114,8 @@
     "nestUnderNew": "嵌套到新书签下...",
     "indent": "增加缩进",
     "outdent": "减少缩进",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "删除 {{count}} 个书签"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "从文件插入...",
     "insertFromFileBefore": "在此页之前...",
     "insertFromFileAfter": "在此页之后...",
-    "pageLabels": "页面标签（名称生成器）..."
+    "pageLabels": "页面标签（名称生成器）...",
+    "setPageScale": "Set Page Scale...",
+    "setPageScaleMulti": "Set Scale of {{count}} Pages...",
+    "detectPageScales": "Detect Page Scales (All Pages)",
+    "detectPageScalesMulti": "Detect Scales of {{count}} Pages",
+    "clearPageScale": "Clear Page Scale",
+    "detectPageScalesArea": "Detect Page Scales from Area...",
+    "pickScaleArea": "Draw a box round the scale in the title block. It is read on every page (OCR where there is no text). Esc cancels.",
+    "detectingPageScales": "Detecting page scales... {{done}} of {{total}}",
+    "scaleOwnSet": "Page scale {{scale}} (set). Click to change.",
+    "scaleOwnDetected": "Page scale {{scale}} (detected). Click to change.",
+    "scaleOwnOcr": "Page scale {{scale}} (read with OCR). Click to change.",
+    "scaleAlsoOnSheet": "Also on the sheet: {{scales}}.",
+    "scaleDocument": "Document scale {{scale}}. Click to set a scale for this page.",
+    "scaleNone": "No scale. Click to set one for this page.",
+    "scaleInvalid": "Not a scale. Type 1:N or N, for example 1:100."
   },
   "textSelection": {
     "highlightSelection": "高亮选择",
     "strikethroughSelection": "删除线选择",
     "underlineSelection": "下划线选择",
-    "curvedLeaderSelection": "添加曲线标注"
+    "curvedLeaderSelection": "添加曲线标注",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Insert link..."
   },
   "deleteAnnotation": {
     "confirmSingle": "删除此批注？",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "删除顶点",
     "insertVertex": "在此处插入顶点",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "转换为圆弧",
     "convertToLine": "转换为直线"
   },

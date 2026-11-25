@@ -24,7 +24,9 @@
     "statusSetBy": "Gezet door {{author}} op {{date}}",
     "layer": "Laag",
     "layerMarkupGroup": "Markeringslagen",
-    "layerDocumentGroup": "Lagen van het document"
+    "layerDocumentGroup": "Lagen van het document",
+    "statusHistory": "Reviewgeschiedenis:",
+    "statusHistoryStep": "{{status}} door {{author}} op {{date}}"
   },
   "colorNone": "Geen",
   "moreColors": "Meer kleuren...",
@@ -45,6 +47,7 @@
     "fillColor": "Vulkleur",
     "strokeColor": "Lijnkleur",
     "color": "Kleur",
+    "lineworkColor": "Kleur lijnwerk",
     "opacity": "Dekking",
     "fillOpacity": "Vuldekking",
     "strokeOpacity": "Lijndekking",
@@ -196,7 +199,13 @@
     "underline": "Onderstrepen",
     "strikethrough": "Doorhalen",
     "fontNotEmbedded": "{{font}} wordt niet in de PDF ingebed. Lezers zonder dit lettertype tonen {{fallback}}.",
-    "fontReplaced": "{{font}} kan niet in de PDF worden ingebed. De tekst wordt opgeslagen in {{fallback}}."
+    "fontReplaced": "{{font}} kan niet in de PDF worden ingebed. De tekst wordt opgeslagen in {{fallback}}.",
+    "fontEmbedReason": {
+      "licence": "De licentie staat inbedden niet toe.",
+      "collection": "Het hoort bij een lettertypecollectie (.ttc), die niet ingebed kan worden.",
+      "bitmap-only": "De licentie staat alleen inbedden als bitmap toe.",
+      "no-outlines": "Het heeft geen contouren die ingebed kunnen worden."
+    }
   },
   "paragraph": {
     "title": "Alinea",
@@ -228,6 +237,7 @@
     "title": "Titel",
     "author": "Auteur",
     "subject": "Onderwerp",
+    "keywords": "Trefwoorden",
     "creator": "Maker",
     "producer": "Producent",
     "pdfVersion": "PDF-versie",
@@ -296,7 +306,8 @@
     "redaction": "Redactie",
     "scaleBar": "Schaalbalk",
     "parametricSymbol": "Parametrisch symbool",
-    "fileAttachment": "Bestandsbijlage"
+    "fileAttachment": "Bestandsbijlage",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Paneel in-/uitschakelen",
@@ -320,6 +331,8 @@
     "deleteBookmark": "Bladwijzer verwijderen",
     "findBookmark": "Zoeken...",
     "findBookmarkTip": "Typ om naar een bladwijzer te springen. Enter opent hem, nog eens Enter gaat naar de volgende treffer.",
+    "findPage": "Zoeken...",
+    "findPageTip": "Typ om naar een pagina te springen op bladnaam of nummer. Enter opent haar, nog eens Enter gaat naar de volgende treffer.",
     "addAttachment": "Bijlage toevoegen",
     "openAttachment": "Bijlage openen",
     "saveAttachment": "Bijlage opslaan",
@@ -434,7 +447,9 @@
     "measureTitle": "Werkelijke lengte",
     "measureQuestion": "Wat is de werkelijke lengte van deze afstand?",
     "measuredOnPaper": "Gemeten op papier",
-    "computedScale": "Berekende schaal"
+    "computedScale": "Berekende schaal",
+    "width": "Breedte ({{unit}})",
+    "height": "Hoogte ({{unit}})"
   },
   "measurement": {
     "title": "Meting",
@@ -444,6 +459,9 @@
     "scaleAuto": "Documentschaal",
     "scaleTooltip": "Overschrijf de schaal voor deze annotatie (eenheden per punt). Laat leeg om de document-/gebiedsschaal te gebruiken.",
     "unit": "Eenheid",
+    "areaUnit": "Oppervlakte-eenheid",
+    "areaUnitAuto": "Volgt de schaal",
+    "areaUnitTooltip": "Eenheid waarin de oppervlakte wordt getoond, bijvoorbeeld acres of hectares. Lengtes en zijdematen houden de eenheid van de schaal.",
     "precision": "Precisie (decimalen)",
     "dimType": "Type",
     "dimTypeCustom": "Aangepast",
@@ -465,7 +483,9 @@
     "depthNone": "Geen",
     "depthTooltip": "Wandhoogte, vloerdikte enz., in de eenheid van de meting. Lengte × diepte geeft een oppervlak, vlak × diepte een inhoud.",
     "surface": "Oppervlak",
-    "volume": "Inhoud"
+    "volume": "Inhoud",
+    "noScaleHint": "Dit document heeft nog geen schaal: de waarde is niet de werkelijke maat.",
+    "noScaleCalibrate": "Schaal instellen (Kalibreren)…"
   },
   "measurements": {
     "scale": "Schaal",
@@ -473,7 +493,9 @@
     "viewports": "Viewports",
     "noViewports": "Geen viewports gedefinieerd",
     "measurements": "Metingen",
-    "noMeasurements": "Nog geen metingen"
+    "noMeasurements": "Nog geen metingen",
+    "counts": "Tellingen",
+    "noCounts": "Nog geen tellingen"
   },
   "schedules": {
     "title": "Staten",
@@ -496,7 +518,18 @@
     },
     "preview": "Voorbeeld",
     "exportCsv": "CSV exporteren",
-    "workbookBindings": "Spreadsheetkoppelingen"
+    "workbookBindings": "Spreadsheetkoppelingen",
+    "importTags": "Kenmerken importeren uit CSV",
+    "importTagsTitle": "Kenmerken importeren",
+    "importTagsDone": "Kenmerken bijgewerkt op {{count}} markeringen.",
+    "importTagsNone": "Geen kenmerken gewijzigd: het bestand komt overeen met de tekening.",
+    "importTagsNotFound": "{{count}} regels verwijzen naar markeringen die niet meer in dit document staan.",
+    "importTagsLocked": "{{count}} markeringen zijn vergrendeld en niet gewijzigd.",
+    "importTagsUnknownCount": "Onbekende telcategorieën (niet toegepast): {{names}}",
+    "importTagsNoId": "Dit bestand heeft geen ID-kolom. Exporteer de staat eerst als CSV, bewerk die en importeer dat bestand.",
+    "importTagsNoColumns": "Het bestand heeft geen kenmerkkolom die deze staat terug kan nemen (Label, IFC-categorie, Locatie, Telcategorie).",
+    "importTagsEmpty": "Het bestand is leeg.",
+    "importTagsRead": "Het bestand kon niet gelezen worden."
   },
   "wizard": {
     "title": "Staten-wizard",
@@ -569,7 +602,103 @@
   "wall": {
     "joinAtStart": "Join toestaan aan begin",
     "joinAtEnd": "Join toestaan aan eind",
-    "joinHint": "Uit: dit uiteinde van de wand wordt nooit verstekt, als T aangesloten of afgekapt tegen een andere wand; het houdt een stompe kap waar het getekend is."
+    "joinHint": "Uit: dit uiteinde van de wand wordt nooit verstekt, als T aangesloten of afgekapt tegen een andere wand; het houdt een stompe kap waar het getekend is.",
+    "title": "Wand",
+    "thickness": "Dikte (mm)",
+    "material": "Materiaal",
+    "insulationMaterial": "Isolatiemateriaal",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Metselwerk",
+      "nen47-metselwerk-kunststeen": "Kalkzandsteen",
+      "nen47-beton-prefab": "Prefab beton",
+      "nen47-beton-gewapend": "Beton (gewapend)",
+      "isolatie": "Isolatie",
+      "none": "Geen arcering"
+    },
+    "insulation": {
+      "steenwol": "Steenwol",
+      "glaswol": "Glaswol"
+    }
+  },
+  "betonbalk": {
+    "title": "Betonbalk",
+    "profile": "Profiel (b×h)",
+    "custom": "Aangepast…",
+    "width": "Breedte (mm)",
+    "height": "Hoogte (mm)",
+    "lineStyle": "Lijnstijl",
+    "lineSolid": "Doorgetrokken",
+    "lineDashed": "Gestippeld (boven aanzichtvlak)",
+    "showCentreline": "Hartlijn tonen",
+    "showTag": "Tag tonen",
+    "tagText": "Tagtekst"
+  },
+  "systeemraster": {
+    "title": "Systeem",
+    "systemType": "Systeemtype",
+    "manageTypes": "Typen beheren…",
+    "stripWidthType": "Strookbreedte (mm) — type",
+    "cellXType": "Celmaat X (mm) — type",
+    "cellYType": "Celmaat Y (mm) — type",
+    "tileWidth": "Plaatbreedte (mm)",
+    "tileHeight": "Plaathoogte (mm)",
+    "unconfirmed": "onbevestigd",
+    "addOpening": "Sparing toevoegen",
+    "edgeProfile": "Randprofiel",
+    "edgeProfileType": "Randprofiel — type",
+    "edgeProfileSegment": "Randprofiel (dit segment)",
+    "edgeFromType": "(van type: {{value}})",
+    "edge": {
+      "geen": "Geen",
+      "hoeklijn": "Hoeklijn",
+      "schaduwvoeg": "Schaduwvoeg"
+    },
+    "gridAngle": "Rasterhoek (°)",
+    "centreGrid": "Centreer raster",
+    "equalizeX": "Equalize X (randstukken links = rechts)",
+    "equalizeY": "Equalize Y (randstukken boven = onder)",
+    "edgeCondition": "Randconditie",
+    "edgeShowCut": "Gesneden platen tonen",
+    "edgeEnforceMin": "Minimale randmaat afdwingen",
+    "minEdge": "Minimale randmaat (mm)",
+    "partPanel": "Onderdeel: paneel ({{ix}},{{iy}})",
+    "partEdge": "Onderdeel: randsegment {{n}}",
+    "partStrip": "Onderdeel: strook #{{n}}",
+    "partOpening": "Onderdeel: sparing",
+    "partLine": "Onderdeel: rasterlijn {{direction}} #{{n}}",
+    "vertical": "verticaal",
+    "horizontal": "horizontaal",
+    "panelType": "Paneeltype",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Ander component…",
+    "size": "Afmeting",
+    "deleteToTile": "(Delete = terug naar tegel)",
+    "length": "Lengte",
+    "strip": "Strook",
+    "stripWidth": "Breedte: {{mm}} mm",
+    "stripFitting": "(passtrook)",
+    "stripLength": "Lengte: {{mm}} mm",
+    "stripPosition": "Positie: {{mm}} mm vanaf de rand",
+    "openingSize": "Afmeting sparing (mm)",
+    "widthLetter": "B",
+    "heightLetter": "H",
+    "openingPosition": "Positie (mm, t.o.v. linksboven)",
+    "regime": "Regime",
+    "regimeSmall": "Klein (gewoon gat)",
+    "regimeTrimmer": "Raveelijzer",
+    "regimeHeavy": "Verzwaarde randlijn",
+    "deleteRemovesOpening": "Delete verwijdert de sparing",
+    "gridLine": "Rasterlijn",
+    "lineDirection": "Richting: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Positie: {{mm}} mm vanaf de oorsprong",
+    "edgePieces": "Randstukken",
+    "edgeUnconfirmed": "onbevestigd (het type mist een maat)",
+    "edgeLeft": "Links: {{value}}",
+    "edgeRight": "Rechts: {{value}}",
+    "edgeTop": "Boven: {{value}}",
+    "edgeBottom": "Onder: {{value}}",
+    "fullTile": "— (volle plaat)"
   },
   "tekeninstellingen": {
     "title": "Tekeninstellingen",
@@ -682,6 +811,7 @@
       "height": "Hoogte",
       "location": "Locatie",
       "locationSource": "Locatiebron",
+      "layer": "Laag",
       "rebarMark": "Staafnummer",
       "rebarDiameter": "Ø",
       "rebarShape": "Buigvorm",
@@ -807,6 +937,24 @@
     "rules": "Toewijzing gebruikt het midden van de annotatie-omhullende, inclusief randen. De diepste zone wint, daarna het kleinste oppervlak, daarna het zone-ID. Gebruik rechte polygonen zonder gaten of ongedraaide rechthoeken. Ongeldige of dubbele zone-ID’s worden uitgesloten.",
     "loading": "Annotaties laden: locaties kunnen nog veranderen."
   },
+  "dynamicStamp": {
+    "title": "Stempelvelden",
+    "template": "Sjabloon",
+    "refresh": "Datum, gebruiker en pagina bijwerken",
+    "lock": "Stempel vergrendelen",
+    "lockConfirm": "Deze stempel vergrendelen? De velden kunnen daarna niet meer worden gewijzigd.",
+    "locked": "Deze stempel is vergrendeld: de velden kunnen niet meer worden gewijzigd.",
+    "field": {
+      "date": "Datum",
+      "time": "Tijd",
+      "datetime": "Datum en tijd",
+      "user": "Gebruiker",
+      "page": "Pagina",
+      "pages": "Aantal pagina's",
+      "filename": "Bestandsnaam",
+      "title": "Documenttitel"
+    }
+  },
   "toolSets": {
     "title": "Werkkist",
     "typeWall": "Wand",
@@ -849,7 +997,9 @@
     "errorFileTooLarge": "Het bestand is te groot voor een gereedschapsset.",
     "errorFileInvalid": "Dit bestand is geen geldige gereedschapsset.",
     "errorFileNewer": "Deze gereedschapsset is gemaakt met een nieuwere versie van Open PDF Studio. Werk de app bij om hem te importeren.",
-    "damagedStatus": "De opgeslagen werkkist kon niet worden gelezen. Het beschadigde bestand is bewaard als \"{{name}}\"."
+    "damagedStatus": "De opgeslagen werkkist kon niet worden gelezen. Het beschadigde bestand is bewaard als \"{{name}}\".",
+    "errorXfdfInvalid": "Dit bestand is geen leesbaar XFDF-bestand.",
+    "errorXfdfNoTools": "Het XFDF-bestand bevat geen markeringen die gereedschap kunnen worden (lijnen, pijlen, rechthoeken, ellipsen, veelhoeken, polylijnen, wolken of metingen)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1072,19 @@
     "open": "Openen",
     "saveAs": "Opslaan als...",
     "noContent": "De inhoud van dit bestand is niet in de PDF ingesloten."
+  },
+  "countGroup": {
+    "title": "Telgroep",
+    "group": "Groep",
+    "none": "(geen groep)",
+    "mixed": "(gemengd)",
+    "total": "In deze groep",
+    "pieces": "{{count}} st.",
+    "color": "Groepskleur",
+    "name": "Groepsnaam"
+  },
+  "sectionOrder": {
+    "reset": "Sectievolgorde herstellen",
+    "dragHint": "Klik om in of uit te klappen. Sleep om de sectie te verplaatsen (of Alt+pijl omhoog/omlaag)."
   }
 }

@@ -9,7 +9,9 @@
     "measureTitle": "Lungime reală",
     "measureQuestion": "Care este lungimea reală a acestei distanțe?",
     "measuredOnPaper": "Măsurată pe hârtie",
-    "computedScale": "Scară calculată"
+    "computedScale": "Scară calculată",
+    "width": "Width ({{unit}})",
+    "height": "Height ({{unit}})"
   },
   "measurements": {
     "scale": "Scară",
@@ -17,7 +19,9 @@
     "viewports": "Ferestre de vizualizare",
     "noViewports": "Nicio fereastră de vizualizare definită",
     "measurements": "Măsurători",
-    "noMeasurements": "Încă nu există măsurători"
+    "noMeasurements": "Încă nu există măsurători",
+    "counts": "Counts",
+    "noCounts": "No counts yet"
   },
   "title": "Proprietati",
   "general": {
@@ -44,7 +48,9 @@
     "statusSetBy": "Setat de {{author}} pe {{date}}",
     "layer": "Strat",
     "layerMarkupGroup": "Straturi de marcaje",
-    "layerDocumentGroup": "Straturile documentului"
+    "layerDocumentGroup": "Straturile documentului",
+    "statusHistory": "Review history:",
+    "statusHistoryStep": "{{status}} by {{author}} on {{date}}"
   },
   "colorNone": "Niciunul",
   "moreColors": "Mai multe culori...",
@@ -248,6 +254,7 @@
     "title": "Titlu",
     "author": "Autor",
     "subject": "Subiect",
+    "keywords": "Cuvinte cheie",
     "creator": "Creator",
     "producer": "Producator",
     "pdfVersion": "Versiune PDF",
@@ -316,7 +323,8 @@
     "redaction": "Redactare",
     "scaleBar": "Bară de scară",
     "parametricSymbol": "Simbol parametric",
-    "fileAttachment": "Atașament fișier"
+    "fileAttachment": "Atașament fișier",
+    "link": "Link"
   },
   "leftPanel": {
     "togglePanel": "Comutare panou",
@@ -341,6 +349,8 @@
     "deleteBookmark": "Stergere semn de carte",
     "findBookmark": "Găsire...",
     "findBookmarkTip": "Tastați pentru a sări la un semn de carte. Enter îl deschide, Enter din nou trece la următoarea potrivire.",
+    "findPage": "Găsire...",
+    "findPageTip": "Type to jump to a page by its sheet name or number. Enter opens it, Enter again goes to the next match.",
     "addAttachment": "Adaugare atasament",
     "openAttachment": "Deschidere atasament",
     "saveAttachment": "Salvare atasament",
@@ -452,6 +462,9 @@
     "scaleAuto": "Scara documentului",
     "scaleTooltip": "Suprascrie scara pentru această adnotare (unități pe punct). Lăsați gol pentru a folosi scara documentului/regiunii.",
     "unit": "Unitate",
+    "areaUnit": "Area unit",
+    "areaUnitAuto": "Follows scale",
+    "areaUnitTooltip": "Unit in which the area is shown, such as acres or hectares. Lengths and edge lengths keep the unit of the scale.",
     "precision": "Precizie (zecimale)",
     "dimType": "Tip",
     "dimTypeCustom": "Personalizat",
@@ -473,7 +486,9 @@
     "depthNone": "Niciuna",
     "depthTooltip": "Înălțimea peretelui, grosimea plăcii etc., în unitatea măsurătorii. Lungime × adâncime dă o suprafață, arie × adâncime un volum.",
     "surface": "Suprafață",
-    "volume": "Volum"
+    "volume": "Volum",
+    "noScaleHint": "This document has no scale yet: the value is not the real size.",
+    "noScaleCalibrate": "Set scale (Calibrate)…"
   },
   "schedules": {
     "title": "Extrase",
@@ -496,7 +511,18 @@
     },
     "preview": "Previzualizare",
     "exportCsv": "Exportă CSV",
-    "workbookBindings": "Legături cu foaia de calcul"
+    "workbookBindings": "Legături cu foaia de calcul",
+    "importTags": "Import tags from CSV",
+    "importTagsTitle": "Import tags",
+    "importTagsDone": "Tags updated on {{count}} markups.",
+    "importTagsNone": "No tags changed: the file matches the drawing.",
+    "importTagsNotFound": "{{count}} rows refer to markups that are no longer in this document.",
+    "importTagsLocked": "{{count}} markups are locked and were not changed.",
+    "importTagsUnknownCount": "Unknown count categories (not applied): {{names}}",
+    "importTagsNoId": "This file has no ID column. Export the schedule as CSV first, edit it and import that file.",
+    "importTagsNoColumns": "The file has no tag column this schedule can take back (Label, IFC category, Location, Count category).",
+    "importTagsEmpty": "The file is empty.",
+    "importTagsRead": "The file could not be read."
   },
   "wizard": {
     "title": "Expert extrase",
@@ -569,7 +595,103 @@
   "wall": {
     "joinAtStart": "Îmbinare la început",
     "joinAtEnd": "Îmbinare la sfârșit",
-    "joinHint": "Dezactivat: acest capăt al peretelui nu este niciodată îmbinat pe bisectoare, racordat în T sau retezat față de alt perete; păstrează un capăt drept acolo unde este desenat."
+    "joinHint": "Dezactivat: acest capăt al peretelui nu este niciodată îmbinat pe bisectoare, racordat în T sau retezat față de alt perete; păstrează un capăt drept acolo unde este desenat.",
+    "title": "Wall",
+    "thickness": "Thickness (mm)",
+    "material": "Material",
+    "insulationMaterial": "Insulation material",
+    "materials": {
+      "nen47-metselwerk-baksteen": "Brickwork",
+      "nen47-metselwerk-kunststeen": "Sand-lime brick",
+      "nen47-beton-prefab": "Precast concrete",
+      "nen47-beton-gewapend": "Concrete (reinforced)",
+      "isolatie": "Insulation",
+      "none": "No hatch"
+    },
+    "insulation": {
+      "steenwol": "Stone wool",
+      "glaswol": "Glass wool"
+    }
+  },
+  "betonbalk": {
+    "title": "Concrete beam",
+    "profile": "Profile (w×h)",
+    "custom": "Custom…",
+    "width": "Width (mm)",
+    "height": "Height (mm)",
+    "lineStyle": "Line style",
+    "lineSolid": "Solid",
+    "lineDashed": "Dashed (above the view plane)",
+    "showCentreline": "Show centreline",
+    "showTag": "Show tag",
+    "tagText": "Tag text"
+  },
+  "systeemraster": {
+    "title": "System",
+    "systemType": "System type",
+    "manageTypes": "Manage types…",
+    "stripWidthType": "Strip width (mm) — type",
+    "cellXType": "Cell size X (mm) — type",
+    "cellYType": "Cell size Y (mm) — type",
+    "tileWidth": "Tile width (mm)",
+    "tileHeight": "Tile height (mm)",
+    "unconfirmed": "unconfirmed",
+    "addOpening": "Add opening",
+    "edgeProfile": "Edge profile",
+    "edgeProfileType": "Edge profile — type",
+    "edgeProfileSegment": "Edge profile (this segment)",
+    "edgeFromType": "(from type: {{value}})",
+    "edge": {
+      "geen": "None",
+      "hoeklijn": "Angle trim",
+      "schaduwvoeg": "Shadow gap"
+    },
+    "gridAngle": "Grid angle (°)",
+    "centreGrid": "Centre grid",
+    "equalizeX": "Equalize X (edge pieces left = right)",
+    "equalizeY": "Equalize Y (edge pieces top = bottom)",
+    "edgeCondition": "Edge condition",
+    "edgeShowCut": "Show cut tiles",
+    "edgeEnforceMin": "Enforce minimum edge size",
+    "minEdge": "Minimum edge size (mm)",
+    "partPanel": "Part: panel ({{ix}},{{iy}})",
+    "partEdge": "Part: edge segment {{n}}",
+    "partStrip": "Part: strip #{{n}}",
+    "partOpening": "Part: opening",
+    "partLine": "Part: grid line {{direction}} #{{n}}",
+    "vertical": "vertical",
+    "horizontal": "horizontal",
+    "panelType": "Panel type",
+    "componentOption": "Component: {{name}}",
+    "otherComponent": "Other component…",
+    "size": "Size",
+    "deleteToTile": "(Delete = back to tile)",
+    "length": "Length",
+    "strip": "Strip",
+    "stripWidth": "Width: {{mm}} mm",
+    "stripFitting": "(fitting strip)",
+    "stripLength": "Length: {{mm}} mm",
+    "stripPosition": "Position: {{mm}} mm from the edge",
+    "openingSize": "Opening size (mm)",
+    "widthLetter": "W",
+    "heightLetter": "H",
+    "openingPosition": "Position (mm, from top left)",
+    "regime": "Regime",
+    "regimeSmall": "Small (plain hole)",
+    "regimeTrimmer": "Trimmer bar",
+    "regimeHeavy": "Reinforced edge line",
+    "deleteRemovesOpening": "Delete removes the opening",
+    "gridLine": "Grid line",
+    "lineDirection": "Direction: {{value}}",
+    "lineIndex": "Index: {{n}}",
+    "linePosition": "Position: {{mm}} mm from the origin",
+    "edgePieces": "Edge pieces",
+    "edgeUnconfirmed": "unconfirmed (the type is missing a size)",
+    "edgeLeft": "Left: {{value}}",
+    "edgeRight": "Right: {{value}}",
+    "edgeTop": "Top: {{value}}",
+    "edgeBottom": "Bottom: {{value}}",
+    "fullTile": "— (full tile)"
   },
   "tekeninstellingen": {
     "title": "Setări desen",
@@ -682,6 +804,7 @@
       "height": "Înălțime",
       "location": "Locație",
       "locationSource": "Sursa locației",
+      "layer": "Strat",
       "rebarMark": "Poziție",
       "rebarDiameter": "Ø",
       "rebarShape": "Formă de fasonare",
@@ -807,6 +930,24 @@
     "rules": "Atribuirea folosește centrul casetei de încadrare a marcajului, inclusiv marginile. Câștigă zona cea mai adânc imbricată, apoi cea cu aria cea mai mică, apoi ID-ul zonei. Folosiți poligoane cu laturi drepte, fără găuri, sau casete nerotite. Identitățile de zonă nevalide sau duplicate sunt excluse.",
     "loading": "Adnotările se încarcă: locațiile se pot încă modifica."
   },
+  "dynamicStamp": {
+    "title": "Campuri stampila",
+    "template": "Sablon",
+    "refresh": "Actualizare data, utilizator si pagina",
+    "lock": "Blocare stampila",
+    "lockConfirm": "Blocati aceasta stampila? Campurile ei nu vor mai putea fi modificate.",
+    "locked": "Aceasta stampila este blocata: campurile ei nu mai pot fi modificate.",
+    "field": {
+      "date": "Data",
+      "time": "Ora",
+      "datetime": "Data si ora",
+      "user": "Utilizator",
+      "page": "Pagina",
+      "pages": "Numar de pagini",
+      "filename": "Nume fisier",
+      "title": "Titlul documentului"
+    }
+  },
   "toolSets": {
     "title": "Seturi de unelte",
     "typeWall": "Perete",
@@ -849,7 +990,9 @@
     "errorFileTooLarge": "Fișierul este prea mare pentru un set de unelte.",
     "errorFileInvalid": "Acest fișier nu este un set de unelte valid.",
     "errorFileNewer": "Acest set de unelte a fost creat cu o versiune mai nouă de Open PDF Studio. Actualizați aplicația pentru a-l importa.",
-    "damagedStatus": "Seturile de unelte salvate nu au putut fi citite. Fișierul deteriorat a fost păstrat ca „{{name}}”."
+    "damagedStatus": "Seturile de unelte salvate nu au putut fi citite. Fișierul deteriorat a fost păstrat ca „{{name}}”.",
+    "errorXfdfInvalid": "This file is not a readable XFDF file.",
+    "errorXfdfNoTools": "The XFDF file holds no markups that can become tools (lines, arrows, rectangles, ellipses, polygons, polylines, clouds or measurements)."
   },
   "styleTypeNames": {
     "filledArea": {
@@ -922,5 +1065,19 @@
     "open": "Deschide",
     "saveAs": "Salvare ca...",
     "noContent": "Conținutul acestui fișier nu este încorporat în PDF."
+  },
+  "countGroup": {
+    "title": "Count group",
+    "group": "Group",
+    "none": "(no group)",
+    "mixed": "(mixed)",
+    "total": "In this group",
+    "pieces": "{{count}} pcs",
+    "color": "Group color",
+    "name": "Group name"
+  },
+  "sectionOrder": {
+    "reset": "Reset section order",
+    "dragHint": "Click to collapse or expand. Drag to move the section (or Alt+Up/Down)."
   }
 }

@@ -3,6 +3,7 @@
     "openPopUpNote": "Popup-Notiz öffnen",
     "hidePopUpNote": "Popup-Notiz ausblenden",
     "resetPopUpLocation": "Popup-Notiz Position zurücksetzen",
+    "fitBoxToText": "Fit Box to Text",
     "editText": "Text bearbeiten...",
     "addReply": "Antwort hinzufügen",
     "locked": "Gesperrt",
@@ -12,11 +13,13 @@
     "printable": "Druckbar",
     "status": "Status",
     "showByStatus": "Nach Status anzeigen",
+    "showOnlyOpen": "Nur offene Punkte",
     "statusNone": "Keiner",
     "statusAccepted": "Akzeptiert",
     "statusCancelled": "Abgebrochen",
     "statusCompleted": "Abgeschlossen",
     "statusRejected": "Abgelehnt",
+    "statusReviewed": "Überprüft",
     "reviewHistory": "Überprüfungsverlauf...",
     "layer": "Ebene:",
     "noLayersAvailable": "Keine Ebenen verfügbar",
@@ -49,6 +52,7 @@
     "dimChainAdd": "Punkte zur Maßkette hinzufügen",
     "dimChainRemove": "Maßhilfslinie aus der Kette entfernen",
     "selectRoom": "Raum auswählen",
+    "checkScale": "Maßstab mit dieser Linie prüfen...",
     "saveToToolSet": "In Werkzeugsatz speichern"
   },
   "multiSelect": {
@@ -64,6 +68,7 @@
     "centerVertically": "Vertikal zentrieren",
     "distributeHorizontally": "Horizontal verteilen",
     "distributeVertically": "Vertikal verteilen",
+    "fitBoxesToText": "Fit Boxes to Text",
     "trimWallCorners": "Wandecken stutzen",
     "deleteAnnotations": "{{count}} Anmerkungen löschen",
     "deleteConfirm": "{{count}} Anmerkungen löschen?",
@@ -109,6 +114,8 @@
     "nestUnderNew": "Unter neuem Lesezeichen verschachteln...",
     "indent": "Einrücken",
     "outdent": "Ausrücken",
+    "setDestView": "Set Destination to Current View",
+    "setDestSelection": "Set Destination to Selection",
     "deleteBookmarks": "{{count}} Lesezeichen löschen"
   },
   "thumbnail": {
@@ -133,13 +140,30 @@
     "insertFromFile": "Aus Datei einfügen...",
     "insertFromFileBefore": "Vor dieser Seite...",
     "insertFromFileAfter": "Nach dieser Seite...",
-    "pageLabels": "Seitenbeschriftungen (Namensgenerator)..."
+    "pageLabels": "Seitenbeschriftungen (Namensgenerator)...",
+    "setPageScale": "Seitenmaßstab festlegen...",
+    "setPageScaleMulti": "Maßstab von {{count}} Seiten festlegen...",
+    "detectPageScales": "Seitenmaßstäbe erkennen (alle Seiten)",
+    "detectPageScalesMulti": "Maßstäbe von {{count}} Seiten erkennen",
+    "clearPageScale": "Seitenmaßstab löschen",
+    "detectPageScalesArea": "Seitenmaßstäbe aus Bereich erkennen...",
+    "pickScaleArea": "Ziehen Sie einen Rahmen um den Maßstab im Schriftfeld. Er wird auf jeder Seite gelesen (OCR, wo kein Text ist). Esc bricht ab.",
+    "detectingPageScales": "Seitenmaßstäbe werden erkannt... {{done}} von {{total}}",
+    "scaleOwnSet": "Seitenmaßstab {{scale}} (festgelegt). Zum Ändern klicken.",
+    "scaleOwnDetected": "Seitenmaßstab {{scale}} (erkannt). Zum Ändern klicken.",
+    "scaleOwnOcr": "Seitenmaßstab {{scale}} (mit OCR gelesen). Zum Ändern klicken.",
+    "scaleAlsoOnSheet": "Auch auf dem Blatt: {{scales}}.",
+    "scaleDocument": "Dokumentmaßstab {{scale}}. Klicken, um einen Maßstab für diese Seite festzulegen.",
+    "scaleNone": "Kein Maßstab. Klicken, um einen für diese Seite festzulegen.",
+    "scaleInvalid": "Kein Maßstab. Geben Sie 1:N oder N ein, zum Beispiel 1:100."
   },
   "textSelection": {
     "highlightSelection": "Auswahl hervorheben",
     "strikethroughSelection": "Auswahl durchstreichen",
     "underlineSelection": "Auswahl unterstreichen",
-    "curvedLeaderSelection": "Geschwungene Sprechblase hinzufügen"
+    "curvedLeaderSelection": "Geschwungene Sprechblase hinzufügen",
+    "bookmarkSelection": "Add Bookmark to Selection...",
+    "linkSelection": "Link einfügen..."
   },
   "deleteAnnotation": {
     "confirmSingle": "Diese Anmerkung löschen?",
@@ -148,6 +172,9 @@
   "contextMenu": {
     "deleteVertex": "Scheitelpunkt löschen",
     "insertVertex": "Scheitelpunkt hier einfügen",
+    "convertToCurve": "Convert to curve",
+    "convertToStraight": "Convert to straight segment",
+    "curveHint": "Drag the round handles to shape the curve. Alt+drag a handle to move it on its own or line it up again; Alt+drag a segment to bend it.",
     "convertToArc": "In Bogen umwandeln",
     "convertToLine": "In Linie umwandeln"
   },
