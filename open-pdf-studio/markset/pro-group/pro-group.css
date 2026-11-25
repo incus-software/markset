@@ -50,8 +50,8 @@
 /* Markset Pro ribbon tab: a plugin symbol group as a gallery button whose
    popup lists its symbols (position: fixed, placed by ribbon-popup.js). */
 .mpr-gallery { position: relative; display: flex; }
-.mpr-gallery-btn { position: relative; }
-.mpr-gallery-arrow { display: block; line-height: 0; margin-top: 1px; color: var(--theme-ribbon-text); }
+.mpr-gallery-btn { position: relative; padding-bottom: 10px; }
+.mpr-gallery-arrow { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); line-height: 0; color: var(--theme-ribbon-text); }
 .mpr-gallery-popup {
   display: none; position: fixed; z-index: 1000;
   width: 340px; max-height: 60vh; overflow-y: auto; padding: 6px;
