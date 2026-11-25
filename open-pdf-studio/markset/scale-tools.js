@@ -33,7 +33,7 @@ export async function startCalibrate() {
 function makeCalibrateTool() {
   const st = { p1: null };
   const point = (ctx) => {
-    const s = ctx.snap(ctx.x, ctx.y);
+    const s = ctx.snap(ctx.x, ctx.y, null, st.p1 ? [st.p1] : null, { measure: true }); // on the drawing's lines, square from p1
     return s.snapped ? { x: s.x, y: s.y, snap: s } : { x: ctx.x, y: ctx.y, snap: s };
   };
   return {

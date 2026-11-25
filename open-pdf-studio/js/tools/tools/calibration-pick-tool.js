@@ -23,7 +23,7 @@ export const calibrationPickTool = {
       return;
     }
 
-    const snap = ctx.snap(x, y);
+    const snap = ctx.snap(x, y, null, state.calibrationPoints, { measure: true }); // Markset
     const ptX = snap.snapped ? snap.x : x;
     const ptY = snap.snapped ? snap.y : y;
 
@@ -53,7 +53,7 @@ export const calibrationPickTool = {
 
     if (state.calibrationPoints.length === 0) {
       // Show hover snap
-      const snap = ctx.snap(x, y);
+      const snap = ctx.snap(x, y, null, state.calibrationPoints, { measure: true }); // Markset
       if (snap.snapped) {
         state.lastSnapResult = snap;
         ctx.redraw();
@@ -66,7 +66,7 @@ export const calibrationPickTool = {
     }
 
     // Draw preview line from first point to cursor
-    const snap = ctx.snap(x, y);
+    const snap = ctx.snap(x, y, null, state.calibrationPoints, { measure: true }); // Markset
     let snapX = snap.snapped ? snap.x : x;
     let snapY = snap.snapped ? snap.y : y;
     state.lastSnapResult = snap.snapped ? snap : null;

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { marksetPrefMigrations } from './pref-migrations.js';
 
-const ALL = ['theme-light-2026-10', 'units-upstream-2026-11', 'ai-link-off-2026-11'];
+const ALL = ['theme-light-2026-10', 'units-upstream-2026-11', 'ai-link-off-2026-11', 'dim-line-weight-2026-11'];
 
 test('a saved dark default theme moves to Light once', () => {
   const out = marksetPrefMigrations({ theme: 'default' });
@@ -31,6 +31,20 @@ test('Markset unit preferences move to the upstream ones once, US by default', (
   assert.equal(metric.imperialLengthFormat, 'decimal');
   assert.equal(metric.imperialFractionPrecision, 8);
   assert.equal(metric.paperSizeUnit, undefined);
+});
+
+test('a saved 2 pt dimension line (the old default) becomes 1 pt once', () => {
+  const out = marksetPrefMigrations({ measureDistLineWidth: 2, marksetMigrations: ['theme-light-2026-10', 'units-upstream-2026-11', 'ai-link-off-2026-11'] });
+  assert.equal(out.measureDistLineWidth, 1);
+  assert.deepEqual(out.marksetMigrations, ALL);
+  // Set back to 2 afterwards: kept.
+  assert.deepEqual(marksetPrefMigrations({ measureDistLineWidth: 2, marksetMigrations: ALL }), {});
+});
+
+test('a dimension line weight the user picked is kept', () => {
+  for (const w of [0.5, 1, 3, 6]) {
+    assert.equal(marksetPrefMigrations({ measureDistLineWidth: w }).measureDistLineWidth, undefined, String(w));
+  }
 });
 
 test('the AI link is turned off once for preferences saved while it was on by default', () => {

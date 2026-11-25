@@ -47,6 +47,15 @@ const MIGRATIONS = [
       return prefs.mcpEnabled === true ? { mcpEnabled: false } : {};
     },
   },
+  {
+    // The dimension (measure distance) line default went from 2 pt to 1 pt
+    // on 2026-11-19: 2 pt drew twice as heavy as the drawing's own
+    // dimension strings. A saved 2 is the old default, so halve it once.
+    id: 'dim-line-weight-2026-11',
+    apply(prefs) {
+      return prefs.measureDistLineWidth === 2 ? { measureDistLineWidth: 1 } : {};
+    },
+  },
 ];
 
 /** The changes to apply to `prefs` (including the record of what ran). */
