@@ -4,8 +4,11 @@
 //
 //   node scripts/build-msix.mjs           Store package; needs the identity
 //                                         from packaging/msix/identity.json
-//   node scripts/build-msix.mjs --test    local test package (unsigned); install
-//                                         it with Add-AppxPackage -AllowUnsigned
+//   node scripts/build-msix.mjs --test    local test package; sign it with a
+//                                         self-signed certificate whose subject is
+//                                         TEST_IDENTITY.publisher, trust that
+//                                         certificate, then Add-AppxPackage
+//                                         (a desktop app can't install unsigned)
 //
 // Output: target/msix/Markset_<version>_x64.msix (next to target/release).
 // The NSIS installer's extras are not in the package: the virtual printer and
@@ -27,10 +30,10 @@ export function msixVersion(version) {
   return `${parts.join('.')}.0`;
 }
 
-/** The unsigned test identity: Windows installs such a package with -AllowUnsigned. */
+/** The local test identity: sign with a self-signed certificate of this subject. */
 export const TEST_IDENTITY = Object.freeze({
   identityName: 'Markset.LocalTest',
-  publisher: 'CN=Markset Local Test, OID.2.25.311729368913984317654407730594956997722=1',
+  publisher: 'CN=Markset Local Test',
   publisherDisplayName: 'Markset (local test)',
 });
 
@@ -100,8 +103,8 @@ function main() {
   const msix = path.join(outDir, `Markset_${conf.version}_x64${test ? '_test' : ''}.msix`);
   rmSync(msix, { force: true });
   execFileSync(findMakeAppx(), ['pack', '/d', stage, '/p', msix, '/o'], { stdio: 'inherit' });
-  console.log(`\nMSIX ${version}${test ? ' (local test, unsigned)' : ''}: ${msix}`);
-  if (test) console.log(`Install: Add-AppxPackage -Path "${msix}" -AllowUnsigned`);
+  console.log(`\nMSIX ${version}${test ? ' (local test, sign before installing)' : ''}: ${msix}`);
+  if (test) console.log(`Sign: signtool sign /fd SHA256 /n "${TEST_IDENTITY.publisher.slice(3)}" "${msix}"`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

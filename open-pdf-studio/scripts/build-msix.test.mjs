@@ -33,6 +33,6 @@ test('manifest: every value filled in and escaped, none left over', () => {
   assert.throws(() => fillManifest(template, { ...TEST_IDENTITY, version: '', executable: 'a.exe' }), /VERSION is empty/);
 });
 
-test('the local test identity is one Windows installs unsigned', () => {
-  assert.match(TEST_IDENTITY.publisher, /OID\.2\.25\.311729368913984317654407730594956997722=1/);
+test('the local test identity is a plain subject a self-signed certificate can match', () => {
+  assert.equal(TEST_IDENTITY.publisher, 'CN=Markset Local Test');
 });
