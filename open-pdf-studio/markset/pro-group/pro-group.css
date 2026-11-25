@@ -39,3 +39,10 @@
 .mpg-section-header:hover { color: var(--theme-text, #000); }
 .mpg-section-header .sp-cat-arrow { transform-origin: center; }
 .mpg-section-count { margin-left: auto; font-weight: 400; color: var(--theme-text-secondary, #5f6672); }
+
+/* Markset Pro ribbon tab: tools without the Pro plugin are greyed out but
+   stay clickable (the click explains Markset Pro). */
+.ribbon-btn.mpr-locked { cursor: pointer; }
+.ribbon-btn.mpr-locked .ribbon-btn-icon { opacity: 0.5; }
+.ribbon-btn.mpr-locked .ribbon-btn-label { color: var(--theme-text-secondary, #5f6672); }
+.ribbon-btn.mpr-tool .ribbon-btn-icon svg { width: 100%; height: 100%; }

@@ -106,3 +106,18 @@ export const PRO_URL = 'https://usemarkset.com';
 export function proUpsellMessage(tool) {
   return `${tool.label} is part of Markset Pro. ${tool.description || ''}\n\nMarkset Pro is an add-on: get it at usemarkset.com, install it, and enter your license key in its License tool.`;
 }
+
+/**
+ * How a section's tools sit in its ribbon group: a short section (up to
+ * six tools) gets one large button per tool; a longer one gets columns of
+ * up to three small buttons, so the trade library does not run off the
+ * ribbon. Each column is an array of tools; in a long section every column,
+ * even one of a single tool, is small buttons.
+ */
+export const RIBBON_LARGE_MAX = 6;
+export function ribbonColumns(tools, { large = RIBBON_LARGE_MAX, perColumn = 3 } = {}) {
+  if (tools.length <= large) return tools.map((t) => [t]);
+  const cols = [];
+  for (let i = 0; i < tools.length; i += perColumn) cols.push(tools.slice(i, i + perColumn));
+  return cols;
+}

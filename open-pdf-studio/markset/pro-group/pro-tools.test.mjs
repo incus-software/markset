@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proTools, proSections, PRO_SECTIONS, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS, defaultClosedSections } from './pro-tools.js';
+import { proTools, proSections, PRO_SECTIONS, registerProTool, unregisterProTool, proUpsellMessage, PRO_TOOL_PLACEHOLDERS, defaultClosedSections, ribbonColumns } from './pro-tools.js';
+
+test('ribbon tab: short sections get large buttons, long ones stacks of three small', () => {
+  const tools = (n) => Array.from({ length: n }, (_, i) => ({ id: `t${i}` }));
+  assert.deepEqual(ribbonColumns(tools(6)).map((c) => c.length), [1, 1, 1, 1, 1, 1]);
+  assert.deepEqual(ribbonColumns(tools(7)).map((c) => c.length), [3, 3, 1]);
+  assert.deepEqual(ribbonColumns(tools(26)).flat().map((t) => t.id), tools(26).map((t) => t.id), 'every tool, in order');
+  assert.deepEqual(ribbonColumns([]), []);
+});
 
 test('Pro tools are listed greyed out until the plugin turns them on', () => {
   const before = proTools();
