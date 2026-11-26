@@ -1,4 +1,5 @@
 import { readRenderDiagnostics, subscribeRenderDiagnostics } from '../../pdf/render-diagnostics.js';
+import { readableToolName } from '../../../markset/tool-label.js'; // Markset
 import { Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { watchState, onWatchState } from '../../workflows/watch-status.js';
 import { reviewStatus, onReviewStatus } from '../../review/shared-review-status.js';
@@ -229,7 +230,7 @@ export default function StatusBar() {
   const toolName = () => {
     const key = `tools.${state.currentTool}`;
     const translated = t(key);
-    return translated !== key ? translated : state.currentTool;
+    return translated !== key ? translated : readableToolName(state.currentTool); // Markset: no internal ids
   };
   // Met het telgereedschap: de actieve telgroep, met haar kleur (#1004), zodat
   // je ziet in welke telling de volgende markering komt.

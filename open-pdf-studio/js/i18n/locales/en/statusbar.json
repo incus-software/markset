@@ -31,7 +31,8 @@
     "screenshot": "Screenshot",
     "pageLabelPick": "Pick Text for Page Label",
     "proofread": "Proofreading",
-    "count": "Count"
+    "count": "Count",
+    "marksetTextHighlighter": "Highlight Text"
   },
   "toolLabel": "Tool:",
   "annotationsLabel": "Annotations:",
